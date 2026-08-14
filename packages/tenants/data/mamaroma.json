@@ -1,0 +1,49 @@
+{
+  "id": "mamaroma",
+  "slug": "mamaroma",
+  "branding": {
+    "displayName": "Mama Roma",
+    "legalName": "Сеть ресторанов «Мама Рома»",
+    "tagline": "Итальянская кухня с 1998 года",
+    "primary": "#C0392B",
+    "onPrimary": "#FFFFFF",
+    "accent": "#1B7F5A",
+    "splashBackground": "#FFFFFF",
+    "androidAdaptiveBackground": "#FFF6F3"
+  },
+  "stores": {
+    "bundleIdentifier": "ru.mamaroma.app",
+    "androidPackage": "ru.mamaroma.app",
+    "scheme": "mamaroma"
+  },
+  "features": {
+    "delivery": true,
+    "pickup": true,
+    "dineInReservation": true,
+    "loyalty": true,
+    "stories": true,
+    "onlinePayment": true
+  },
+  "loyalty": {
+    "pointToRubleRate": 1,
+    "maxRedeemShareOfCheck": 0.5,
+    "pointsExpireAfterDays": 180,
+    "welcomeBonus": 300,
+    "birthdayBonus": 500,
+    "tiers": [
+      { "code": "ospite", "title": "Ospite", "cashbackPercent": 5, "thresholdRub": 0 },
+      { "code": "amico", "title": "Amico", "cashbackPercent": 7, "thresholdRub": 15000 },
+      { "code": "famiglia", "title": "Famiglia", "cashbackPercent": 10, "thresholdRub": 50000 },
+      { "code": "maestro", "title": "Maestro", "cashbackPercent": 12, "thresholdRub": 120000 }
+    ]
+  },
+  "supportPhone": "+7 (812) 777-77-77",
+  "supportEmail": "support@mamaroma.ru",
+  "websiteUrl": "https://www.mamaroma.ru",
+  "privacyPolicyUrl": "https://www.mamaroma.ru/privacy",
+  "offerUrl": "https://www.mamaroma.ru/offer",
+  "defaultCityId": "spb",
+  "currency": "RUB",
+  "locale": "ru-RU",
+  "timezone": "Europe/Moscow"
+}

@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install)",
+      "Bash(pnpm -r *)",
+      "Bash(pnpm --filter *)",
+      "Bash(npx expo *)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(uv run *)",
+      "Bash(uv sync)",
+      "Bash(uv add *)",
+      "Bash(brew services list)",
+      "Bash(psql *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *backend/*.py) cd \"$(dirname \"$f\")\" && uv run ruff format \"$f\" >/dev/null 2>&1 && uv run ruff check --fix \"$f\" >/dev/null 2>&1 ;; esac; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

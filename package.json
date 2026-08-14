@@ -1,0 +1,19 @@
+{
+  "name": "mama-roma",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "mobile": "pnpm --filter @mr/mobile start",
+    "ios": "pnpm --filter @mr/mobile ios",
+    "android": "pnpm --filter @mr/mobile android",
+    "api": "cd backend && uv run fastapi dev app/main.py",
+    "db:up": "brew services start postgresql@17 && brew services start redis",
+    "db:down": "brew services stop postgresql@17 && brew services stop redis",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
