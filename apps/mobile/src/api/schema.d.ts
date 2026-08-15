@@ -798,6 +798,12 @@ export interface components {
             volume_ml: number | null;
             /** Calories */
             calories: number | null;
+            /** Is Spicy */
+            is_spicy: boolean;
+            /** Is Vegetarian */
+            is_vegetarian: boolean;
+            /** Is New */
+            is_new: boolean;
             /** Is Active */
             is_active: boolean;
             /** Sort Order */
@@ -823,6 +829,12 @@ export interface components {
             volume_ml?: number | null;
             /** Calories */
             calories?: number | null;
+            /** Is Spicy */
+            is_spicy?: boolean | null;
+            /** Is Vegetarian */
+            is_vegetarian?: boolean | null;
+            /** Is New */
+            is_new?: boolean | null;
             /** Sort Order */
             sort_order?: number | null;
             /** Is Active */
@@ -856,6 +868,12 @@ export interface components {
             volume_ml: number | null;
             /** Calories */
             calories: number | null;
+            /** Is Spicy */
+            is_spicy: boolean;
+            /** Is Vegetarian */
+            is_vegetarian: boolean;
+            /** Is New */
+            is_new: boolean;
             /** Is Available */
             is_available: boolean;
         };
@@ -882,6 +900,21 @@ export interface components {
             volume_ml?: number | null;
             /** Calories */
             calories?: number | null;
+            /**
+             * Is Spicy
+             * @default false
+             */
+            is_spicy: boolean;
+            /**
+             * Is Vegetarian
+             * @default false
+             */
+            is_vegetarian: boolean;
+            /**
+             * Is New
+             * @default false
+             */
+            is_new: boolean;
             /**
              * Sort Order
              * @default 0

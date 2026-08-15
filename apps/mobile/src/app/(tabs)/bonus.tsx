@@ -29,7 +29,7 @@ export default function BonusScreen() {
         contentContainerStyle={{
           padding: theme.layout.screenPadding,
           gap: theme.spacing.xl,
-          paddingBottom: theme.spacing.xxxl,
+          paddingBottom: theme.layout.tabBarHeight + theme.spacing.xxxl,
         }}
       >
         <View

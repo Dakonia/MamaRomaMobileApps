@@ -75,6 +75,9 @@ async def get_menu(
                 weight_grams=dish.weight_grams,
                 volume_ml=dish.volume_ml,
                 calories=dish.calories,
+                is_spicy=dish.is_spicy,
+                is_vegetarian=dish.is_vegetarian,
+                is_new=dish.is_new,
                 is_available=dish.id not in stopped,
             )
         )
@@ -107,6 +110,9 @@ def _to_read(dish: Dish, price: int, available: bool) -> DishRead:
         weight_grams=dish.weight_grams,
         volume_ml=dish.volume_ml,
         calories=dish.calories,
+        is_spicy=dish.is_spicy,
+        is_vegetarian=dish.is_vegetarian,
+        is_new=dish.is_new,
         is_available=available,
     )
 

@@ -31,6 +31,15 @@ export function DishCard({
 }: Props) {
   const theme = useTheme();
 
+  const badges = [
+    highlight ? { text: 'Хит', background: theme.colors.highlight, color: theme.colors.onHero } : null,
+    dish.is_new ? { text: 'Новинка', background: theme.colors.brand, color: theme.colors.onHero } : null,
+    dish.is_spicy ? { text: 'Остро', background: theme.colors.danger, color: theme.colors.onHero } : null,
+    dish.is_vegetarian
+      ? { text: 'Веган', background: theme.colors.accent, color: theme.colors.onHero }
+      : null,
+  ].filter((badge): badge is { text: string; background: string; color: string } => badge !== null);
+
   // Короткая вибрация в момент добавления — отклик, которого ждёт рука
   const add = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -72,21 +81,28 @@ export function DishCard({
           </View>
         )}
 
-        {highlight ? (
+        {badges.length > 0 ? (
           <View
             style={[
-              styles.hit,
-              {
-                left: theme.spacing.sm,
-                top: theme.spacing.sm,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.xxs,
-                borderRadius: theme.radius.sm,
-                backgroundColor: theme.colors.highlight,
-              },
+              styles.badges,
+              { left: theme.spacing.sm, top: theme.spacing.sm, gap: theme.spacing.xs },
             ]}
           >
-            <Text style={[theme.typography.overline, { color: theme.colors.textInverse }]}>Хит</Text>
+            {badges.map((badge) => (
+              <View
+                key={badge.text}
+                style={{
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xxs,
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: badge.background,
+                }}
+              >
+                <Text style={[theme.typography.overline, { color: badge.color }]}>
+                  {badge.text}
+                </Text>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -205,5 +221,5 @@ const styles = StyleSheet.create({
   },
   stepButton: { alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute' },
-  hit: { position: 'absolute' },
+  badges: { position: 'absolute', flexDirection: 'row', flexWrap: 'wrap' },
 });

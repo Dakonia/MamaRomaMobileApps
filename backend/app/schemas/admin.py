@@ -64,6 +64,9 @@ class DishWrite(BaseModel):
     weight_grams: int | None = Field(default=None, ge=0)
     volume_ml: int | None = Field(default=None, ge=0)
     calories: int | None = Field(default=None, ge=0)
+    is_spicy: bool = False
+    is_vegetarian: bool = False
+    is_new: bool = False
     sort_order: int = 0
     is_active: bool = True
 
@@ -78,6 +81,9 @@ class DishPatch(BaseModel):
     weight_grams: int | None = Field(default=None, ge=0)
     volume_ml: int | None = Field(default=None, ge=0)
     calories: int | None = Field(default=None, ge=0)
+    is_spicy: bool | None = None
+    is_vegetarian: bool | None = None
+    is_new: bool | None = None
     sort_order: int | None = None
     is_active: bool | None = None
 
@@ -95,6 +101,9 @@ class DishAdminRead(BaseModel):
     weight_grams: int | None
     volume_ml: int | None
     calories: int | None
+    is_spicy: bool
+    is_vegetarian: bool
+    is_new: bool
     is_active: bool
     sort_order: int
 

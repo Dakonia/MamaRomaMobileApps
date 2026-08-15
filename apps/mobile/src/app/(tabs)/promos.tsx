@@ -75,7 +75,7 @@ export default function PromosScreen() {
         contentContainerStyle={{
           padding: theme.layout.screenPadding,
           gap: theme.spacing.lg,
-          paddingBottom: theme.spacing.xxxl,
+          paddingBottom: theme.layout.tabBarHeight + theme.spacing.xxxl,
         }}
         refreshControl={
           <RefreshControl

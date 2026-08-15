@@ -4,10 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Animated, { FadeIn, SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, type Dish } from '@/api/client';
+import { CartPill } from '@/components/cart-pill';
 import { CategoryBar, type CategoryChip } from '@/components/category-bar';
 import { DishCard } from '@/components/dish-card';
 import { EmptyState } from '@/components/empty-state';
@@ -286,7 +287,7 @@ export default function MenuScreen() {
         }}
         refreshing={menu.isRefetching}
         contentContainerStyle={{
-          paddingBottom: count > 0 ? theme.spacing.huge + theme.spacing.xxl : theme.spacing.xxxl,
+          paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.lg,
         }}
       />
     );
@@ -295,98 +296,72 @@ export default function MenuScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       <View
-        style={{
-          paddingTop: insets.top + theme.spacing.sm,
-          paddingHorizontal: theme.layout.screenPadding,
-          paddingBottom: theme.spacing.xs,
-        }}
+        style={[
+          styles.hero,
+          {
+            backgroundColor: theme.colors.hero,
+            paddingTop: insets.top + theme.spacing.sm,
+            borderBottomLeftRadius: theme.radius.xxl,
+            borderBottomRightRadius: theme.radius.xxl,
+          },
+        ]}
       >
-        <Text style={[theme.typography.h1, { color: theme.colors.textPrimary }]}>
-          {tenant.branding.displayName}
-        </Text>
-
-        <PressableScale
-          onPress={() => router.push('/restaurants')}
-          accessibilityLabel="Выбрать ресторан"
-          depth={0.97}
-          style={[styles.picker, { gap: theme.spacing.xs, minHeight: theme.spacing.xxl }]}
-        >
-          <Ionicons name="location-outline" size={theme.spacing.base} color={theme.colors.brand} />
-          <Text
-            numberOfLines={1}
-            style={[theme.typography.caption, styles.grow, { color: theme.colors.textSecondary }]}
-          >
-            {restaurant?.name ?? 'Выберите ресторан'}
-          </Text>
-          <Ionicons name="chevron-down" size={theme.spacing.base} color={theme.colors.textTertiary} />
-        </PressableScale>
-      </View>
-
-      {categories.length > 0 ? (
         <View
-          style={{
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: theme.colors.divider,
-            backgroundColor: theme.colors.background,
-          }}
+          style={[
+            styles.heroTop,
+            { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.md },
+          ]}
         >
-          <CategoryBar categories={categories} activeId={activeCategory} onSelect={jumpTo} />
+          <View style={styles.grow}>
+            <Text style={[theme.typography.h1, { color: theme.colors.onHero }]}>
+              {tenant.branding.displayName}
+            </Text>
+
+            <PressableScale
+              onPress={() => router.push('/restaurants')}
+              accessibilityLabel="Выбрать ресторан"
+              depth={0.97}
+              style={[styles.picker, { gap: theme.spacing.xs, minHeight: theme.spacing.xxl }]}
+            >
+              <Ionicons
+                name="location-outline"
+                size={theme.spacing.base}
+                color={theme.colors.onHeroMuted}
+              />
+              <Text
+                numberOfLines={1}
+                style={[theme.typography.caption, { color: theme.colors.onHeroMuted }]}
+              >
+                {restaurant?.name ?? 'Выберите ресторан'}
+              </Text>
+              <Ionicons
+                name="chevron-down"
+                size={theme.spacing.base}
+                color={theme.colors.onHeroMuted}
+              />
+            </PressableScale>
+          </View>
+
+          <CartPill count={count} subtotal={subtotal} onPress={() => router.push('/cart')} />
         </View>
-      ) : null}
+
+        {categories.length > 0 ? (
+          <CategoryBar categories={categories} activeId={activeCategory} onSelect={jumpTo} onHero />
+        ) : null}
+      </View>
 
       {body()}
 
-      {count > 0 ? (
-        <Animated.View
-          entering={SlideInDown.springify().damping(18)}
-          exiting={SlideOutDown.duration(theme.motion.duration.fast)}
-          style={[
-            styles.cartWrap,
-            {
-              left: theme.layout.screenPadding,
-              right: theme.layout.screenPadding,
-              bottom: insets.bottom + theme.spacing.sm,
-            },
-          ]}
-        >
-          <PressableScale
-            onPress={() => router.push('/cart')}
-            accessibilityLabel="Перейти в корзину"
-            depth={0.97}
-            style={[
-              styles.cartBar,
-              {
-                minHeight: theme.layout.minTouchTarget + theme.spacing.xs,
-                paddingHorizontal: theme.spacing.lg,
-                borderRadius: theme.radius.pill,
-                backgroundColor: theme.colors.brand,
-                ...theme.elevation.raised,
-              },
-            ]}
-          >
-            <Text style={[theme.typography.button, { color: theme.colors.textOnBrand }]}>
-              Корзина · {count}
-            </Text>
-            <Text style={[theme.typography.button, { color: theme.colors.textOnBrand }]}>
-              {formatPrice(subtotal)}
-            </Text>
-          </PressableScale>
-        </Animated.View>
-      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  hero: { overflow: 'hidden' },
+  heroTop: { flexDirection: 'row', alignItems: 'flex-start' },
   picker: { flexDirection: 'row', alignItems: 'center' },
   grow: { flex: 1 },
   pair: { flexDirection: 'row' },
   filler: { flex: 1 },
-  cartWrap: { position: 'absolute' },
-  cartBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
 });

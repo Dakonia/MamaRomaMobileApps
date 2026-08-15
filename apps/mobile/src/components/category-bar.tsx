@@ -10,10 +10,12 @@ type Props = {
   categories: CategoryChip[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** Полоса стоит на тёмной витрине — меняем цвета чипов. */
+  onHero?: boolean;
 };
 
 /** Липкая полоса категорий: подсвечивает текущий раздел и сама к нему подъезжает. */
-export function CategoryBar({ categories, activeId, onSelect }: Props) {
+export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
   const theme = useTheme();
   const scroller = useRef<ScrollView>(null);
   const offsets = useRef<Record<string, { x: number; width: number }>>({});
@@ -84,14 +86,24 @@ export function CategoryBar({ categories, activeId, onSelect }: Props) {
                 minHeight: theme.layout.minTouchTarget - theme.spacing.sm,
                 paddingHorizontal: theme.spacing.base,
                 borderRadius: theme.radius.pill,
-                backgroundColor: active ? theme.colors.brand : theme.colors.surfaceSunken,
+                backgroundColor: active
+                  ? theme.colors.brand
+                  : onHero
+                    ? theme.colors.heroRaised
+                    : theme.colors.surfaceSunken,
               },
             ]}
           >
             <Text
               style={[
                 theme.typography.bodyMedium,
-                { color: active ? theme.colors.textOnBrand : theme.colors.textSecondary },
+                {
+                  color: active
+                    ? theme.colors.textOnBrand
+                    : onHero
+                      ? theme.colors.onHeroMuted
+                      : theme.colors.textSecondary,
+                },
               ]}
             >
               {category.title}

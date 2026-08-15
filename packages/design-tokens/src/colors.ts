@@ -62,6 +62,12 @@ export interface ColorScheme {
   highlight: string;
   highlightSubtle: string;
 
+  /** Тёмная витрина: шапка главного экрана и промо-блоки. */
+  hero: string;
+  heroRaised: string;
+  onHero: string;
+  onHeroMuted: string;
+
   background: string;
   backgroundAlt: string;
   surface: string;
@@ -102,6 +108,11 @@ export const lightColors: ColorScheme = {
   highlight: palette.saffron[700],
   highlightSubtle: palette.saffron[100],
 
+  hero: palette.sand[900],
+  heroRaised: "rgba(255, 255, 255, 0.12)",
+  onHero: palette.sand[0],
+  onHeroMuted: palette.sand[300],
+
   background: palette.sand[0],
   backgroundAlt: palette.sand[50],
   surface: palette.sand[0],
@@ -141,6 +152,11 @@ export const darkColors: ColorScheme = {
 
   highlight: palette.saffron[300],
   highlightSubtle: "rgba(242, 194, 102, 0.16)",
+
+  hero: "#241E1A",
+  heroRaised: "rgba(255, 255, 255, 0.1)",
+  onHero: palette.sand[50],
+  onHeroMuted: palette.sand[400],
 
   background: palette.sand[900],
   backgroundAlt: "#211C19",

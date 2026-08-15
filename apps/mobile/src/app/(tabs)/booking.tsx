@@ -130,7 +130,7 @@ export default function BookingScreen() {
         contentContainerStyle={{
           padding: theme.layout.screenPadding,
           gap: theme.spacing.xl,
-          paddingBottom: theme.spacing.xxxl,
+          paddingBottom: theme.layout.tabBarHeight + theme.spacing.xxxl,
         }}
         keyboardShouldPersistTaps="handled"
       >

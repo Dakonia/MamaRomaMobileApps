@@ -94,7 +94,7 @@ export default function ProfileScreen() {
         contentContainerStyle={{
           padding: theme.layout.screenPadding,
           gap: theme.spacing.xl,
-          paddingBottom: theme.spacing.xxxl,
+          paddingBottom: theme.layout.tabBarHeight + theme.spacing.xxxl,
         }}
       >
         <View

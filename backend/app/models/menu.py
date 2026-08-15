@@ -36,6 +36,11 @@ class Dish(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Base):
     volume_ml: Mapped[int | None] = mapped_column(default=None)
     calories: Mapped[int | None] = mapped_column(default=None)
 
+    # Метки поверх фотографии: помогают выбирать и оживляют сетку
+    is_spicy: Mapped[bool] = mapped_column(default=False)
+    is_vegetarian: Mapped[bool] = mapped_column(default=False)
+    is_new: Mapped[bool] = mapped_column(default=False)
+
     sort_order: Mapped[int] = mapped_column(default=0)
     is_active: Mapped[bool] = mapped_column(default=True)
 

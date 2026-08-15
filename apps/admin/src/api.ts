@@ -74,6 +74,9 @@ export type Dish = {
   weight_grams: number | null;
   volume_ml: number | null;
   calories: number | null;
+  is_spicy: boolean;
+  is_vegetarian: boolean;
+  is_new: boolean;
   is_active: boolean;
   sort_order: number;
 };
@@ -87,6 +90,9 @@ export type DishDraft = {
   composition: string | null;
   weight_grams: number | null;
   calories: number | null;
+  is_spicy: boolean;
+  is_vegetarian: boolean;
+  is_new: boolean;
   sort_order: number;
   is_active: boolean;
 };

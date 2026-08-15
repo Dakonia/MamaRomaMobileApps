@@ -21,6 +21,9 @@ const emptyDraft = (categoryId: string): DishDraft => ({
   composition: null,
   weight_grams: null,
   calories: null,
+  is_spicy: false,
+  is_vegetarian: false,
+  is_new: false,
   sort_order: 0,
   is_active: true,
 });
@@ -35,6 +38,9 @@ function toDraft(dish: Dish): DishDraft {
     composition: dish.composition,
     weight_grams: dish.weight_grams,
     calories: dish.calories,
+    is_spicy: dish.is_spicy,
+    is_vegetarian: dish.is_vegetarian,
+    is_new: dish.is_new,
     sort_order: dish.sort_order,
     is_active: dish.is_active,
   };
@@ -226,6 +232,27 @@ function DishForm({
                 </Button>
               ) : null}
             </div>
+          </div>
+        </Field>
+
+        <Field label="Метки поверх фотографии" wide>
+          <div style={{ display: "flex", gap: spacing.lg, flexWrap: "wrap", paddingTop: 6 }}>
+            {(
+              [
+                ["is_new", "Новинка"],
+                ["is_spicy", "Острое"],
+                ["is_vegetarian", "Вегетарианское"],
+              ] as const
+            ).map(([key, title]) => (
+              <label key={key} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={draft[key]}
+                  onChange={(event) => set(key, event.target.checked)}
+                />
+                {title}
+              </label>
+            ))}
           </div>
         </Field>
 

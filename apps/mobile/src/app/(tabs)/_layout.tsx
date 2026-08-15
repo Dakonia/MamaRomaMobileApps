@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
-import type { ColorValue } from 'react-native';
+import { StyleSheet, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tenant } from '@/lib/tenant';
@@ -27,11 +28,20 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: theme.colors.brand,
         tabBarInactiveTintColor: theme.colors.textTertiary,
+        // Панель полупрозрачная: контент проезжает под ней, как в системных приложениях
+        tabBarBackground: () => (
+          <BlurView
+            intensity={theme.isDark ? 50 : 70}
+            tint={theme.isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+        ),
         tabBarStyle: {
+          position: 'absolute',
           height: theme.layout.tabBarHeight + insets.bottom,
           paddingTop: theme.spacing.xs,
           paddingBottom: insets.bottom,
-          backgroundColor: theme.colors.surface,
+          backgroundColor: 'transparent',
           borderTopColor: theme.colors.divider,
         },
         tabBarLabelStyle: {
