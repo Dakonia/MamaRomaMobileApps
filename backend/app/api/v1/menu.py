@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.api.deps import SessionDep, TenantDep
 from app.models.geo import City, Restaurant
-from app.schemas.menu import CityRead, MenuRead, RestaurantRead
+from app.schemas.menu import CityRead, DishRead, MenuRead, RestaurantRead
 from app.services import menu as menu_service
 
 router = APIRouter(tags=["Меню"])
@@ -36,6 +36,16 @@ async def list_restaurants(
 
     restaurants = await session.scalars(query.order_by(Restaurant.name))
     return [RestaurantRead.model_validate(restaurant) for restaurant in restaurants]
+
+
+@router.get("/menu/popular", summary="Хиты продаж")
+async def popular(
+    session: SessionDep,
+    tenant: TenantDep,
+    restaurant_id: Annotated[UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 10,
+) -> list[DishRead]:
+    return await menu_service.get_popular(session, tenant.id, restaurant_id, limit)
 
 
 @router.get("/menu", summary="Каталог блюд по категориям")

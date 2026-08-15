@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.menu import Dish, DishPrice, MenuCategory, StopListEntry
+from app.models.order import OrderItem
 from app.schemas.menu import DishRead, MenuCategoryRead, MenuRead
 
 
@@ -92,3 +93,79 @@ async def get_menu(
             if by_category.get(category.id)
         ],
     )
+
+
+def _to_read(dish: Dish, price: int, available: bool) -> DishRead:
+    return DishRead(
+        id=dish.id,
+        category_id=dish.category_id,
+        name=dish.name,
+        description=dish.description,
+        composition=dish.composition,
+        image_url=dish.image_url,
+        price_kopecks=price,
+        weight_grams=dish.weight_grams,
+        volume_ml=dish.volume_ml,
+        calories=dish.calories,
+        is_available=available,
+    )
+
+
+async def get_popular(
+    session: AsyncSession,
+    tenant_id: str,
+    restaurant_id: UUID | None = None,
+    limit: int = 10,
+) -> list[DishRead]:
+    """Хиты продаж: считаем по проданным штукам из позиций заказов.
+
+    Пока заказов мало, добираем список началом меню — чтобы полка
+    не пустовала в первый день работы сети.
+    """
+    ranked = (
+        await session.execute(
+            select(OrderItem.dish_id, func.sum(OrderItem.quantity).label("sold"))
+            .where(OrderItem.tenant_id == tenant_id, OrderItem.dish_id.is_not(None))
+            .group_by(OrderItem.dish_id)
+            .order_by(desc("sold"))
+            .limit(limit)
+        )
+    ).all()
+    ordered_ids = [row.dish_id for row in ranked if row.dish_id is not None]
+
+    query = select(Dish).where(
+        Dish.tenant_id == tenant_id,
+        Dish.is_active.is_(True),
+        Dish.image_url.is_not(None),
+    )
+    if ordered_ids:
+        top = (await session.scalars(query.where(Dish.id.in_(ordered_ids)))).all()
+    else:
+        top = []
+
+    if len(top) < limit:
+        filler = (
+            await session.scalars(
+                query.where(Dish.id.notin_([dish.id for dish in top] or [UUID(int=0)]))
+                .order_by(Dish.sort_order, Dish.name)
+                .limit(limit - len(top))
+            )
+        ).all()
+        dishes = [*top, *filler]
+    else:
+        dishes = list(top)
+
+    if ordered_ids:
+        position = {dish_id: index for index, dish_id in enumerate(ordered_ids)}
+        dishes.sort(key=lambda dish: position.get(dish.id, len(position)))
+
+    overrides: dict[UUID, int] = {}
+    stopped: set[UUID] = set()
+    if restaurant_id is not None:
+        overrides = await _price_overrides(session, tenant_id, restaurant_id)
+        stopped = await _stopped_dishes(session, tenant_id, restaurant_id)
+
+    return [
+        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), dish.id not in stopped)
+        for dish in dishes[:limit]
+    ]

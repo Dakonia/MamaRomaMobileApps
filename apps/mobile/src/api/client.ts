@@ -94,6 +94,9 @@ export const api = {
   menu: (restaurantId?: string) =>
     request<Menu>(`/api/v1/menu${query({ restaurant_id: restaurantId })}`),
 
+  popular: (restaurantId?: string) =>
+    request<Dish[]>(`/api/v1/menu/popular${query({ restaurant_id: restaurantId })}`),
+
   requestCode: (phone: string) =>
     request<CodeRequestResult>('/api/v1/auth/request-code', {
       method: 'POST',
