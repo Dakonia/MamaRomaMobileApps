@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -117,6 +118,13 @@ export default function DishScreen() {
             />
           </View>
         )}
+
+        {/* Мягкое затемнение сверху: под ним читается любая иконка, а круг не нужен */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.42)', 'rgba(0,0,0,0)']}
+          style={[styles.veil, { height: theme.spacing.huge * 2 }]}
+          pointerEvents="none"
+        />
       </Animated.View>
 
       <Animated.ScrollView
@@ -226,15 +234,11 @@ export default function DishScreen() {
             left: theme.spacing.md,
             width: theme.layout.minTouchTarget,
             height: theme.layout.minTouchTarget,
-            borderRadius: theme.radius.pill,
-            // Сплошной круг с тенью читается на любом снимке — светлом и тёмном
-            backgroundColor: theme.colors.surface,
-            ...theme.elevation.raised,
           },
           styles.center,
         ]}
       >
-        <Ionicons name="close" size={theme.spacing.lg} color={theme.colors.textPrimary} />
+        <Ionicons name="chevron-down" size={theme.spacing.xl} color="#FFFFFF" />
       </PressableScale>
 
       {dish.is_available ? (
@@ -331,6 +335,7 @@ const styles = StyleSheet.create({
   grabber: { alignSelf: 'center' },
   facts: { flexDirection: 'row', flexWrap: 'wrap' },
   close: { position: 'absolute' },
+  veil: { position: 'absolute', top: 0, left: 0, right: 0 },
   bar: {
     position: 'absolute',
     left: 0,

@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
-import { StyleSheet, type ColorValue } from 'react-native';
+import type { ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tenant } from '@/lib/tenant';
@@ -28,25 +27,19 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: theme.colors.brand,
         tabBarInactiveTintColor: theme.colors.textTertiary,
-        // Панель полупрозрачная: контент проезжает под ней, как в системных приложениях
-        tabBarBackground: () => (
-          <BlurView
-            intensity={theme.isDark ? 50 : 70}
-            tint={theme.isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
-        ),
+        // Полоса ровно под содержимое: иконка, подпись и системный индикатор снизу
         tabBarStyle: {
-          position: 'absolute',
           height: theme.layout.tabBarHeight + insets.bottom,
-          paddingTop: theme.spacing.xs,
+          paddingTop: theme.spacing.xxs,
           paddingBottom: insets.bottom,
-          backgroundColor: 'transparent',
+          backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.divider,
         },
+        tabBarIconStyle: { marginBottom: -theme.spacing.xxs },
         tabBarLabelStyle: {
           fontFamily: theme.typography.caption.fontFamily,
-          fontSize: theme.typography.caption.fontSize,
+          fontSize: theme.typography.overline.fontSize,
+          marginBottom: theme.spacing.xxs,
         },
       }}
     >

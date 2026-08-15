@@ -73,7 +73,7 @@ export const hitSlop = { top: 8, bottom: 8, left: 8, right: 8 } as const;
 
 export const layout = {
   screenPadding: spacing.base,
-  tabBarHeight: 56,
+  tabBarHeight: 48,
   minTouchTarget: 44,
   maxContentWidth: 720,
 } as const;
