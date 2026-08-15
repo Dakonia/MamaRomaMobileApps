@@ -1,12 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import Animated, {
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, mediaUrl } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
+import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';
 import { cartSubtotal, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
@@ -14,8 +23,23 @@ import { useTheme } from '@/theme/theme-provider';
 export default function DishScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const cart = useCart();
   const { id } = useLocalSearchParams<{ id: string }>();
+
+  const heroHeight = width * 0.92;
+  const scroll = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scroll.value = event.contentOffset.y;
+  });
+
+  // Фото уезжает медленнее текста и слегка приближается при оттягивании вниз
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(scroll.value, [-heroHeight, 0, heroHeight], [0, 0, heroHeight * 0.4]) },
+      { scale: interpolate(scroll.value, [-heroHeight, 0], [1.6, 1], 'clamp') },
+    ],
+  }));
 
   // Меню уже загружено на главной — берём из того же запроса, лишней сети нет
   const menu = useQuery({
@@ -24,9 +48,9 @@ export default function DishScreen() {
     enabled: cart.restaurantId !== null,
   });
 
-  const dish = menu.data?.categories.flatMap((category) => category.dishes).find(
-    (item) => item.id === id,
-  );
+  const dish = menu.data?.categories
+    .flatMap((category) => category.dishes)
+    .find((item) => item.id === id);
 
   const category = menu.data?.categories.find((item) =>
     item.dishes.some((entry) => entry.id === id),
@@ -37,12 +61,7 @@ export default function DishScreen() {
   if (menu.isPending) {
     return (
       <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-        <View
-          style={{
-            height: 280,
-            backgroundColor: theme.colors.skeleton,
-          }}
-        />
+        <View style={{ height: heroHeight, backgroundColor: theme.colors.skeleton }} />
       </View>
     );
   }
@@ -68,42 +87,70 @@ export default function DishScreen() {
     dish.calories ? `${dish.calories} ккал` : null,
   ].filter((value): value is string => value !== null);
 
+  const addToCart = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    cart.add(dish);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-      <ScrollView contentContainerStyle={{ paddingBottom: theme.spacing.huge * 2 }}>
-        <View style={[styles.hero, { backgroundColor: theme.colors.surfaceSunken }]}>
-          {photo ? (
-            <Image source={{ uri: photo }} style={styles.photo} contentFit="cover" transition={200} />
-          ) : (
+      <Animated.View
+        style={[
+          styles.hero,
+          { height: heroHeight, backgroundColor: theme.colors.surfaceSunken },
+          heroStyle,
+        ]}
+      >
+        {photo ? (
+          <Image
+            source={{ uri: photo }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={220}
+          />
+        ) : (
+          <View style={styles.center}>
             <Ionicons
               name="restaurant-outline"
               size={theme.spacing.huge}
               color={theme.colors.textTertiary}
             />
-          )}
+          </View>
+        )}
+      </Animated.View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Закрыть"
-            onPress={() => router.back()}
-            hitSlop={theme.hitSlop}
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: theme.spacing.huge * 2 }}
+      >
+        <View style={{ height: heroHeight - theme.spacing.xxl }} />
+
+        {/* Контент лежит листом поверх фотографии — приём, который делает экран объёмным */}
+        <View
+          style={{
+            backgroundColor: theme.colors.background,
+            borderTopLeftRadius: theme.radius.xxl,
+            borderTopRightRadius: theme.radius.xxl,
+            padding: theme.layout.screenPadding,
+            paddingTop: theme.spacing.lg,
+            gap: theme.spacing.md,
+            minHeight: theme.spacing.huge * 5,
+          }}
+        >
+          <View
             style={[
-              styles.close,
+              styles.grabber,
               {
-                top: insets.top + theme.spacing.sm,
-                left: theme.layout.screenPadding,
-                width: theme.layout.minTouchTarget,
-                height: theme.layout.minTouchTarget,
+                width: theme.spacing.xxxl,
+                height: theme.spacing.xs,
                 borderRadius: theme.radius.pill,
-                backgroundColor: theme.colors.scrim,
+                backgroundColor: theme.colors.border,
               },
             ]}
-          >
-            <Ionicons name="close" size={theme.spacing.lg} color={theme.colors.textPrimary} />
-          </Pressable>
-        </View>
+          />
 
-        <View style={{ padding: theme.layout.screenPadding, gap: theme.spacing.md }}>
           {category ? (
             <Text style={[theme.typography.overline, { color: theme.colors.brand }]}>
               {category.name}
@@ -115,9 +162,23 @@ export default function DishScreen() {
           </Text>
 
           {facts.length > 0 ? (
-            <Text style={[theme.typography.body, { color: theme.colors.textSecondary }]}>
-              {facts.join(' · ')}
-            </Text>
+            <View style={[styles.facts, { gap: theme.spacing.sm }]}>
+              {facts.map((fact) => (
+                <View
+                  key={fact}
+                  style={{
+                    paddingHorizontal: theme.spacing.md,
+                    paddingVertical: theme.spacing.xs,
+                    borderRadius: theme.radius.pill,
+                    backgroundColor: theme.colors.surfaceSunken,
+                  }}
+                >
+                  <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
+                    {fact}
+                  </Text>
+                </View>
+              ))}
+            </View>
           ) : null}
 
           {dish.description ? (
@@ -141,7 +202,7 @@ export default function DishScreen() {
             <View
               style={{
                 padding: theme.spacing.base,
-                borderRadius: theme.radius.md,
+                borderRadius: theme.radius.lg,
                 backgroundColor: theme.colors.dangerSubtle,
                 marginTop: theme.spacing.sm,
               }}
@@ -152,92 +213,111 @@ export default function DishScreen() {
             </View>
           ) : null}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <PressableScale
+        onPress={() => router.back()}
+        accessibilityLabel="Закрыть"
+        depth={0.9}
+        style={[
+          styles.close,
+          {
+            top: insets.top > 0 ? theme.spacing.md : theme.spacing.lg,
+            left: theme.spacing.md,
+            width: theme.layout.minTouchTarget,
+            height: theme.layout.minTouchTarget,
+            borderRadius: theme.radius.pill,
+            overflow: 'hidden',
+          },
+        ]}
+      >
+        <BlurView intensity={40} tint="dark" style={[StyleSheet.absoluteFill, styles.center]}>
+          <Ionicons name="close" size={theme.spacing.lg} color="#FFFFFF" />
+        </BlurView>
+      </PressableScale>
 
       {dish.is_available ? (
-        <View
+        <BlurView
+          intensity={theme.isDark ? 40 : 60}
+          tint={theme.isDark ? 'dark' : 'light'}
           style={[
             styles.bar,
             {
               paddingHorizontal: theme.layout.screenPadding,
               paddingTop: theme.spacing.md,
               paddingBottom: insets.bottom + theme.spacing.md,
-              backgroundColor: theme.colors.surface,
               borderTopColor: theme.colors.divider,
               gap: theme.spacing.base,
             },
           ]}
         >
-          <Text style={[theme.typography.display, styles.grow, { color: theme.colors.textPrimary }]}>
-            {formatPrice(dish.price_kopecks)}
-          </Text>
+          <View style={styles.grow}>
+            <Text style={[theme.typography.display, { color: theme.colors.textPrimary }]}>
+              {formatPrice(dish.price_kopecks)}
+            </Text>
+            {cart.items.length > 0 ? (
+              <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
+                В корзине {formatPrice(cartSubtotal(cart.items))}
+              </Text>
+            ) : null}
+          </View>
 
           {quantity > 0 ? (
-            <View style={[styles.stepper, { gap: theme.spacing.base }]}>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={theme.hitSlop}
+            <View
+              style={[
+                styles.stepper,
+                {
+                  gap: theme.spacing.md,
+                  paddingHorizontal: theme.spacing.md,
+                  borderRadius: theme.radius.pill,
+                  backgroundColor: theme.colors.brandSubtle,
+                },
+              ]}
+            >
+              <PressableScale
                 onPress={() => cart.setQuantity(dish.id, quantity - 1)}
+                accessibilityLabel="Убрать порцию"
+                depth={0.85}
+                style={styles.center}
               >
-                <Ionicons
-                  name="remove-circle"
-                  size={theme.spacing.xxl}
-                  color={theme.colors.brand}
-                />
-              </Pressable>
+                <Ionicons name="remove-circle" size={theme.spacing.xxl} color={theme.colors.brand} />
+              </PressableScale>
+
               <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
                 {quantity}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={theme.hitSlop}
+
+              <PressableScale
                 onPress={() => cart.setQuantity(dish.id, quantity + 1)}
+                accessibilityLabel="Добавить порцию"
+                depth={0.85}
+                style={styles.center}
               >
                 <Ionicons name="add-circle" size={theme.spacing.xxl} color={theme.colors.brand} />
-              </Pressable>
+              </PressableScale>
             </View>
           ) : (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => cart.add(dish)}
-              style={({ pressed }) => [
+            <PressableScale
+              onPress={addToCart}
+              accessibilityLabel="Добавить в корзину"
+              depth={0.94}
+              style={[
                 styles.action,
                 {
                   minHeight: theme.layout.minTouchTarget + theme.spacing.xs,
                   paddingHorizontal: theme.spacing.xxl,
                   borderRadius: theme.radius.pill,
-                  backgroundColor: pressed ? theme.colors.brandPressed : theme.colors.brand,
+                  backgroundColor: theme.colors.brand,
+                  ...theme.elevation.raised,
                 },
               ]}
             >
               <Text style={[theme.typography.button, { color: theme.colors.textOnBrand }]}>
                 В корзину
               </Text>
-            </Pressable>
+            </PressableScale>
           )}
-        </View>
-      ) : null}
-
-      {cart.items.length > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push('/cart')}
-          style={[
-            styles.cartHint,
-            {
-              bottom: insets.bottom + theme.spacing.huge + theme.spacing.lg,
-              right: theme.layout.screenPadding,
-              paddingHorizontal: theme.spacing.base,
-              paddingVertical: theme.spacing.sm,
-              borderRadius: theme.radius.pill,
-              backgroundColor: theme.colors.accent,
-            },
-          ]}
-        >
-          <Text style={[theme.typography.caption, { color: theme.colors.textInverse }]}>
-            В корзине {formatPrice(cartSubtotal(cart.items))}
-          </Text>
-        </Pressable>
+        </BlurView>
       ) : null}
     </View>
   );
@@ -245,18 +325,16 @@ export default function DishScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  hero: {
-    height: 300,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photo: { width: '100%', height: '100%' },
-  close: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  hero: { position: 'absolute', top: 0, left: 0, right: 0 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  grabber: { alignSelf: 'center' },
+  facts: { flexDirection: 'row', flexWrap: 'wrap' },
+  close: { position: 'absolute' },
   bar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -264,5 +342,4 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   stepper: { flexDirection: 'row', alignItems: 'center' },
   action: { alignItems: 'center', justifyContent: 'center' },
-  cartHint: { position: 'absolute' },
 });

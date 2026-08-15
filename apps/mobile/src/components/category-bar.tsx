@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { useTheme } from '@/theme/theme-provider';
@@ -16,21 +16,47 @@ type Props = {
 export function CategoryBar({ categories, activeId, onSelect }: Props) {
   const theme = useTheme();
   const scroller = useRef<ScrollView>(null);
-  const offsets = useRef<Record<string, number>>({});
+  const offsets = useRef<Record<string, { x: number; width: number }>>({});
+  const viewport = useRef(0);
+  const scrollX = useRef(0);
+  const draggingUntil = useRef(0);
 
+  // Полоса подъезжает к активному разделу только когда он реально уехал за край
+  // и когда её не листает сам гость — иначе она дёргается влево-вправо
   useEffect(() => {
     if (activeId === null) return;
-    const x = offsets.current[activeId];
-    if (x !== undefined) {
-      scroller.current?.scrollTo({ x: Math.max(0, x - theme.spacing.xxl), animated: true });
-    }
-  }, [activeId, theme.spacing.xxl]);
+
+    const chip = offsets.current[activeId];
+    if (chip === undefined || viewport.current === 0) return;
+    if (Date.now() < draggingUntil.current) return;
+
+    const left = scrollX.current;
+    const right = left + viewport.current;
+    const margin = theme.spacing.xl;
+
+    const hiddenLeft = chip.x < left + margin;
+    const hiddenRight = chip.x + chip.width > right - margin;
+    if (!hiddenLeft && !hiddenRight) return;
+
+    scroller.current?.scrollTo({ x: Math.max(0, chip.x - margin), animated: true });
+  }, [activeId, theme.spacing.xl]);
 
   return (
     <ScrollView
       ref={scroller}
       horizontal
       showsHorizontalScrollIndicator={false}
+      scrollEventThrottle={32}
+      onLayout={(event: LayoutChangeEvent) => {
+        viewport.current = event.nativeEvent.layout.width;
+      }}
+      onScroll={(event) => {
+        scrollX.current = event.nativeEvent.contentOffset.x;
+      }}
+      onScrollBeginDrag={() => {
+        // Пока гость листает полосу сам, автоподъезд молчит
+        draggingUntil.current = Date.now() + 2500;
+      }}
       contentContainerStyle={{
         paddingHorizontal: theme.layout.screenPadding,
         gap: theme.spacing.sm,
@@ -44,7 +70,8 @@ export function CategoryBar({ categories, activeId, onSelect }: Props) {
           <View
             key={category.id}
             onLayout={(event) => {
-              offsets.current[category.id] = event.nativeEvent.layout.x;
+              const { x, width } = event.nativeEvent.layout;
+              offsets.current[category.id] = { x, width };
             }}
           >
           <PressableScale

@@ -36,6 +36,9 @@ export default function MenuScreen() {
 
   const listRef = useRef<FlashListRef<Row>>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  // Пока список едет к выбранному разделу, слежение за прокруткой молчит:
+  // иначе по дороге он подсвечивает все промежуточные категории
+  const jumpingUntil = useRef(0);
 
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() });
 
@@ -114,6 +117,7 @@ export default function MenuScreen() {
   const jumpTo = (categoryId: string) => {
     const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
     if (index >= 0) {
+      jumpingUntil.current = Date.now() + 900;
       setActiveCategory(categoryId);
       listRef.current?.scrollToIndex({ index, animated: true, viewOffset: theme.spacing.sm });
     }
@@ -121,6 +125,8 @@ export default function MenuScreen() {
 
   const onViewable = useRef(
     ({ viewableItems }: { viewableItems: { item: Row }[] }) => {
+      if (Date.now() < jumpingUntil.current) return;
+
       const first = viewableItems.find(
         (entry) => entry.item.kind === 'title' || entry.item.kind === 'pair',
       );
@@ -168,6 +174,7 @@ export default function MenuScreen() {
                 key={`pop-${dish.id}`}
                 dish={dish}
                 width={cardWidth}
+                highlight
                 quantity={quantityOf(dish.id)}
                 onOpen={() => router.push(`/dish/${dish.id}`)}
                 onAdd={() => cart.add(dish)}

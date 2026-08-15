@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -15,10 +16,26 @@ type Props = {
   onChangeQuantity: (quantity: number) => void;
   /** Узкая карточка для горизонтальных полок. */
   width?: number;
+  /** Отметка «Хит» — ставим на полке частых заказов. */
+  highlight?: boolean;
 };
 
-export function DishCard({ dish, quantity, onOpen, onAdd, onChangeQuantity, width }: Props) {
+export function DishCard({
+  dish,
+  quantity,
+  onOpen,
+  onAdd,
+  onChangeQuantity,
+  width,
+  highlight,
+}: Props) {
   const theme = useTheme();
+
+  // Короткая вибрация в момент добавления — отклик, которого ждёт рука
+  const add = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onAdd();
+  };
   const photo = mediaUrl(dish.image_url);
   const measure = dish.weight_grams
     ? `${dish.weight_grams} г`
@@ -54,6 +71,24 @@ export function DishCard({ dish, quantity, onOpen, onAdd, onChangeQuantity, widt
             />
           </View>
         )}
+
+        {highlight ? (
+          <View
+            style={[
+              styles.hit,
+              {
+                left: theme.spacing.sm,
+                top: theme.spacing.sm,
+                paddingHorizontal: theme.spacing.sm,
+                paddingVertical: theme.spacing.xxs,
+                borderRadius: theme.radius.sm,
+                backgroundColor: theme.colors.highlight,
+              },
+            ]}
+          >
+            <Text style={[theme.typography.overline, { color: theme.colors.textInverse }]}>Хит</Text>
+          </View>
+        ) : null}
 
         {dish.is_available ? (
           quantity > 0 ? (
@@ -96,7 +131,7 @@ export function DishCard({ dish, quantity, onOpen, onAdd, onChangeQuantity, widt
             </View>
           ) : (
             <PressableScale
-              onPress={onAdd}
+              onPress={add}
               accessibilityLabel={`Добавить ${dish.name} в корзину`}
               depth={0.88}
               style={[
@@ -170,4 +205,5 @@ const styles = StyleSheet.create({
   },
   stepButton: { alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute' },
+  hit: { position: 'absolute' },
 });

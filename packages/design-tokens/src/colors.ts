@@ -59,6 +59,9 @@ export interface ColorScheme {
   accent: string;
   accentSubtle: string;
 
+  highlight: string;
+  highlightSubtle: string;
+
   background: string;
   backgroundAlt: string;
   surface: string;
@@ -96,6 +99,9 @@ export const lightColors: ColorScheme = {
   accent: palette.basil[500],
   accentSubtle: palette.basil[50],
 
+  highlight: palette.saffron[700],
+  highlightSubtle: palette.saffron[100],
+
   background: palette.sand[0],
   backgroundAlt: palette.sand[50],
   surface: palette.sand[0],
@@ -132,6 +138,9 @@ export const darkColors: ColorScheme = {
 
   accent: palette.basil[300],
   accentSubtle: "rgba(111, 185, 152, 0.16)",
+
+  highlight: palette.saffron[300],
+  highlightSubtle: "rgba(242, 194, 102, 0.16)",
 
   background: palette.sand[900],
   backgroundAlt: "#211C19",
