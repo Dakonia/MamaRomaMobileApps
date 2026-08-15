@@ -21,6 +21,7 @@ export type Slot = components['schemas']['SlotRead'];
 export type Address = components['schemas']['AddressRead'];
 export type AddressCreate = components['schemas']['AddressCreate'];
 export type GuestUpdate = components['schemas']['GuestUpdate'];
+export type Promotion = components['schemas']['PromotionRead'];
 
 let accessToken: string | null = null;
 
@@ -140,6 +141,9 @@ export const api = {
 
   addAddress: (payload: AddressCreate) =>
     request<Address>('/api/v1/addresses', { method: 'POST', body: JSON.stringify(payload) }),
+
+  promotions: (restaurantId?: string) =>
+    request<Promotion[]>(`/api/v1/promotions${query({ restaurant_id: restaurantId })}`),
 
   deleteAddress: async (id: string) => {
     await request<unknown>(`/api/v1/addresses/${id}`, { method: 'DELETE' });

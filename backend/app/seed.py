@@ -14,6 +14,7 @@ from app.core.db import SessionLocal, engine
 from app.core.security import hash_password
 from app.models.geo import City, Restaurant
 from app.models.menu import Dish, DishPrice, MenuCategory, StopListEntry
+from app.models.promotion import Promotion
 from app.models.staff import StaffUser
 
 TENANT_ID = settings.default_tenant_id
@@ -204,6 +205,35 @@ async def seed() -> None:
                     comment="Закончились сливки",
                 )
             )
+
+        promos = [
+            (
+                "Паста дня — 490 ₽",
+                "Каждый будний день с 12:00 до 16:00 одна паста из меню по специальной цене.",
+                "−30%",
+            ),
+            (
+                "Тирамису в подарок",
+                "При заказе от 2500 ₽ добавим фирменный тирамису бесплатно.",
+                "Подарок",
+            ),
+        ]
+        for order_index, (title, description, label) in enumerate(promos):
+            exists = await session.scalar(
+                select(Promotion).where(
+                    Promotion.tenant_id == TENANT_ID, Promotion.title == title
+                )
+            )
+            if exists is None:
+                session.add(
+                    Promotion(
+                        tenant_id=TENANT_ID,
+                        title=title,
+                        description=description,
+                        label=label,
+                        sort_order=order_index,
+                    )
+                )
 
         staff = await session.scalar(
             select(StaffUser).where(

@@ -14,6 +14,7 @@ from app.models.guest import Device, Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishPrice, MenuCategory, StopListEntry
 from app.models.order import Order, OrderItem
+from app.models.promotion import Promotion
 from app.models.reservation import Reservation
 from app.models.staff import StaffUser
 
@@ -36,6 +37,7 @@ __all__ = [
     "PaymentMethod",
     "PaymentStatus",
     "PhoneCode",
+    "Promotion",
     "Reservation",
     "ReservationStatus",
     "Restaurant",

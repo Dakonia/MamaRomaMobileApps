@@ -110,6 +110,33 @@ export type Order = {
   created_at: string;
   items: OrderItem[];
 };
+export type Promotion = {
+  id: string;
+  title: string;
+  description: string | null;
+  label: string | null;
+  image_url: string | null;
+  restaurant_id: string | null;
+  restaurant_name: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type PromotionDraft = {
+  title: string;
+  description: string | null;
+  label: string | null;
+  image_url: string | null;
+  restaurant_id: string | null;
+  ends_at: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type Restaurant = { id: string; name: string };
+
 export type Reservation = {
   id: string;
   status: string;
@@ -171,6 +198,19 @@ export const api = {
   orders: () => request<Order[]>("/admin/orders"),
   setOrderStatus: (id: string, status: string) =>
     request<Order>(`/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  restaurants: () => request<Restaurant[]>("/restaurants"),
+
+  promotions: () => request<Promotion[]>("/admin/promotions"),
+  createPromotion: (payload: PromotionDraft) =>
+    request<Promotion>("/admin/promotions", { method: "POST", body: JSON.stringify(payload) }),
+  updatePromotion: (id: string, patch: Partial<PromotionDraft>) =>
+    request<Promotion>(`/admin/promotions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deletePromotion: (id: string) =>
+    request<void>(`/admin/promotions/${id}`, { method: "DELETE" }),
 
   reservations: () => request<Reservation[]>("/admin/reservations"),
   setReservationStatus: (id: string, status: string) =>

@@ -11,6 +11,7 @@ from app.models.enums import OrderStatus, ReservationStatus
 from app.models.geo import Restaurant
 from app.models.menu import Dish, MenuCategory, StopListEntry
 from app.models.order import Order
+from app.models.promotion import Promotion
 from app.models.reservation import Reservation
 from app.models.staff import StaffUser
 from app.schemas.admin import (
@@ -29,6 +30,11 @@ from app.schemas.admin import (
     StopListWrite,
 )
 from app.schemas.order import OrderRead
+from app.schemas.promotion import (
+    PromotionAdminRead,
+    PromotionPatch,
+    PromotionWrite,
+)
 from app.schemas.reservation import ReservationRead
 from app.services import media as media_service
 from app.services import order as order_service
@@ -416,3 +422,104 @@ async def set_reservation_status(
     await session.commit()
     await session.refresh(reservation)
     return reservation_service.to_read(reservation)
+
+
+# ─────────────────────────── акции ───────────────────────────
+
+
+def _promotion_read(promotion: Promotion, restaurant_name: str | None) -> PromotionAdminRead:
+    return PromotionAdminRead(
+        id=promotion.id,
+        title=promotion.title,
+        description=promotion.description,
+        label=promotion.label,
+        image_url=promotion.image_url,
+        restaurant_id=promotion.restaurant_id,
+        restaurant_name=restaurant_name,
+        starts_at=promotion.starts_at,
+        ends_at=promotion.ends_at,
+        sort_order=promotion.sort_order,
+        is_active=promotion.is_active,
+    )
+
+
+async def _restaurant_names(session: SessionDep, tenant_id: str) -> dict[UUID, str]:
+    rows = await session.execute(
+        select(Restaurant.id, Restaurant.name).where(Restaurant.tenant_id == tenant_id)
+    )
+    return {row.id: row.name for row in rows}
+
+
+@router.get("/promotions", summary="Все акции")
+async def promotions(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[PromotionAdminRead]:
+    names = await _restaurant_names(session, tenant.id)
+    rows = await session.scalars(
+        select(Promotion)
+        .where(Promotion.tenant_id == tenant.id)
+        .order_by(Promotion.sort_order, Promotion.created_at.desc())
+    )
+    return [
+        _promotion_read(row, names.get(row.restaurant_id) if row.restaurant_id else None)
+        for row in rows
+    ]
+
+
+@router.post("/promotions", status_code=status.HTTP_201_CREATED, summary="Создать акцию")
+async def create_promotion(
+    payload: PromotionWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> PromotionAdminRead:
+    promotion = Promotion(tenant_id=tenant.id, **payload.model_dump())
+    session.add(promotion)
+    await session.commit()
+    await session.refresh(promotion)
+
+    names = await _restaurant_names(session, tenant.id)
+    return _promotion_read(
+        promotion, names.get(promotion.restaurant_id) if promotion.restaurant_id else None
+    )
+
+
+@router.patch("/promotions/{promotion_id}", summary="Изменить акцию")
+async def update_promotion(
+    promotion_id: UUID,
+    payload: PromotionPatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> PromotionAdminRead:
+    promotion = await session.scalar(
+        select(Promotion).where(Promotion.id == promotion_id, Promotion.tenant_id == tenant.id)
+    )
+    if promotion is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Акция не найдена")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(promotion, field, value)
+    await session.commit()
+    await session.refresh(promotion)
+
+    names = await _restaurant_names(session, tenant.id)
+    return _promotion_read(
+        promotion, names.get(promotion.restaurant_id) if promotion.restaurant_id else None
+    )
+
+
+@router.delete(
+    "/promotions/{promotion_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить акцию",
+)
+async def delete_promotion(
+    promotion_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    promotion = await session.scalar(
+        select(Promotion).where(Promotion.id == promotion_id, Promotion.tenant_id == tenant.id)
+    )
+    if promotion is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Акция не найдена")
+
+    media_service.delete_image(promotion.image_url)
+    await session.delete(promotion)
+    await session.commit()

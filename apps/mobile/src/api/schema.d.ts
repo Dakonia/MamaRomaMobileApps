@@ -279,6 +279,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Действующие акции */
+        get: operations["promotions_api_v1_promotions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/login": {
         parameters: {
             query?: never;
@@ -313,6 +330,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Загрузить фотографию */
+        post: operations["upload_api_v1_admin_uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/categories": {
         parameters: {
             query?: never;
@@ -341,7 +375,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Удалить категорию */
+        delete: operations["delete_category_api_v1_admin_categories__category_id__delete"];
         options?: never;
         head?: never;
         /** Изменить категорию */
@@ -376,7 +411,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Удалить блюдо */
+        delete: operations["delete_dish_api_v1_admin_dishes__dish_id__delete"];
         options?: never;
         head?: never;
         /** Изменить блюдо */
@@ -486,6 +522,42 @@ export interface paths {
         patch: operations["set_reservation_status_api_v1_admin_reservations__reservation_id__patch"];
         trace?: never;
     };
+    "/api/v1/admin/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Все акции */
+        get: operations["promotions_api_v1_admin_promotions_get"];
+        put?: never;
+        /** Создать акцию */
+        post: operations["create_promotion_api_v1_admin_promotions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/promotions/{promotion_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить акцию */
+        delete: operations["delete_promotion_api_v1_admin_promotions__promotion_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить акцию */
+        patch: operations["update_promotion_api_v1_admin_promotions__promotion_id__patch"];
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -573,6 +645,11 @@ export interface components {
             /** Full Text */
             full_text: string;
         };
+        /** Body_upload_api_v1_admin_uploads_post */
+        Body_upload_api_v1_admin_uploads_post: {
+            /** File */
+            file: string;
+        };
         /** CategoryAdminRead */
         CategoryAdminRead: {
             /**
@@ -595,6 +672,19 @@ export interface components {
              * @default 0
              */
             dishes_count: number;
+        };
+        /** CategoryPatch */
+        CategoryPatch: {
+            /** Name */
+            name?: string | null;
+            /** Slug */
+            slug?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Image Url */
+            image_url?: string | null;
         };
         /** CategoryWrite */
         CategoryWrite: {
@@ -679,10 +769,18 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+            /** Composition */
+            composition: string | null;
+            /** Image Url */
+            image_url: string | null;
             /** Price Kopecks */
             price_kopecks: number;
             /** Weight Grams */
             weight_grams: number | null;
+            /** Volume Ml */
+            volume_ml: number | null;
+            /** Calories */
+            calories: number | null;
             /** Is Active */
             is_active: boolean;
             /** Sort Order */
@@ -975,6 +1073,104 @@ export interface components {
         ProfileRead: {
             guest: components["schemas"]["GuestRead"];
             loyalty: components["schemas"]["LoyaltyRead"];
+        };
+        /** PromotionAdminRead */
+        PromotionAdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Label */
+            label: string | null;
+            /** Image Url */
+            image_url: string | null;
+            /** Restaurant Id */
+            restaurant_id: string | null;
+            /** Starts At */
+            starts_at: string | null;
+            /** Ends At */
+            ends_at: string | null;
+            /** Sort Order */
+            sort_order: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Restaurant Name */
+            restaurant_name?: string | null;
+        };
+        /** PromotionPatch */
+        PromotionPatch: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /** Restaurant Id */
+            restaurant_id?: string | null;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** PromotionRead */
+        PromotionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Label */
+            label: string | null;
+            /** Image Url */
+            image_url: string | null;
+            /** Restaurant Id */
+            restaurant_id: string | null;
+            /** Starts At */
+            starts_at: string | null;
+            /** Ends At */
+            ends_at: string | null;
+        };
+        /** PromotionWrite */
+        PromotionWrite: {
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /** Restaurant Id */
+            restaurant_id?: string | null;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Ends At */
+            ends_at?: string | null;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -1852,6 +2048,39 @@ export interface operations {
             };
         };
     };
+    promotions_api_v1_promotions_get: {
+        parameters: {
+            query?: {
+                restaurant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_admin_login_post: {
         parameters: {
             query?: never;
@@ -1905,6 +2134,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StaffRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_api_v1_admin_uploads_post: {
+        parameters: {
+            query?: {
+                folder?: string;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_api_v1_admin_uploads_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -1984,6 +2252,37 @@ export interface operations {
             };
         };
     };
+    delete_category_api_v1_admin_categories__category_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_category_api_v1_admin_categories__category_id__patch: {
         parameters: {
             query?: never;
@@ -1997,7 +2296,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CategoryWrite"];
+                "application/json": components["schemas"]["CategoryPatch"];
             };
         };
         responses: {
@@ -2077,6 +2376,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DishAdminRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_dish_api_v1_admin_dishes__dish_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                dish_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -2352,6 +2682,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReservationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promotions_api_v1_admin_promotions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionAdminRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_promotion_api_v1_admin_promotions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotionWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_promotion_api_v1_admin_promotions__promotion_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                promotion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_promotion_api_v1_admin_promotions__promotion_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                promotion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionAdminRead"];
                 };
             };
             /** @description Validation Error */

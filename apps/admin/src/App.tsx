@@ -11,9 +11,10 @@ import {
   tenant,
 } from "./api";
 import { MenuTab } from "./MenuTab";
+import { PromosTab } from "./PromosTab";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
 
-type Tab = "menu" | "orders" | "reservations";
+type Tab = "menu" | "orders" | "reservations" | "promos";
 
 const ORDER_FLOW: Record<string, { label: string; next: { status: string; label: string }[] }> = {
   created: { label: "Оформлен", next: [{ status: "accepted", label: "Принять" }] },
@@ -284,6 +285,7 @@ export default function App() {
     { key: "orders", label: "Заказы" },
     { key: "reservations", label: "Брони" },
     { key: "menu", label: "Меню" },
+    { key: "promos", label: "Акции" },
   ];
 
   return (
@@ -321,6 +323,7 @@ export default function App() {
         {tab === "orders" ? <OrdersTab /> : null}
         {tab === "reservations" ? <ReservationsTab /> : null}
         {tab === "menu" ? <MenuTab /> : null}
+        {tab === "promos" ? <PromosTab /> : null}
       </main>
     </div>
   );
