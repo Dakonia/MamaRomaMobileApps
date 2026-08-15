@@ -34,6 +34,14 @@ class CategoryWrite(BaseModel):
     image_url: str | None = Field(default=None, max_length=500)
 
 
+class CategoryPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    slug: str | None = Field(default=None, min_length=1, max_length=60, pattern=r"^[a-z0-9-]+$")
+    sort_order: int | None = None
+    is_active: bool | None = None
+    image_url: str | None = Field(default=None, max_length=500)
+
+
 class CategoryAdminRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,8 +89,12 @@ class DishAdminRead(BaseModel):
     category_id: UUID
     name: str
     description: str | None
+    composition: str | None
+    image_url: str | None
     price_kopecks: int
     weight_grams: int | None
+    volume_ml: int | None
+    calories: int | None
     is_active: bool
     sort_order: int
 

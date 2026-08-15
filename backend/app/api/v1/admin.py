@@ -15,6 +15,7 @@ from app.models.reservation import Reservation
 from app.models.staff import StaffUser
 from app.schemas.admin import (
     CategoryAdminRead,
+    CategoryPatch,
     CategoryWrite,
     DishAdminRead,
     DishPatch,
@@ -121,7 +122,7 @@ async def create_category(
 @router.patch("/categories/{category_id}", summary="Изменить категорию")
 async def update_category(
     category_id: UUID,
-    payload: CategoryWrite,
+    payload: CategoryPatch,
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
@@ -134,11 +135,40 @@ async def update_category(
     if category is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Категория не найдена")
 
-    for field, value in payload.model_dump().items():
+    for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(category, field, value)
     await session.commit()
     await session.refresh(category)
     return CategoryAdminRead.model_validate(category)
+
+
+@router.delete(
+    "/categories/{category_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить категорию",
+)
+async def delete_category(
+    category_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    category = await session.scalar(
+        select(MenuCategory).where(
+            MenuCategory.id == category_id, MenuCategory.tenant_id == tenant.id
+        )
+    )
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Категория не найдена")
+
+    used = await session.scalar(
+        select(func.count()).select_from(Dish).where(Dish.category_id == category_id)
+    )
+    if used:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"В категории {used} блюд. Сначала перенесите или удалите их",
+        )
+
+    await session.delete(category)
+    await session.commit()
 
 
 @router.get("/dishes", summary="Блюда")
@@ -192,6 +222,23 @@ async def update_dish(
     await session.commit()
     await session.refresh(dish)
     return DishAdminRead.model_validate(dish)
+
+
+@router.delete(
+    "/dishes/{dish_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить блюдо"
+)
+async def delete_dish(
+    dish_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    dish = await session.scalar(
+        select(Dish).where(Dish.id == dish_id, Dish.tenant_id == tenant.id)
+    )
+    if dish is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Блюдо не найдено")
+
+    # В заказах остаётся снимок названия и цены, поэтому удаление истории не рушит
+    await session.delete(dish)
+    await session.commit()
 
 
 # ─────────────────────────── стоп-лист ───────────────────────────

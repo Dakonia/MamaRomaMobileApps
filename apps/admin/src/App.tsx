@@ -9,8 +9,8 @@ import {
   getToken,
   setToken,
   tenant,
-  type Dish,
 } from "./api";
+import { MenuTab } from "./MenuTab";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
 
 type Tab = "menu" | "orders" | "reservations";
@@ -115,124 +115,6 @@ function Login({ onDone }: { onDone: () => void }) {
         </Button>
       </form>
     </div>
-  );
-}
-
-function MenuTab() {
-  const queryClient = useQueryClient();
-  const categories = useQuery({ queryKey: ["categories"], queryFn: api.categories });
-  const dishes = useQuery({ queryKey: ["dishes"], queryFn: api.dishes });
-  const stopList = useQuery({ queryKey: ["stop-list"], queryFn: api.stopList });
-
-  const [draft, setDraft] = useState<Record<string, string>>({});
-
-  const patch = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Partial<Dish> }) => api.updateDish(id, body),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["dishes"] }),
-  });
-
-  const removeStop = useMutation({
-    mutationFn: (id: string) => api.removeStop(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["stop-list"] }),
-  });
-
-  const nameOf = (id: string) => categories.data?.find((item) => item.id === id)?.name ?? "—";
-
-  return (
-    <>
-      <Section title="Блюда">
-        <div style={styles.card}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Название</th>
-                <th style={styles.th}>Категория</th>
-                <th style={styles.th}>Цена</th>
-                <th style={styles.th}>В продаже</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(dishes.data ?? []).map((dish) => (
-                <tr key={dish.id}>
-                  <td style={styles.td}>
-                    <div style={{ fontWeight: 500 }}>{dish.name}</div>
-                    {dish.description ? (
-                      <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                        {dish.description}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td style={{ ...styles.td, color: c.textSecondary }}>{nameOf(dish.category_id)}</td>
-                  <td style={styles.td}>
-                    <div style={{ display: "flex", gap: spacing.sm, alignItems: "center" }}>
-                      <input
-                        style={{ ...styles.input, width: 110 }}
-                        inputMode="numeric"
-                        value={draft[dish.id] ?? String(Math.round(dish.price_kopecks / 100))}
-                        onChange={(event) =>
-                          setDraft({ ...draft, [dish.id]: event.target.value.replace(/\D/g, "") })
-                        }
-                      />
-                      {draft[dish.id] !== undefined &&
-                      draft[dish.id] !== String(Math.round(dish.price_kopecks / 100)) ? (
-                        <Button
-                          onClick={() => {
-                            patch.mutate({
-                              id: dish.id,
-                              body: { price_kopecks: Number(draft[dish.id]) * 100 },
-                            });
-                            const next = { ...draft };
-                            delete next[dish.id];
-                            setDraft(next);
-                          }}
-                        >
-                          Сохранить
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td style={styles.td}>
-                    <Button
-                      tone={dish.is_active ? "quiet" : "brand"}
-                      onClick={() =>
-                        patch.mutate({ id: dish.id, body: { is_active: !dish.is_active } })
-                      }
-                    >
-                      {dish.is_active ? "Снять с продажи" : "Вернуть"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Стоп-лист">
-        {(stopList.data ?? []).length === 0 ? (
-          <p style={{ color: c.textSecondary, margin: 0 }}>Сейчас всё есть в наличии.</p>
-        ) : (
-          <div style={styles.card}>
-            <table style={styles.table}>
-              <tbody>
-                {(stopList.data ?? []).map((entry) => (
-                  <tr key={entry.id}>
-                    <td style={styles.td}>{entry.dish_name}</td>
-                    <td style={{ ...styles.td, color: c.textSecondary }}>{entry.restaurant_name}</td>
-                    <td style={{ ...styles.td, color: c.textSecondary }}>{entry.comment ?? "—"}</td>
-                    <td style={styles.td}>
-                      <Button tone="quiet" onClick={() => removeStop.mutate(entry.id)}>
-                        Вернуть в меню
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
-    </>
   );
 }
 

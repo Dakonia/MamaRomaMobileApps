@@ -68,10 +68,26 @@ export type Dish = {
   category_id: string;
   name: string;
   description: string | null;
+  composition: string | null;
+  image_url: string | null;
   price_kopecks: number;
   weight_grams: number | null;
+  volume_ml: number | null;
+  calories: number | null;
   is_active: boolean;
   sort_order: number;
+};
+
+export type DishDraft = {
+  category_id: string;
+  name: string;
+  price_kopecks: number;
+  description: string | null;
+  composition: string | null;
+  weight_grams: number | null;
+  calories: number | null;
+  sort_order: number;
+  is_active: boolean;
 };
 export type StopEntry = {
   id: string;
@@ -113,11 +129,18 @@ export const api = {
   me: () => request<Staff>("/admin/me"),
 
   categories: () => request<Category[]>("/admin/categories"),
+  createCategory: (payload: { name: string; slug: string; sort_order: number }) =>
+    request<Category>("/admin/categories", { method: "POST", body: JSON.stringify(payload) }),
+  updateCategory: (id: string, patch: Partial<Category>) =>
+    request<Category>(`/admin/categories/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteCategory: (id: string) =>
+    request<void>(`/admin/categories/${id}`, { method: "DELETE" }),
   dishes: () => request<Dish[]>("/admin/dishes"),
   updateDish: (id: string, patch: Partial<Dish>) =>
     request<Dish>(`/admin/dishes/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  createDish: (payload: Record<string, unknown>) =>
+  createDish: (payload: DishDraft) =>
     request<Dish>("/admin/dishes", { method: "POST", body: JSON.stringify(payload) }),
+  deleteDish: (id: string) => request<void>(`/admin/dishes/${id}`, { method: "DELETE" }),
 
   stopList: () => request<StopEntry[]>("/admin/stop-list"),
   removeStop: (id: string) =>
