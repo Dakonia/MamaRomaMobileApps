@@ -14,6 +14,9 @@
     "db:up": "brew services start postgresql@17 && brew services start redis",
     "db:down": "brew services stop postgresql@17 && brew services stop redis",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "db:seed": "cd backend && uv run python -m app.seed",
+    "api:types": "pnpm --filter @mr/mobile api:types",
+    "web": "pnpm --filter @mr/mobile web"
   }
 }

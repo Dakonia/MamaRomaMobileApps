@@ -29,7 +29,25 @@ class Settings(BaseSettings):
 
     default_tenant_id: str = "mamaroma"
 
-    cors_origins: list[str] = ["http://localhost:8081", "http://localhost:19006"]
+    sms_code_length: int = 4
+    sms_code_ttl_minutes: int = 5
+    sms_code_resend_seconds: int = 60
+    sms_code_max_attempts: int = 5
+    # В local и staging код не отправляем, а пишем в лог и принимаем этот фиксированный
+    sms_code_debug_value: str | None = "0000"
+
+    cors_origins: list[str] = [
+        "http://localhost:8081",
+        "http://localhost:19006",
+        "http://localhost:8000",
+    ]
+
+    # Вне продакшена разрешаем локальную сеть: телефон открывает приложение
+    # по адресу вида http://192.168.0.5:8081, и это другой origin
+    cors_local_network_regex: str = (
+        r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|"
+        r"172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?"
+    )
 
     sms_provider_api_key: str = ""
     yookassa_shop_id: str = ""

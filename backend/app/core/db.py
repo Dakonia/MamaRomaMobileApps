@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import DateTime, MetaData, String, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -26,9 +26,7 @@ class UUIDMixin:
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -38,6 +36,17 @@ class TenantMixin:
     """Каждая доменная таблица несёт tenant_id — изоляция сетей с первого дня."""
 
     tenant_id: Mapped[str] = mapped_column(index=True)
+
+
+class ExternalSyncMixin:
+    """Связь с внешней системой ресторана (iiko, r_keeper).
+
+    Пока пусто: меню ведём у себя. Когда включим синхронизацию, маппинг уже
+    будет чем хранить — миграция на живых данных не потребуется.
+    """
+
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
 engine = create_async_engine(

@@ -45,7 +45,11 @@ cd backend && uv run ruff check . && uv run mypy .
 - Платежи ЮKassa (СБП + Мир), карты Яндекс MapKit, аналитика AppMetrica, push через
   expo-notifications с RuStore как запасным каналом на Android.
 - Дизайн-направление A «Mercato»: белый фон, терракота `#C0392B` как единственный
-  акцент действия, базилик `#1B7F5A` для статусов, шрифты Oswald (заголовки) / Onest (текст).
+  акцент действия, базилик `#1B7F5A` для статусов, шрифты Comfortaa (заголовки, кнопки,
+  цены — как на сайте сети) / Onest (текст и плотный UI).
+- Шрифты сайта mamaroma.ru перенесены не полностью: Adlery Pro и Citrica Cyrillic —
+  коммерческие, нужна лицензия на embedding в приложение; Athelas есть только на iOS.
+  Из системы сайта взята Comfortaa (Google Fonts, OFL, полная кириллица).
 
 ## Лояльность
 

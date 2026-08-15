@@ -1,19 +1,29 @@
 import {
+  Comfortaa_500Medium,
+  Comfortaa_600SemiBold,
+  Comfortaa_700Bold,
+} from '@expo-google-fonts/comfortaa';
+import {
   Onest_400Regular,
   Onest_500Medium,
   Onest_600SemiBold,
   Onest_700Bold,
 } from '@expo-google-fonts/onest';
-import { Oswald_500Medium, Oswald_600SemiBold } from '@expo-google-fonts/oswald';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from 'expo-router';
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider as NavigationThemeProvider,
+} from '@react-navigation/native';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import AppTabs from '@/components/app-tabs';
+import { useSession } from '@/store/session';
 import { darkTheme, lightTheme } from '@/theme';
 import { ThemeProvider } from '@/theme/theme-provider';
 
@@ -35,13 +45,21 @@ export default function RootLayout() {
   const theme = isDark ? darkTheme : lightTheme;
 
   const [fontsLoaded] = useFonts({
-    Oswald_500Medium,
-    Oswald_600SemiBold,
+    Comfortaa_500Medium,
+    Comfortaa_600SemiBold,
+    Comfortaa_700Bold,
     Onest_400Regular,
     Onest_500Medium,
     Onest_600SemiBold,
     Onest_700Bold,
   });
+
+  const restore = useSession((state) => state.restore);
+
+  useEffect(() => {
+    // Токен лежит в secure-store: поднимаем сессию до первого экрана
+    void restore();
+  }, [restore]);
 
   useEffect(() => {
     if (fontsLoaded) {
@@ -70,7 +88,14 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <NavigationThemeProvider value={navigationTheme}>
-            <AppTabs />
+            <StatusBar style={isDark ? 'light' : 'dark'} />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="restaurants" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="cart" />
+              <Stack.Screen name="order/[id]" />
+            </Stack>
           </NavigationThemeProvider>
         </ThemeProvider>
       </QueryClientProvider>

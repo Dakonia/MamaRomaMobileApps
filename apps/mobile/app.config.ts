@@ -19,7 +19,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     bundleIdentifier: stores.bundleIdentifier,
     supportsTablet: true,
-    icon: "./assets/expo.icon",
     infoPlist: {
       CFBundleAllowMixedLocalizations: true,
       NSLocationWhenInUseUsageDescription:

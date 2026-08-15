@@ -1,6 +1,7 @@
 export const fontFamily = {
-  display: "Oswald_600SemiBold",
-  displayMedium: "Oswald_500Medium",
+  display: "Comfortaa_600SemiBold",
+  displayBold: "Comfortaa_700Bold",
+  displayMedium: "Comfortaa_500Medium",
   body: "Onest_400Regular",
   bodyMedium: "Onest_500Medium",
   bodySemiBold: "Onest_600SemiBold",
@@ -8,9 +9,9 @@ export const fontFamily = {
 } as const;
 
 export const typography = {
-  display: { fontFamily: fontFamily.display, fontSize: 34, lineHeight: 40, letterSpacing: 0.2 },
-  h1: { fontFamily: fontFamily.display, fontSize: 28, lineHeight: 34, letterSpacing: 0.2 },
-  h2: { fontFamily: fontFamily.display, fontSize: 22, lineHeight: 28, letterSpacing: 0.2 },
+  display: { fontFamily: fontFamily.displayBold, fontSize: 32, lineHeight: 42, letterSpacing: -0.4 },
+  h1: { fontFamily: fontFamily.display, fontSize: 26, lineHeight: 34, letterSpacing: -0.3 },
+  h2: { fontFamily: fontFamily.display, fontSize: 21, lineHeight: 28, letterSpacing: -0.2 },
   h3: { fontFamily: fontFamily.bodySemiBold, fontSize: 18, lineHeight: 24 },
   bodyLg: { fontFamily: fontFamily.body, fontSize: 17, lineHeight: 24 },
   body: { fontFamily: fontFamily.body, fontSize: 15, lineHeight: 22 },
@@ -23,8 +24,8 @@ export const typography = {
     letterSpacing: 0.8,
     textTransform: "uppercase" as const,
   },
-  price: { fontFamily: fontFamily.displayMedium, fontSize: 19, lineHeight: 24 },
-  button: { fontFamily: fontFamily.bodySemiBold, fontSize: 16, lineHeight: 20 },
+  price: { fontFamily: fontFamily.displayBold, fontSize: 19, lineHeight: 26, letterSpacing: -0.2 },
+  button: { fontFamily: fontFamily.display, fontSize: 16, lineHeight: 22, letterSpacing: -0.1 },
 } as const;
 
 export type TypographyToken = keyof typeof typography;

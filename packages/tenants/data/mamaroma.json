@@ -22,7 +22,7 @@
     "dineInReservation": true,
     "loyalty": true,
     "stories": true,
-    "onlinePayment": true
+    "onlinePayment": false
   },
   "loyalty": {
     "pointToRubleRate": 1,
@@ -31,10 +31,30 @@
     "welcomeBonus": 300,
     "birthdayBonus": 500,
     "tiers": [
-      { "code": "ospite", "title": "Ospite", "cashbackPercent": 5, "thresholdRub": 0 },
-      { "code": "amico", "title": "Amico", "cashbackPercent": 7, "thresholdRub": 15000 },
-      { "code": "famiglia", "title": "Famiglia", "cashbackPercent": 10, "thresholdRub": 50000 },
-      { "code": "maestro", "title": "Maestro", "cashbackPercent": 12, "thresholdRub": 120000 }
+      {
+        "code": "ospite",
+        "title": "Ospite",
+        "cashbackPercent": 5,
+        "thresholdRub": 0
+      },
+      {
+        "code": "amico",
+        "title": "Amico",
+        "cashbackPercent": 7,
+        "thresholdRub": 15000
+      },
+      {
+        "code": "famiglia",
+        "title": "Famiglia",
+        "cashbackPercent": 10,
+        "thresholdRub": 50000
+      },
+      {
+        "code": "maestro",
+        "title": "Maestro",
+        "cashbackPercent": 12,
+        "thresholdRub": 120000
+      }
     ]
   },
   "supportPhone": "+7 (812) 777-77-77",
