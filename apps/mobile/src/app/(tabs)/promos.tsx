@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { api, mediaUrl, type Promotion } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
+import { PressableScale } from '@/components/pressable-scale';
 import { ScreenHeader } from '@/components/screen-header';
 import { useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
@@ -92,8 +94,11 @@ export default function PromosScreen() {
           const deadline = until(promotion);
 
           return (
-            <View
+            <PressableScale
               key={promotion.id}
+              onPress={() => router.push(`/promo/${promotion.id}`)}
+              accessibilityLabel={promotion.title}
+              depth={0.98}
               style={[
                 styles.card,
                 {
@@ -156,7 +161,7 @@ export default function PromosScreen() {
                   </Text>
                 ) : null}
               </View>
-            </View>
+            </PressableScale>
           );
         })}
       </ScrollView>

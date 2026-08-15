@@ -6,11 +6,14 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useEffect } from 'react';
 import Animated, {
+  Easing,
   interpolate,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,25 +24,78 @@ import { formatPrice } from '@/lib/format';
 import { cartSubtotal, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
 
+const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+
 export default function DishScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const cart = useCart();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, x, y, w, h } = useLocalSearchParams<{
+    id: string;
+    x?: string;
+    y?: string;
+    w?: string;
+    h?: string;
+  }>();
 
   const heroHeight = width * 0.92;
+
+  // Прямоугольник, из которого раскрывается снимок. Без него открываем сразу
+  const from =
+    x && y && w && h
+      ? { x: Number(x), y: Number(y), width: Number(w), height: Number(h) }
+      : null;
+
+  const grow = useSharedValue(from === null ? 1 : 0);
   const scroll = useSharedValue(0);
+
+  useEffect(() => {
+    if (from === null) return;
+    grow.value = withTiming(1, {
+      duration: 380,
+      easing: Easing.bezier(0.2, 0, 0, 1),
+    });
+    // Замер приходит один раз при открытии, пересчитывать нечего
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onScroll = useAnimatedScrollHandler((event) => {
     scroll.value = event.contentOffset.y;
   });
 
-  // Фото уезжает медленнее текста и слегка приближается при оттягивании вниз
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: interpolate(scroll.value, [-heroHeight, 0, heroHeight], [0, 0, heroHeight * 0.4]) },
-      { scale: interpolate(scroll.value, [-heroHeight, 0], [1.6, 1], 'clamp') },
-    ],
+  // Снимок разворачивается из сетки на весь экран, а потом живёт параллаксом
+  const heroStyle = useAnimatedStyle(() => {
+    const progress = grow.value;
+    const start = from ?? { x: 0, y: 0, width, height: heroHeight };
+
+    const parallax = interpolate(
+      scroll.value,
+      [-heroHeight, 0, heroHeight],
+      [0, 0, heroHeight * 0.4],
+    );
+
+    return {
+      left: interpolate(progress, [0, 1], [start.x, 0]),
+      top: interpolate(progress, [0, 1], [start.y, 0]),
+      width: interpolate(progress, [0, 1], [start.width, width]),
+      height: interpolate(progress, [0, 1], [start.height, heroHeight]),
+      borderRadius: interpolate(progress, [0, 1], [theme.radius.xl, 0]),
+      transform: [
+        { translateY: parallax * progress },
+        { scale: interpolate(scroll.value, [-heroHeight, 0], [1.6, 1], 'clamp') },
+      ],
+    };
+  });
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(grow.value, [0, 0.7, 1], [0, 0.9, 1]),
+  }));
+
+  // Текст и панель догоняют снимок, а не появляются одновременно с ним
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(grow.value, [0, 0.6, 1], [0, 0, 1]),
+    transform: [{ translateY: interpolate(grow.value, [0, 1], [theme.spacing.xxl, 0]) }],
   }));
 
   // Меню уже загружено на главной — берём из того же запроса, лишней сети нет
@@ -94,7 +150,15 @@ export default function DishScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+    <View style={styles.root}>
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: theme.colors.background },
+          backdropStyle,
+        ]}
+      />
+
       <Animated.View
         style={[
           styles.hero,
@@ -128,6 +192,7 @@ export default function DishScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        style={contentStyle}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -223,6 +288,7 @@ export default function DishScreen() {
         </View>
       </Animated.ScrollView>
 
+      <Animated.View style={contentStyle} pointerEvents="box-none">
       <PressableScale
         onPress={() => router.back()}
         accessibilityLabel="Закрыть"
@@ -240,13 +306,15 @@ export default function DishScreen() {
       >
         <Ionicons name="chevron-down" size={theme.spacing.xl} color="#FFFFFF" />
       </PressableScale>
+      </Animated.View>
 
       {dish.is_available ? (
-        <BlurView
+        <AnimatedBlurView
           intensity={theme.isDark ? 40 : 60}
           tint={theme.isDark ? 'dark' : 'light'}
           style={[
             styles.bar,
+            contentStyle,
             {
               paddingHorizontal: theme.layout.screenPadding,
               paddingTop: theme.spacing.md,
@@ -322,7 +390,7 @@ export default function DishScreen() {
               </Text>
             </PressableScale>
           )}
-        </BlurView>
+        </AnimatedBlurView>
       ) : null}
     </View>
   );
@@ -330,7 +398,7 @@ export default function DishScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  hero: { position: 'absolute', top: 0, left: 0, right: 0 },
+  hero: { position: 'absolute', overflow: 'hidden' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   grabber: { alignSelf: 'center' },
   facts: { flexDirection: 'row', flexWrap: 'wrap' },

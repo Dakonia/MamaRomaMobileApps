@@ -7,7 +7,7 @@ import { useTheme } from '@/theme/theme-provider';
 
 type Props = {
   promotions: Promotion[];
-  onOpen: () => void;
+  onOpen: (id: string) => void;
 };
 
 export function PromoCarousel({ promotions, onOpen }: Props) {
@@ -39,7 +39,7 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
         return (
           <PressableScale
             key={promotion.id}
-            onPress={onOpen}
+            onPress={() => onOpen(promotion.id)}
             accessibilityLabel={promotion.title}
             depth={0.98}
             style={[

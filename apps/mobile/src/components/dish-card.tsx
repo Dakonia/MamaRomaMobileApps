@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
+import { useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { mediaUrl, type Dish } from '@/api/client';
@@ -8,10 +9,13 @@ import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';
 import { useTheme } from '@/theme/theme-provider';
 
+export type PhotoRect = { x: number; y: number; width: number; height: number };
+
 type Props = {
   dish: Dish;
   quantity: number;
-  onOpen: () => void;
+  /** Отдаём положение снимка на экране — из него карточка и развернётся. */
+  onOpen: (from: PhotoRect | null) => void;
   onAdd: () => void;
   onChangeQuantity: (quantity: number) => void;
   /** Узкая карточка для горизонтальных полок. */
@@ -30,6 +34,18 @@ export function DishCard({
   highlight,
 }: Props) {
   const theme = useTheme();
+  const photoRef = useRef<View>(null);
+
+  // Замер до перехода: анимация должна стартовать ровно с того места,
+  // где снимок лежит в сетке
+  const open = () => {
+    const node = photoRef.current;
+    if (node === null) {
+      onOpen(null);
+      return;
+    }
+    node.measureInWindow((x, y, width, height) => onOpen({ x, y, width, height }));
+  };
 
   const badges = [
     highlight ? { text: 'Хит', background: theme.colors.highlight, color: theme.colors.onHero } : null,
@@ -52,9 +68,14 @@ export function DishCard({
       ? `${dish.volume_ml} мл`
       : null;
 
+  // У трети блюд описания нет — подставляем состав, а если нет и его,
+  // цену показываем крупнее, чтобы карточка не выглядела недозаполненной
+  const subtitle = dish.description ?? dish.composition ?? null;
+  const priceStyle = subtitle === null ? theme.typography.display : theme.typography.price;
+
   return (
     <PressableScale
-      onPress={onOpen}
+      onPress={open}
       accessibilityLabel={`Открыть ${dish.name}`}
       style={[
         styles.root,
@@ -68,7 +89,7 @@ export function DishCard({
         },
       ]}
     >
-      <View style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
+      <View ref={photoRef} style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
         {photo ? (
           <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" transition={220} />
         ) : (
@@ -187,7 +208,7 @@ export function DishCard({
         )}
       </View>
 
-      <View style={{ padding: theme.spacing.md, gap: theme.spacing.xxs }}>
+      <View style={[styles.body, { padding: theme.spacing.md, gap: theme.spacing.xxs }]}>
         <Text
           numberOfLines={2}
           style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}
@@ -195,15 +216,25 @@ export function DishCard({
           {dish.name}
         </Text>
 
-        {measure ? (
-          <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
-            {measure}
+        {subtitle ? (
+          <Text
+            numberOfLines={2}
+            style={[theme.typography.caption, { color: theme.colors.textSecondary }]}
+          >
+            {subtitle}
           </Text>
         ) : null}
 
-        <Text style={[theme.typography.price, { color: theme.colors.textPrimary }]}>
-          {formatPrice(dish.price_kopecks)}
-        </Text>
+        <View style={[styles.priceRow, { gap: theme.spacing.sm, paddingTop: theme.spacing.xxs }]}>
+          <Text style={[priceStyle, { color: theme.colors.textPrimary }]}>
+            {formatPrice(dish.price_kopecks)}
+          </Text>
+          {measure ? (
+            <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
+              {measure}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </PressableScale>
   );
@@ -211,6 +242,8 @@ export function DishCard({
 
 const styles = StyleSheet.create({
   root: { overflow: 'hidden' },
+  body: { flex: 1 },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 'auto' },
   photo: { width: '100%', aspectRatio: 4 / 3 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   add: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },

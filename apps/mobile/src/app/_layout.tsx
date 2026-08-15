@@ -95,7 +95,16 @@ export default function RootLayout() {
               <Stack.Screen name="restaurants" options={{ presentation: 'modal' }} />
               <Stack.Screen name="cart" />
               <Stack.Screen name="order/[id]" />
-              <Stack.Screen name="dish/[id]" options={{ presentation: 'modal' }} />
+              <Stack.Screen
+                name="dish/[id]"
+                options={{
+                  // Прозрачная модалка: под раскрывающимся снимком видно сетку меню
+                  presentation: 'transparentModal',
+                  animation: 'fade',
+                  animationDuration: 120,
+                }}
+              />
+              <Stack.Screen name="promo/[id]" options={{ presentation: 'modal' }} />
               <Stack.Screen name="profile-edit" options={{ presentation: 'modal' }} />
               <Stack.Screen name="addresses" options={{ presentation: 'modal' }} />
             </Stack>
