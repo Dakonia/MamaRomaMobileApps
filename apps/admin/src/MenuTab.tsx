@@ -1,12 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { api, ApiError, formatPrice, type Category, type Dish, type DishDraft } from "./api";
+import {
+  api,
+  ApiError,
+  formatPrice,
+  mediaUrl,
+  type Category,
+  type Dish,
+  type DishDraft,
+} from "./api";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
 
 const emptyDraft = (categoryId: string): DishDraft => ({
   category_id: categoryId,
   name: "",
+  image_url: null,
   price_kopecks: 0,
   description: null,
   composition: null,
@@ -20,6 +29,7 @@ function toDraft(dish: Dish): DishDraft {
   return {
     category_id: dish.category_id,
     name: dish.name,
+    image_url: dish.image_url,
     price_kopecks: dish.price_kopecks,
     description: dish.description,
     composition: dish.composition,
@@ -74,8 +84,10 @@ function DishForm({
   error: string | null;
 }) {
   const [draft, setDraft] = useState(initial);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const set = <K extends keyof DishDraft>(key: K, value: DishDraft[K]) =>
-    setDraft({ ...draft, [key]: value });
+    setDraft((current) => ({ ...current, [key]: value }));
 
   const number = (value: string) => (value.trim() === "" ? null : Number(value.replace(/\D/g, "")));
 
@@ -148,6 +160,73 @@ function DishForm({
             value={draft.sort_order}
             onChange={(event) => set("sort_order", number(event.target.value) ?? 0)}
           />
+        </Field>
+
+        <Field label="Фотография" wide>
+          <div style={{ display: "flex", gap: spacing.base, alignItems: "center" }}>
+            {draft.image_url ? (
+              <img
+                src={mediaUrl(draft.image_url) ?? ""}
+                alt=""
+                style={{
+                  width: 84,
+                  height: 84,
+                  objectFit: "cover",
+                  borderRadius: 12,
+                  border: `1px solid ${c.border}`,
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 84,
+                  height: 84,
+                  borderRadius: 12,
+                  border: `1px dashed ${c.borderStrong}`,
+                  display: "grid",
+                  placeItems: "center",
+                  color: c.textTertiary,
+                  fontSize: typography.caption.fontSize,
+                  textAlign: "center",
+                }}
+              >
+                нет фото
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  setUploading(true);
+                  api
+                    .uploadImage(file)
+                    .then((url) => set("image_url", url))
+                    .catch((exc: ApiError) => setUploadError(exc.message))
+                    .finally(() => setUploading(false));
+                }}
+                style={{ fontSize: typography.caption.fontSize }}
+              />
+              {uploading ? (
+                <span style={{ color: c.textSecondary }}>Загружаем…</span>
+              ) : uploadError ? (
+                <span style={{ color: c.danger }}>{uploadError}</span>
+              ) : (
+                <span style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+                  JPEG, PNG или WebP, до 8 МБ. Уменьшим и сожмём сами
+                </span>
+              )}
+              {draft.image_url ? (
+                <Button tone="quiet" onClick={() => set("image_url", null)}>
+                  Убрать фото
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </Field>
 
         <Field label="Описание для гостя" wide>
@@ -398,6 +477,21 @@ export function MenuTab() {
               {list.map((dish) => (
                 <tr key={dish.id}>
                   <td style={styles.td}>
+                    <div style={{ display: "flex", gap: spacing.md }}>
+                      {dish.image_url ? (
+                        <img
+                          src={mediaUrl(dish.image_url) ?? ""}
+                          alt=""
+                          style={{
+                            width: 52,
+                            height: 52,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : null}
+                      <div>
                     <div style={{ fontWeight: 500 }}>{dish.name}</div>
                     {dish.description ? (
                       <div
@@ -410,6 +504,8 @@ export function MenuTab() {
                       {dish.weight_grams ? `${dish.weight_grams} г` : null}
                       {dish.calories ? ` · ${dish.calories} ккал` : null}
                       {dish.image_url ? null : " · без фото"}
+                    </div>
+                      </div>
                     </div>
                   </td>
                   <td style={{ ...styles.td, color: c.textSecondary }}>

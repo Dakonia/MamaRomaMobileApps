@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import type { Dish } from '@/api/client';
+import { mediaUrl, type Dish } from '@/api/client';
 import { formatPrice } from '@/lib/format';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -60,7 +60,12 @@ export function DishRow({ dish, quantity, onAdd, onChangeQuantity }: Props) {
         ]}
       >
         {dish.image_url ? (
-          <Image source={{ uri: dish.image_url }} style={styles.image} contentFit="cover" />
+          <Image
+            source={{ uri: mediaUrl(dish.image_url) ?? undefined }}
+            style={styles.image}
+            contentFit="cover"
+            transition={200}
+          />
         ) : (
           <Ionicons
             name="restaurant-outline"

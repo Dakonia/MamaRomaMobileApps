@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, or_, select
 
 from app.api.deps import SessionDep, StaffDep, TenantDep
@@ -30,6 +30,7 @@ from app.schemas.admin import (
 )
 from app.schemas.order import OrderRead
 from app.schemas.reservation import ReservationRead
+from app.services import media as media_service
 from app.services import order as order_service
 from app.services import reservation as reservation_service
 
@@ -64,6 +65,19 @@ async def login(payload: StaffLogin, session: SessionDep, tenant: TenantDep) -> 
 @router.get("/me", summary="Текущий сотрудник")
 async def me(staff: StaffDep) -> StaffRead:
     return StaffRead.model_validate(staff)
+
+
+@router.post("/uploads", summary="Загрузить фотографию")
+async def upload(
+    staff: StaffDep,
+    file: Annotated[UploadFile, File()],
+    folder: Annotated[str, Query(pattern=r"^[a-z-]+$")] = "dishes",
+) -> dict[str, str]:
+    try:
+        url = media_service.save_image(await file.read(), file.content_type, folder)
+    except media_service.MediaError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return {"url": url}
 
 
 # ─────────────────────────── меню ───────────────────────────

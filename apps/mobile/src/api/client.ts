@@ -145,3 +145,9 @@ export const api = {
     await request<unknown>(`/api/v1/addresses/${id}`, { method: 'DELETE' });
   },
 };
+
+/** В базе ссылки на фото относительные — дописываем адрес сервера. */
+export function mediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return path.startsWith('http') ? path : `${apiUrl}${path}`;
+}

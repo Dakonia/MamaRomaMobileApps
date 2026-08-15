@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.v1 import api_router
@@ -36,6 +37,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+settings.media_root.mkdir(parents=True, exist_ok=True)
+app.mount(
+    settings.media_url_prefix,
+    StaticFiles(directory=settings.media_root),
+    name="media",
+)
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 

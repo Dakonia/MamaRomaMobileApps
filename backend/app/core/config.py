@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import PostgresDsn, RedisDsn
@@ -29,6 +30,13 @@ class Settings(BaseSettings):
     staff_token_ttl_hours: int = 12
 
     default_tenant_id: str = "mamaroma"
+
+    # Фотографии пока лежат на диске рядом с приложением. При переезде в облако
+    # меняется только это место и функция сохранения — ссылки в базе относительные.
+    media_root: Path = Path(__file__).resolve().parents[2] / "media"
+    media_url_prefix: str = "/media"
+    max_upload_bytes: int = 8 * 1024 * 1024
+    image_max_side: int = 1400
 
     sms_code_length: int = 4
     sms_code_ttl_minutes: int = 5

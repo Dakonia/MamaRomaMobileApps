@@ -81,6 +81,7 @@ export type Dish = {
 export type DishDraft = {
   category_id: string;
   name: string;
+  image_url: string | null;
   price_kopecks: number;
   description: string | null;
   composition: string | null;
@@ -142,6 +143,27 @@ export const api = {
     request<Dish>("/admin/dishes", { method: "POST", body: JSON.stringify(payload) }),
   deleteDish: (id: string) => request<void>(`/admin/dishes/${id}`, { method: "DELETE" }),
 
+  uploadImage: async (file: File, folder = "dishes"): Promise<string> => {
+    const body = new FormData();
+    body.append("file", file);
+
+    // Content-Type тут не ставим: браузер сам добавит границу multipart
+    const response = await fetch(`${API_URL}/api/v1/admin/uploads?folder=${folder}`, {
+      method: "POST",
+      headers: {
+        "X-Tenant-Id": tenant.id,
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body,
+    });
+
+    const payload = (await response.json()) as { url?: string; detail?: string };
+    if (!response.ok) {
+      throw new ApiError(response.status, payload.detail ?? "Не удалось загрузить файл");
+    }
+    return payload.url ?? "";
+  },
+
   stopList: () => request<StopEntry[]>("/admin/stop-list"),
   removeStop: (id: string) =>
     request<void>(`/admin/stop-list/${id}`, { method: "DELETE" }),
@@ -166,4 +188,10 @@ export function formatDateTime(iso: string): string {
   const date = new Date(iso);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(date.getDate())}.${pad(date.getMonth() + 1)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Ссылки на фото хранятся относительными — дописываем адрес сервера. */
+export function mediaUrl(path: string | null): string | null {
+  if (!path) return null;
+  return path.startsWith("http") ? path : `${API_URL}${path}`;
 }
