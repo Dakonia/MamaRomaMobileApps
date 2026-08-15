@@ -53,6 +53,11 @@ class LoyaltyOperation(StrEnum):
     MANUAL = "manual"
 
 
+class StaffRole(StrEnum):
+    OWNER = "owner"
+    MANAGER = "manager"
+
+
 class DevicePlatform(StrEnum):
     IOS = "ios"
     ANDROID = "android"

@@ -9,7 +9,7 @@ from jose import JWTError, jwt
 
 from app.core.config import settings
 
-TokenKind = Literal["access", "refresh"]
+TokenKind = Literal["access", "refresh", "staff"]
 
 _PHONE_CLEAN = re.compile(r"[^\d+]")
 
@@ -50,15 +50,27 @@ def verify_code(code: str, code_hash: str) -> bool:
         return False
 
 
-def create_token(guest_id: UUID, tenant_id: str, kind: TokenKind) -> str:
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), password_hash.encode())
+    except ValueError:
+        return False
+
+
+def create_token(subject_id: UUID, tenant_id: str, kind: TokenKind) -> str:
     now = datetime.now(UTC)
-    ttl = (
-        timedelta(minutes=settings.access_token_ttl_minutes)
-        if kind == "access"
-        else timedelta(days=settings.refresh_token_ttl_days)
-    )
+    if kind == "access":
+        ttl = timedelta(minutes=settings.access_token_ttl_minutes)
+    elif kind == "staff":
+        ttl = timedelta(hours=settings.staff_token_ttl_hours)
+    else:
+        ttl = timedelta(days=settings.refresh_token_ttl_days)
     payload = {
-        "sub": str(guest_id),
+        "sub": str(subject_id),
         "tenant": tenant_id,
         "kind": kind,
         "iat": int(now.timestamp()),
@@ -80,7 +92,7 @@ def decode_token(token: str, expected_kind: TokenKind) -> tuple[UUID, str]:
     try:
         guest_id = UUID(str(payload["sub"]))
     except (KeyError, ValueError) as exc:
-        raise InvalidTokenError("В токене нет идентификатора гостя") from exc
+        raise InvalidTokenError("В токене нет идентификатора") from exc
 
     tenant_id = str(payload.get("tenant", ""))
     if not tenant_id:

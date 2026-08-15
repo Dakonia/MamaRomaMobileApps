@@ -11,10 +11,14 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import SessionLocal, engine
+from app.core.security import hash_password
 from app.models.geo import City, Restaurant
 from app.models.menu import Dish, DishPrice, MenuCategory, StopListEntry
+from app.models.staff import StaffUser
 
 TENANT_ID = settings.default_tenant_id
+ADMIN_EMAIL = "admin@mamaroma.ru"
+ADMIN_PASSWORD = "mamaroma"
 
 CATEGORIES: list[tuple[str, str, list[tuple[str, str, int, int | None]]]] = [
     (
@@ -198,6 +202,22 @@ async def seed() -> None:
                     restaurant_id=airport.id,
                     dish_id=panna.id,
                     comment="Закончились сливки",
+                )
+            )
+
+        staff = await session.scalar(
+            select(StaffUser).where(
+                StaffUser.tenant_id == TENANT_ID, StaffUser.email == ADMIN_EMAIL
+            )
+        )
+        if staff is None:
+            session.add(
+                StaffUser(
+                    tenant_id=TENANT_ID,
+                    email=ADMIN_EMAIL,
+                    password_hash=hash_password(ADMIN_PASSWORD),
+                    name="Администратор",
+                    role="owner",
                 )
             )
 

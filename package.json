@@ -17,6 +17,7 @@
     "typecheck": "pnpm -r typecheck",
     "db:seed": "cd backend && uv run python -m app.seed",
     "api:types": "pnpm --filter @mr/mobile api:types",
-    "web": "pnpm --filter @mr/mobile web"
+    "web": "pnpm --filter @mr/mobile web",
+    "admin": "pnpm --filter @mr/admin dev"
   }
 }

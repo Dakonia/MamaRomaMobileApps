@@ -18,6 +18,9 @@ export type CheckoutLimits = components['schemas']['CheckoutLimits'];
 export type Reservation = components['schemas']['ReservationRead'];
 export type ReservationCreate = components['schemas']['ReservationCreate'];
 export type Slot = components['schemas']['SlotRead'];
+export type Address = components['schemas']['AddressRead'];
+export type AddressCreate = components['schemas']['AddressCreate'];
+export type GuestUpdate = components['schemas']['GuestUpdate'];
 
 let accessToken: string | null = null;
 
@@ -64,6 +67,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // тело не JSON — оставляем общий текст
     }
     throw new ApiError(response.status, message);
+  }
+
+  // 204 приходит без тела — например, при удалении адреса
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return (await response.json()) as T;
@@ -124,4 +132,16 @@ export const api = {
 
   cancelReservation: (id: string) =>
     request<Reservation>(`/api/v1/reservations/${id}/cancel`, { method: 'POST' }),
+
+  updateMe: (payload: GuestUpdate) =>
+    request<Guest>('/api/v1/me', { method: 'PATCH', body: JSON.stringify(payload) }),
+
+  addresses: () => request<Address[]>('/api/v1/addresses'),
+
+  addAddress: (payload: AddressCreate) =>
+    request<Address>('/api/v1/addresses', { method: 'POST', body: JSON.stringify(payload) }),
+
+  deleteAddress: async (id: string) => {
+    await request<unknown>(`/api/v1/addresses/${id}`, { method: 'DELETE' });
+  },
 };

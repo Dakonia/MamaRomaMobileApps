@@ -210,6 +210,53 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
+        {authorized ? (
+          <View style={{ gap: theme.spacing.xxs }}>
+            <Text
+              style={[
+                theme.typography.overline,
+                { color: theme.colors.textTertiary, paddingHorizontal: theme.spacing.base },
+              ]}
+            >
+              Мои данные
+            </Text>
+
+            {[
+              { icon: 'person-outline' as const, label: 'Личные данные', to: '/profile-edit' as const },
+              { icon: 'home-outline' as const, label: 'Адреса доставки', to: '/addresses' as const },
+            ].map((item) => (
+              <Pressable
+                key={item.to}
+                accessibilityRole="button"
+                onPress={() => router.push(item.to)}
+                style={({ pressed }) => [
+                  styles.row,
+                  {
+                    minHeight: theme.layout.minTouchTarget,
+                    paddingVertical: theme.spacing.md,
+                    paddingHorizontal: theme.spacing.base,
+                    borderRadius: theme.radius.md,
+                    gap: theme.spacing.md,
+                    backgroundColor: pressed ? theme.colors.surfaceSunken : 'transparent',
+                  },
+                ]}
+              >
+                <Ionicons name={item.icon} size={theme.spacing.lg} color={theme.colors.textTertiary} />
+                <Text
+                  style={[theme.typography.bodyMedium, styles.rowText, { color: theme.colors.textPrimary }]}
+                >
+                  {item.label}
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={theme.spacing.base}
+                  color={theme.colors.textTertiary}
+                />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         <View style={{ gap: theme.spacing.xxs }}>
           <Text
             style={[

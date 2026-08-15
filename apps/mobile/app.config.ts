@@ -14,7 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   scheme: stores.scheme,
   version: "1.0.0",
   orientation: "portrait",
-  userInterfaceStyle: "light",
+  userInterfaceStyle: "automatic",
   icon: "./assets/images/icon.png",
   ios: {
     bundleIdentifier: stores.bundleIdentifier,

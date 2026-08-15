@@ -10,6 +10,7 @@ from app.core.db import get_session
 from app.core.security import InvalidTokenError, decode_token
 from app.core.tenants import Tenant, get_tenant
 from app.models.guest import Guest
+from app.models.staff import StaffUser
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -58,3 +59,31 @@ async def get_current_guest(
 
 
 GuestDep = Annotated[Guest, Depends(get_current_guest)]
+
+
+async def get_current_staff(
+    session: SessionDep,
+    tenant: TenantDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)] = None,
+) -> StaffUser:
+    if credentials is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Нужен вход в админку")
+
+    try:
+        staff_id, token_tenant = decode_token(credentials.credentials, "staff")
+    except InvalidTokenError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
+
+    if token_tenant != tenant.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Токен выдан для другой сети")
+
+    staff = await session.scalar(
+        select(StaffUser).where(StaffUser.id == staff_id, StaffUser.tenant_id == tenant.id)
+    )
+    if staff is None or not staff.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Сотрудник не найден")
+
+    return staff
+
+
+StaffDep = Annotated[StaffUser, Depends(get_current_staff)]

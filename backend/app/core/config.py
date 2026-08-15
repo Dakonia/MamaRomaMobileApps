@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 30
     refresh_token_ttl_days: int = 60
+    staff_token_ttl_hours: int = 12
 
     default_tenant_id: str = "mamaroma"
 

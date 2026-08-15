@@ -7,6 +7,7 @@ from app.models.enums import (
     PaymentMethod,
     PaymentStatus,
     ReservationStatus,
+    StaffRole,
 )
 from app.models.geo import City, Restaurant
 from app.models.guest import Device, Guest, GuestAddress
@@ -14,6 +15,7 @@ from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishPrice, MenuCategory, StopListEntry
 from app.models.order import Order, OrderItem
 from app.models.reservation import Reservation
+from app.models.staff import StaffUser
 
 __all__ = [
     "City",
@@ -37,5 +39,7 @@ __all__ = [
     "Reservation",
     "ReservationStatus",
     "Restaurant",
+    "StaffRole",
+    "StaffUser",
     "StopListEntry",
 ]
