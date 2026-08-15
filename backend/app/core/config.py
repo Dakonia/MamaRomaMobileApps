@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     media_url_prefix: str = "/media"
     max_upload_bytes: int = 8 * 1024 * 1024
     image_max_side: int = 1400
+    # 92 вместо 82: фотографии сайта уже пережаты один раз, второй проход
+    # по еде заметен — подтираются текстуры
+    image_quality: int = 92
 
     sms_code_length: int = 4
     sms_code_ttl_minutes: int = 5

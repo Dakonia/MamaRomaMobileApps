@@ -46,7 +46,7 @@ def save_image(data: bytes, content_type: str | None, folder: str) -> str:
     directory.mkdir(parents=True, exist_ok=True)
 
     name = f"{secrets.token_hex(12)}.webp"
-    image.save(directory / name, format="WEBP", quality=82, method=5)
+    image.save(directory / name, format="WEBP", quality=settings.image_quality, method=6)
 
     return f"{settings.media_url_prefix}/{folder}/{name}"
 
