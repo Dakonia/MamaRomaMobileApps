@@ -227,13 +227,14 @@ export default function DishScreen() {
             width: theme.layout.minTouchTarget,
             height: theme.layout.minTouchTarget,
             borderRadius: theme.radius.pill,
-            overflow: 'hidden',
+            // Сплошной круг с тенью читается на любом снимке — светлом и тёмном
+            backgroundColor: theme.colors.surface,
+            ...theme.elevation.raised,
           },
+          styles.center,
         ]}
       >
-        <BlurView intensity={40} tint="dark" style={[StyleSheet.absoluteFill, styles.center]}>
-          <Ionicons name="close" size={theme.spacing.lg} color="#FFFFFF" />
-        </BlurView>
+        <Ionicons name="close" size={theme.spacing.lg} color={theme.colors.textPrimary} />
       </PressableScale>
 
       {dish.is_available ? (
