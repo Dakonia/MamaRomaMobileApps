@@ -11,9 +11,10 @@ type Props = {
   quantity: number;
   onAdd: () => void;
   onChangeQuantity: (quantity: number) => void;
+  onOpen: () => void;
 };
 
-export function DishRow({ dish, quantity, onAdd, onChangeQuantity }: Props) {
+export function DishRow({ dish, quantity, onAdd, onChangeQuantity, onOpen }: Props) {
   const theme = useTheme();
   const dimmed = !dish.is_available;
 
@@ -37,14 +38,18 @@ export function DishRow({ dish, quantity, onAdd, onChangeQuantity }: Props) {
   );
 
   return (
-    <View
-      style={[
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Открыть ${dish.name}`}
+      onPress={onOpen}
+      style={({ pressed }) => [
         styles.root,
         {
           paddingVertical: theme.spacing.md,
           paddingHorizontal: theme.layout.screenPadding,
           gap: theme.spacing.base,
           opacity: dimmed ? 0.5 : 1,
+          backgroundColor: pressed ? theme.colors.surfaceSunken : 'transparent',
         },
       ]}
     >
@@ -127,7 +132,7 @@ export function DishRow({ dish, quantity, onAdd, onChangeQuantity }: Props) {
           {stepButton('add', quantity > 0 ? () => onChangeQuantity(quantity + 1) : onAdd)}
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 

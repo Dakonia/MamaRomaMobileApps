@@ -117,6 +117,7 @@ export default function MenuScreen() {
               quantity={quantityOf(item.dish.id)}
               onAdd={() => cart.add(item.dish)}
               onChangeQuantity={(quantity) => cart.setQuantity(item.dish.id, quantity)}
+              onOpen={() => router.push(`/dish/${item.dish.id}`)}
             />
           )
         }
