@@ -281,32 +281,13 @@ export default function DishScreen() {
               </Text>
 
               <View
-                style={[
-                  styles.quote,
-                  {
-                    borderRadius: theme.radius.xl,
-                    backgroundColor: theme.colors.brandSubtle,
-                    padding: theme.spacing.lg,
-                    paddingLeft: theme.spacing.xxl,
-                  },
-                ]}
+                style={{
+                  borderLeftWidth: theme.spacing.xxs,
+                  borderLeftColor: theme.colors.brand,
+                  paddingLeft: theme.spacing.base,
+                  paddingVertical: theme.spacing.xxs,
+                }}
               >
-                {/* Крупная кавычка задаёт тон: блок читается как цитата из меню */}
-                <Text
-                  style={[
-                    styles.quoteMark,
-                    {
-                      color: theme.colors.brand,
-                      fontFamily: theme.typography.display.fontFamily,
-                      fontSize: theme.spacing.huge,
-                      left: theme.spacing.sm,
-                      top: theme.spacing.xs,
-                    },
-                  ]}
-                >
-                  «
-                </Text>
-
                 <Text
                   style={[
                     theme.typography.bodyLg,
@@ -330,37 +311,27 @@ export default function DishScreen() {
                 style={{
                   borderRadius: theme.radius.lg,
                   backgroundColor: theme.colors.surfaceSunken,
-                  paddingHorizontal: theme.spacing.base,
+                  padding: theme.spacing.base,
                 }}
               >
-                {ingredients.map((item, index) => (
-                  <View
-                    key={item}
-                    style={[
-                      styles.ingredient,
-                      {
-                        gap: theme.spacing.md,
-                        paddingVertical: theme.spacing.md,
-                        borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
-                        borderTopColor: theme.colors.border,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={{
-                        width: theme.spacing.xs,
-                        height: theme.spacing.xs,
-                        borderRadius: theme.radius.pill,
-                        backgroundColor: theme.colors.brand,
-                      }}
-                    />
-                    <Text
-                      style={[theme.typography.bodyLg, styles.grow, { color: theme.colors.textPrimary }]}
-                    >
+                <Text
+                  style={[
+                    theme.typography.bodyLg,
+                    {
+                      color: theme.colors.textPrimary,
+                      lineHeight: theme.typography.bodyLg.lineHeight + theme.spacing.xs,
+                    },
+                  ]}
+                >
+                  {ingredients.map((item, index) => (
+                    <Text key={item}>
+                      {index > 0 ? (
+                        <Text style={{ color: theme.colors.brand }}>{'  ·  '}</Text>
+                      ) : null}
                       {item}
                     </Text>
-                  </View>
-                ))}
+                  ))}
+                </Text>
               </View>
             </View>
           ) : null}
@@ -560,9 +531,6 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   nutrition: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center' },
-  ingredient: { flexDirection: 'row', alignItems: 'center' },
-  quote: { overflow: 'hidden' },
-  quoteMark: { position: 'absolute', opacity: 0.35 },
   close: { position: 'absolute' },
   bar: {
     position: 'absolute',

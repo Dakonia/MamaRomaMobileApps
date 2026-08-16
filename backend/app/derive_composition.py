@@ -18,12 +18,16 @@ from app.models.menu import Dish
 
 TENANT_ID = settings.default_tenant_id
 
-MIN_PARTS = 3
+MIN_PARTS = 2
 MAX_WORDS_PER_PART = 5
 MAX_LENGTH = 200
 
 # Описание, начинающееся с предлога, — это уточнение к блюду, а не состав
 PREPOSITION_RE = re.compile(r"^(с|со|в|во|из|под|на|для)\s", re.I)
+
+# «Пармезаном, моцареллой и зеленью» — продолжение фразы в творительном падеже,
+# а не перечень. Ловим по окончанию первого слова
+INSTRUMENTAL_RE = re.compile(r"\w+(ом|ем|ой|ей|ами|ями)$", re.I)
 
 
 def looks_like_composition(text: str) -> bool:
@@ -35,6 +39,9 @@ def looks_like_composition(text: str) -> bool:
 
     parts = [part.strip() for part in value.split(",")]
     if len(parts) < MIN_PARTS:
+        return False
+
+    if INSTRUMENTAL_RE.match(parts[0]):
         return False
 
     return all(part and len(part.split()) <= MAX_WORDS_PER_PART for part in parts)
