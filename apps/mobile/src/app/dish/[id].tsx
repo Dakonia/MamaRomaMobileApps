@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -276,9 +275,51 @@ export default function DishScreen() {
           ) : null}
 
           {dish.description ? (
-            <Text style={[theme.typography.bodyLg, { color: theme.colors.textPrimary }]}>
-              {dish.description}
-            </Text>
+            <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.xs }}>
+              <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>
+                О блюде
+              </Text>
+
+              <View
+                style={[
+                  styles.quote,
+                  {
+                    borderRadius: theme.radius.xl,
+                    backgroundColor: theme.colors.brandSubtle,
+                    padding: theme.spacing.lg,
+                    paddingLeft: theme.spacing.xxl,
+                  },
+                ]}
+              >
+                {/* Крупная кавычка задаёт тон: блок читается как цитата из меню */}
+                <Text
+                  style={[
+                    styles.quoteMark,
+                    {
+                      color: theme.colors.brand,
+                      fontFamily: theme.typography.display.fontFamily,
+                      fontSize: theme.spacing.huge,
+                      left: theme.spacing.sm,
+                      top: theme.spacing.xs,
+                    },
+                  ]}
+                >
+                  «
+                </Text>
+
+                <Text
+                  style={[
+                    theme.typography.bodyLg,
+                    {
+                      color: theme.colors.textPrimary,
+                      lineHeight: theme.typography.bodyLg.lineHeight + theme.spacing.xs,
+                    },
+                  ]}
+                >
+                  {dish.description}
+                </Text>
+              </View>
+            </View>
           ) : null}
 
           {ingredients.length > 0 ? (
@@ -405,19 +446,22 @@ export default function DishScreen() {
       </View>
 
       {dish.is_available ? (
-        <View style={styles.bar}>
-          <BlurView
-            intensity={theme.isDark ? 40 : 60}
-            tint={theme.isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
+        <View
+          style={[
+            styles.bar,
+            {
+              backgroundColor: theme.colors.surface,
+              borderTopColor: theme.colors.divider,
+            },
+          ]}
+        >
           <View
             style={[
               styles.barInner,
               {
                 paddingHorizontal: theme.layout.screenPadding,
-                paddingTop: theme.spacing.md,
-                paddingBottom: insets.bottom + theme.spacing.md,
+                paddingTop: theme.spacing.sm,
+                paddingBottom: insets.bottom > 0 ? insets.bottom : theme.spacing.base,
                 gap: theme.spacing.base,
               },
             ]}
@@ -517,8 +561,16 @@ const styles = StyleSheet.create({
   nutrition: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center' },
   ingredient: { flexDirection: 'row', alignItems: 'center' },
+  quote: { overflow: 'hidden' },
+  quoteMark: { position: 'absolute', opacity: 0.35 },
   close: { position: 'absolute' },
-  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  bar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   barInner: { flexDirection: 'row', alignItems: 'center' },
   action: { alignItems: 'center', justifyContent: 'center' },
 });
