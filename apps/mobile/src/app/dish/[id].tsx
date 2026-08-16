@@ -274,9 +274,12 @@ export default function DishScreen() {
 
           {ingredients.length > 0 ? (
             <View style={{ gap: theme.spacing.sm }}>
-              <Text style={[theme.typography.overline, { color: theme.colors.textTertiary }]}>
-                Состав
-              </Text>
+              <View style={[styles.row, { gap: theme.spacing.sm }]}>
+                <Ionicons name="leaf-outline" size={theme.spacing.lg} color={theme.colors.accent} />
+                <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
+                  Что внутри
+                </Text>
+              </View>
               <View style={[styles.row, { gap: theme.spacing.sm }]}>
                 {ingredients.map((item) => (
                   <View
@@ -438,7 +441,7 @@ export default function DishScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  hero: { position: 'absolute', overflow: 'hidden' },
+  hero: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden' },
   center: { alignItems: 'center', justifyContent: 'center' },
   veilTop: { position: 'absolute', top: 0, left: 0, right: 0 },
   veilBottom: { position: 'absolute', bottom: 0, left: 0, right: 0 },

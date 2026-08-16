@@ -52,10 +52,9 @@ export function DishCard({
       ? `${dish.volume_ml} мл`
       : null;
 
-  // У трети блюд описания нет — подставляем состав, а если нет и его,
-  // цену показываем крупнее, чтобы карточка не выглядела недозаполненной
-  const subtitle = dish.description ?? dish.composition ?? null;
-  const priceStyle = subtitle === null ? theme.typography.display : theme.typography.price;
+  // Состав живёт в карточке блюда, в сетке показываем только описание.
+  // Цена всегда одного размера: карточки должны выглядеть одинаково
+  const subtitle = dish.description;
 
   return (
     <PressableScale
@@ -210,7 +209,7 @@ export function DishCard({
         ) : null}
 
         <View style={[styles.priceRow, { gap: theme.spacing.sm, paddingTop: theme.spacing.xxs }]}>
-          <Text style={[priceStyle, { color: theme.colors.textPrimary }]}>
+          <Text style={[theme.typography.price, { color: theme.colors.textPrimary }]}>
             {formatPrice(dish.price_kopecks)}
           </Text>
           {measure ? (
