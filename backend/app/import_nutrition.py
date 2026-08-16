@@ -32,6 +32,11 @@ COL_PORTION_CALORIES = 11
 
 NOISE_RE = re.compile(r"[^а-яёa-z0-9 ]")
 
+# В таблице блюда часто названы с типом впереди, в меню — без него
+LEADING_TYPE_RE = re.compile(
+    r"^(пицца|салат|суп|паста|десерт|напиток|закуска|ризотто|соус|горячее)\s+"
+)
+
 
 @dataclass(slots=True)
 class Nutrition:
@@ -44,10 +49,11 @@ class Nutrition:
 
 
 def simplify(name: str) -> str:
-    """«Гамберетти ал форно » и «Гамберетти Ал Форно» должны совпасть."""
+    """«Пицца Поло Песто» и «Поло песто» должны совпасть."""
     text = name.lower().replace("ё", "е").replace("«", " ").replace("»", " ")
     text = NOISE_RE.sub(" ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return LEADING_TYPE_RE.sub("", text).strip() or text
 
 
 def to_number(value: object) -> float | None:

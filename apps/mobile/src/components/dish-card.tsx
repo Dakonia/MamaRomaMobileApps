@@ -52,9 +52,9 @@ export function DishCard({
       ? `${dish.volume_ml} мл`
       : null;
 
-  // Состав живёт в карточке блюда, в сетке показываем только описание.
+  // Состав говорит о блюде точнее описания, поэтому он первый.
   // Цена всегда одного размера: карточки должны выглядеть одинаково
-  const subtitle = dish.description;
+  const subtitle = dish.composition ?? dish.description;
 
   return (
     <PressableScale

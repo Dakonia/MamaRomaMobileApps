@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/empty-state';
 import { MenuSkeleton } from '@/components/menu-skeleton';
 import { PressableScale } from '@/components/pressable-scale';
 import { PromoCarousel } from '@/components/promo-carousel';
+import { SearchField } from '@/components/search-field';
 import { formatPrice } from '@/lib/format';
 import { tenant } from '@/lib/tenant';
 import { cartCount, cartSubtotal, useCart } from '@/store/cart';
@@ -40,6 +41,7 @@ export default function MenuScreen() {
   // Пока список едет к выбранному разделу, слежение за прокруткой молчит:
   // иначе по дороге он подсвечивает все промежуточные категории
   const jumpingUntil = useRef(0);
+  const [query, setQuery] = useState('');
 
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() });
 
@@ -75,6 +77,36 @@ export default function MenuScreen() {
 
   const rows: Row[] = useMemo(() => {
     const result: Row[] = [];
+    const needle = query.trim().toLowerCase();
+
+    if (needle.length > 0) {
+      const found = (menu.data?.categories ?? [])
+        .flatMap((category) => category.dishes)
+        .filter((dish) =>
+          [dish.name, dish.composition, dish.description]
+            .filter((value): value is string => Boolean(value))
+            .some((value) => value.toLowerCase().includes(needle)),
+        );
+
+      result.push({
+        kind: 'title',
+        key: 'search',
+        categoryId: 'search',
+        title: found.length > 0 ? `Нашлось: ${found.length}` : 'Ничего не нашлось',
+      });
+
+      for (let index = 0; index < found.length; index += 2) {
+        result.push({
+          kind: 'pair',
+          key: `s-${found[index].id}`,
+          categoryId: 'search',
+          left: found[index],
+          right: found[index + 1] ?? null,
+        });
+      }
+
+      return result;
+    }
 
     if ((promos.data ?? []).length > 0) {
       result.push({ kind: 'promos', key: 'promos' });
@@ -104,7 +136,7 @@ export default function MenuScreen() {
     }
 
     return result;
-  }, [menu.data, promos.data, popular.data]);
+  }, [menu.data, promos.data, popular.data, query]);
 
   const quantityOf = useCallback(
     (dishId: string) => cart.items.find((item) => item.dishId === dishId)?.quantity ?? 0,
@@ -188,20 +220,36 @@ export default function MenuScreen() {
     }
 
     if (item.kind === 'title') {
+      const size = menu.data?.categories.find((entry) => entry.id === item.categoryId)?.dishes
+        .length;
+
       return (
-        <Text
-          style={[
-            theme.typography.display,
-            {
-              color: theme.colors.textPrimary,
-              paddingHorizontal: theme.layout.screenPadding,
-              paddingTop: theme.spacing.xl,
-              paddingBottom: theme.spacing.md,
-            },
-          ]}
+        <View
+          style={{
+            paddingHorizontal: theme.layout.screenPadding,
+            paddingTop: theme.spacing.xl,
+            paddingBottom: theme.spacing.md,
+            gap: theme.spacing.xs,
+          }}
         >
-          {item.title}
-        </Text>
+          <View
+            style={{
+              height: StyleSheet.hairlineWidth,
+              backgroundColor: theme.colors.divider,
+              marginBottom: theme.spacing.sm,
+            }}
+          />
+          <View style={[styles.titleRow, { gap: theme.spacing.sm }]}>
+            <Text style={[theme.typography.display, styles.grow, { color: theme.colors.textPrimary }]}>
+              {item.title}
+            </Text>
+            {size ? (
+              <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
+                {size}
+              </Text>
+            ) : null}
+          </View>
+        </View>
       );
     }
 
@@ -345,7 +393,16 @@ export default function MenuScreen() {
           <CartPill count={count} subtotal={subtotal} onPress={() => router.push('/cart')} />
         </View>
 
-        {categories.length > 0 ? (
+        <View
+          style={{
+            paddingHorizontal: theme.layout.screenPadding,
+            paddingTop: theme.spacing.sm,
+          }}
+        >
+          <SearchField value={query} onChange={setQuery} />
+        </View>
+
+        {categories.length > 0 && query.trim().length === 0 ? (
           <CategoryBar categories={categories} activeId={activeCategory} onSelect={jumpTo} onHero />
         ) : null}
       </View>
@@ -361,6 +418,7 @@ const styles = StyleSheet.create({
   hero: { overflow: 'hidden' },
   heroTop: { flexDirection: 'row', alignItems: 'flex-start' },
   picker: { flexDirection: 'row', alignItems: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'baseline' },
   grow: { flex: 1 },
   pair: { flexDirection: 'row' },
   filler: { flex: 1 },
