@@ -181,3 +181,75 @@ async def get_popular(
         _to_read(dish, overrides.get(dish.id, dish.price_kopecks), dish.id not in stopped)
         for dish in dishes[:limit]
     ]
+
+
+async def get_related(
+    session: AsyncSession,
+    tenant_id: str,
+    dish_id: UUID,
+    restaurant_id: UUID | None = None,
+    limit: int = 8,
+) -> list[DishRead]:
+    """«С этим покупают»: сначала то, что реально брали в тех же заказах.
+
+    Пока заказов мало, добираем соседями по категории — полка не должна пустовать.
+    """
+    orders_with_dish = select(OrderItem.order_id).where(
+        OrderItem.tenant_id == tenant_id, OrderItem.dish_id == dish_id
+    )
+
+    together = (
+        await session.execute(
+            select(OrderItem.dish_id, func.sum(OrderItem.quantity).label("sold"))
+            .where(
+                OrderItem.tenant_id == tenant_id,
+                OrderItem.order_id.in_(orders_with_dish),
+                OrderItem.dish_id.is_not(None),
+                OrderItem.dish_id != dish_id,
+            )
+            .group_by(OrderItem.dish_id)
+            .order_by(desc("sold"))
+            .limit(limit)
+        )
+    ).all()
+    ordered_ids = [row.dish_id for row in together if row.dish_id is not None]
+
+    base = select(Dish).where(
+        Dish.tenant_id == tenant_id,
+        Dish.is_active.is_(True),
+        Dish.id != dish_id,
+        Dish.image_url.is_not(None),
+    )
+
+    dishes: list[Dish] = []
+    if ordered_ids:
+        dishes = list((await session.scalars(base.where(Dish.id.in_(ordered_ids)))).all())
+        position = {value: index for index, value in enumerate(ordered_ids)}
+        dishes.sort(key=lambda dish: position.get(dish.id, len(position)))
+
+    if len(dishes) < limit:
+        source = await session.scalar(
+            select(Dish).where(Dish.id == dish_id, Dish.tenant_id == tenant_id)
+        )
+        taken = [dish.id for dish in dishes]
+        neighbours = base.where(Dish.id.notin_(taken or [UUID(int=0)]))
+        if source is not None:
+            neighbours = neighbours.where(Dish.category_id == source.category_id)
+
+        filler = (
+            await session.scalars(
+                neighbours.order_by(Dish.sort_order, Dish.name).limit(limit - len(dishes))
+            )
+        ).all()
+        dishes = [*dishes, *filler]
+
+    overrides: dict[UUID, int] = {}
+    stopped: set[UUID] = set()
+    if restaurant_id is not None:
+        overrides = await _price_overrides(session, tenant_id, restaurant_id)
+        stopped = await _stopped_dishes(session, tenant_id, restaurant_id)
+
+    return [
+        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), dish.id not in stopped)
+        for dish in dishes[:limit]
+    ]

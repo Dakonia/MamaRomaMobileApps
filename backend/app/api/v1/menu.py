@@ -48,6 +48,17 @@ async def popular(
     return await menu_service.get_popular(session, tenant.id, restaurant_id, limit)
 
 
+@router.get("/menu/related", summary="С этим покупают")
+async def related(
+    session: SessionDep,
+    tenant: TenantDep,
+    dish_id: Annotated[UUID, Query()],
+    restaurant_id: Annotated[UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=12)] = 8,
+) -> list[DishRead]:
+    return await menu_service.get_related(session, tenant.id, dish_id, restaurant_id, limit)
+
+
 @router.get("/menu", summary="Каталог блюд по категориям")
 async def get_menu(
     session: SessionDep,

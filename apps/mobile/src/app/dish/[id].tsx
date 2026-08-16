@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedScrollHandler,
@@ -15,6 +15,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, mediaUrl } from '@/api/client';
+import { DishCard } from '@/components/dish-card';
 import { EmptyState } from '@/components/empty-state';
 import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';
@@ -49,6 +50,14 @@ export default function DishScreen() {
       { scale: interpolate(scroll.value, [-heroHeight, 0], [1.5, 1], 'clamp') },
     ],
   }));
+
+  const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
+
+  const related = useQuery({
+    queryKey: ['related', id, cart.restaurantId],
+    queryFn: () => api.related(id, cart.restaurantId ?? undefined),
+    enabled: Boolean(id),
+  });
 
   const menu = useQuery({
     queryKey: ['menu', cart.restaurantId],
@@ -273,27 +282,40 @@ export default function DishScreen() {
           ) : null}
 
           {ingredients.length > 0 ? (
-            <View style={{ gap: theme.spacing.sm }}>
-              <View style={[styles.row, { gap: theme.spacing.sm }]}>
-                <Ionicons name="leaf-outline" size={theme.spacing.lg} color={theme.colors.accent} />
-                <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
-                  Что внутри
-                </Text>
-              </View>
-              <View style={[styles.row, { gap: theme.spacing.sm }]}>
-                {ingredients.map((item) => (
+            <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.xs }}>
+              <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>Состав</Text>
+
+              <View
+                style={{
+                  borderRadius: theme.radius.lg,
+                  backgroundColor: theme.colors.surfaceSunken,
+                  paddingHorizontal: theme.spacing.base,
+                }}
+              >
+                {ingredients.map((item, index) => (
                   <View
                     key={item}
-                    style={{
-                      paddingHorizontal: theme.spacing.md,
-                      paddingVertical: theme.spacing.xs,
-                      borderRadius: theme.radius.pill,
-                      borderWidth: StyleSheet.hairlineWidth,
-                      borderColor: theme.colors.border,
-                      backgroundColor: theme.colors.surface,
-                    }}
+                    style={[
+                      styles.ingredient,
+                      {
+                        gap: theme.spacing.md,
+                        paddingVertical: theme.spacing.md,
+                        borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
+                        borderTopColor: theme.colors.border,
+                      },
+                    ]}
                   >
-                    <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
+                    <View
+                      style={{
+                        width: theme.spacing.xs,
+                        height: theme.spacing.xs,
+                        borderRadius: theme.radius.pill,
+                        backgroundColor: theme.colors.brand,
+                      }}
+                    />
+                    <Text
+                      style={[theme.typography.bodyLg, styles.grow, { color: theme.colors.textPrimary }]}
+                    >
                       {item}
                     </Text>
                   </View>
@@ -316,6 +338,47 @@ export default function DishScreen() {
             </View>
           ) : null}
         </View>
+
+        {(related.data ?? []).length > 0 ? (
+          <Text
+            style={[
+              theme.typography.h2,
+              {
+                color: theme.colors.textPrimary,
+                backgroundColor: theme.colors.background,
+                paddingHorizontal: theme.layout.screenPadding,
+                paddingTop: theme.spacing.xl,
+              },
+            ]}
+          >
+            С этим берут
+          </Text>
+        ) : null}
+
+        {(related.data ?? []).length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: theme.layout.screenPadding,
+              paddingTop: theme.spacing.md,
+              gap: theme.spacing.md,
+            }}
+            style={{ backgroundColor: theme.colors.background }}
+          >
+            {(related.data ?? []).map((item) => (
+              <DishCard
+                key={item.id}
+                dish={item}
+                width={cardWidth}
+                quantity={cart.items.find((row) => row.dishId === item.id)?.quantity ?? 0}
+                onOpen={() => router.push(`/dish/${item.id}`)}
+                onAdd={() => cart.add(item)}
+                onChangeQuantity={(next) => cart.setQuantity(item.id, next)}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
       </Animated.ScrollView>
 
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -453,6 +516,7 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   nutrition: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center' },
+  ingredient: { flexDirection: 'row', alignItems: 'center' },
   close: { position: 'absolute' },
   bar: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden' },
   barInner: { flexDirection: 'row', alignItems: 'center' },
