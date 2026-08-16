@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, ExternalSyncMixin, TenantMixin, TimestampMixin, UUIDMixin
@@ -35,6 +35,11 @@ class Dish(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Base):
     weight_grams: Mapped[int | None] = mapped_column(default=None)
     volume_ml: Mapped[int | None] = mapped_column(default=None)
     calories: Mapped[int | None] = mapped_column(default=None)
+
+    # Пищевая ценность на порцию — из таблицы КБЖУ сети
+    proteins_g: Mapped[float | None] = mapped_column(Float, default=None)
+    fats_g: Mapped[float | None] = mapped_column(Float, default=None)
+    carbs_g: Mapped[float | None] = mapped_column(Float, default=None)
 
     # Метки поверх фотографии: помогают выбирать и оживляют сетку
     is_spicy: Mapped[bool] = mapped_column(default=False)

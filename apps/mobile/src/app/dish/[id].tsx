@@ -24,8 +24,6 @@ import { formatPrice } from '@/lib/format';
 import { cartSubtotal, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
 
-const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
-
 export default function DishScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -89,7 +87,12 @@ export default function DishScreen() {
   });
 
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(grow.value, [0, 0.7, 1], [0, 0.9, 1]),
+    opacity: interpolate(grow.value, [0, 0.35, 1], [0, 1, 1]),
+  }));
+
+  // Сплошной фон догоняет размытие: пока снимок растёт, меню ещё просвечивает
+  const sheetVeilStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(grow.value, [0, 0.75, 1], [0, 0.4, 1]),
   }));
 
   // Текст и панель догоняют снимок, а не появляются одновременно с ним
@@ -141,8 +144,23 @@ export default function DishScreen() {
   const facts = [
     dish.weight_grams ? `${dish.weight_grams} г` : null,
     dish.volume_ml ? `${dish.volume_ml} мл` : null,
-    dish.calories ? `${dish.calories} ккал` : null,
   ].filter((value): value is string => value !== null);
+
+  const badges = [
+    dish.is_new ? { text: 'Новинка', background: theme.colors.brand } : null,
+    dish.is_spicy ? { text: 'Остро', background: theme.colors.danger } : null,
+    dish.is_vegetarian ? { text: 'Веган', background: theme.colors.accent } : null,
+  ].filter((badge): badge is { text: string; background: string } => badge !== null);
+
+  const gram = (value: number | null | undefined) =>
+    value === null || value === undefined ? null : `${Math.round(value)} г`;
+
+  const nutrition = [
+    dish.calories ? { label: 'ккал', value: String(dish.calories) } : null,
+    gram(dish.proteins_g) ? { label: 'белки', value: gram(dish.proteins_g) ?? '' } : null,
+    gram(dish.fats_g) ? { label: 'жиры', value: gram(dish.fats_g) ?? '' } : null,
+    gram(dish.carbs_g) ? { label: 'углеводы', value: gram(dish.carbs_g) ?? '' } : null,
+  ].filter((item): item is { label: string; value: string } => item !== null);
 
   const addToCart = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -151,13 +169,21 @@ export default function DishScreen() {
 
   return (
     <View style={styles.root}>
-      <Animated.View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: theme.colors.background },
-          backdropStyle,
-        ]}
-      />
+      {/* Под карточкой размывается само меню — оттуда мы и пришли */}
+      <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]} pointerEvents="none">
+        <BlurView
+          intensity={theme.isDark ? 60 : 40}
+          tint={theme.isDark ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: theme.colors.background },
+            sheetVeilStyle,
+          ]}
+        />
+      </Animated.View>
 
       <Animated.View
         style={[
@@ -224,11 +250,29 @@ export default function DishScreen() {
             ]}
           />
 
-          {category ? (
-            <Text style={[theme.typography.overline, { color: theme.colors.brand }]}>
-              {category.name}
-            </Text>
-          ) : null}
+          <View style={[styles.facts, { gap: theme.spacing.sm }]}>
+            {category ? (
+              <Text style={[theme.typography.overline, { color: theme.colors.brand }]}>
+                {category.name}
+              </Text>
+            ) : null}
+
+            {badges.map((badge) => (
+              <View
+                key={badge.text}
+                style={{
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xxs,
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: badge.background,
+                }}
+              >
+                <Text style={[theme.typography.overline, { color: theme.colors.onHero }]}>
+                  {badge.text}
+                </Text>
+              </View>
+            ))}
+          </View>
 
           <Text style={[theme.typography.display, { color: theme.colors.textPrimary }]}>
             {dish.name}
@@ -251,6 +295,38 @@ export default function DishScreen() {
                   </Text>
                 </View>
               ))}
+            </View>
+          ) : null}
+
+          {nutrition.length > 0 ? (
+            <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+              <Text style={[theme.typography.overline, { color: theme.colors.textTertiary }]}>
+                Пищевая ценность порции
+              </Text>
+
+              <View style={[styles.nutrition, { gap: theme.spacing.sm }]}>
+                {nutrition.map((item) => (
+                  <View
+                    key={item.label}
+                    style={[
+                      styles.nutritionCell,
+                      {
+                        paddingVertical: theme.spacing.md,
+                        borderRadius: theme.radius.lg,
+                        backgroundColor: theme.colors.surfaceSunken,
+                        gap: theme.spacing.xxs,
+                      },
+                    ]}
+                  >
+                    <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
+                      {item.value}
+                    </Text>
+                    <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
+                      {item.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : null}
 
@@ -288,7 +364,7 @@ export default function DishScreen() {
         </View>
       </Animated.ScrollView>
 
-      <Animated.View style={contentStyle} pointerEvents="box-none">
+      <Animated.View style={[StyleSheet.absoluteFill, contentStyle]} pointerEvents="box-none">
       <PressableScale
         onPress={() => router.back()}
         accessibilityLabel="Закрыть"
@@ -309,21 +385,23 @@ export default function DishScreen() {
       </Animated.View>
 
       {dish.is_available ? (
-        <AnimatedBlurView
-          intensity={theme.isDark ? 40 : 60}
-          tint={theme.isDark ? 'dark' : 'light'}
-          style={[
-            styles.bar,
-            contentStyle,
-            {
-              paddingHorizontal: theme.layout.screenPadding,
-              paddingTop: theme.spacing.md,
-              paddingBottom: insets.bottom + theme.spacing.md,
-              borderTopColor: theme.colors.divider,
-              gap: theme.spacing.base,
-            },
-          ]}
-        >
+        <Animated.View style={[styles.bar, contentStyle]}>
+          <BlurView
+            intensity={theme.isDark ? 40 : 60}
+            tint={theme.isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <View
+            style={[
+              styles.barInner,
+              {
+                paddingHorizontal: theme.layout.screenPadding,
+                paddingTop: theme.spacing.md,
+                paddingBottom: insets.bottom + theme.spacing.md,
+                gap: theme.spacing.base,
+              },
+            ]}
+          >
           <View style={styles.grow}>
             <Text style={[theme.typography.display, { color: theme.colors.textPrimary }]}>
               {formatPrice(dish.price_kopecks)}
@@ -390,7 +468,8 @@ export default function DishScreen() {
               </Text>
             </PressableScale>
           )}
-        </AnimatedBlurView>
+          </View>
+        </Animated.View>
       ) : null}
     </View>
   );
@@ -402,6 +481,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   grabber: { alignSelf: 'center' },
   facts: { flexDirection: 'row', flexWrap: 'wrap' },
+  nutrition: { flexDirection: 'row' },
+  nutritionCell: { flex: 1, alignItems: 'center' },
   close: { position: 'absolute' },
   veil: { position: 'absolute', top: 0, left: 0, right: 0 },
   bar: {
@@ -409,10 +490,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
   },
+  barInner: { flexDirection: 'row', alignItems: 'center' },
   grow: { flex: 1 },
   stepper: { flexDirection: 'row', alignItems: 'center' },
   action: { alignItems: 'center', justifyContent: 'center' },

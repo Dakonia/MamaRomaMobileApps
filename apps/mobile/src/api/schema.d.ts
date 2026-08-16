@@ -868,6 +868,12 @@ export interface components {
             volume_ml: number | null;
             /** Calories */
             calories: number | null;
+            /** Proteins G */
+            proteins_g: number | null;
+            /** Fats G */
+            fats_g: number | null;
+            /** Carbs G */
+            carbs_g: number | null;
             /** Is Spicy */
             is_spicy: boolean;
             /** Is Vegetarian */

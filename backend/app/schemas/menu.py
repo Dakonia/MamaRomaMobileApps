@@ -42,6 +42,9 @@ class DishRead(BaseModel):
     weight_grams: int | None
     volume_ml: int | None
     calories: int | None
+    proteins_g: float | None
+    fats_g: float | None
+    carbs_g: float | None
     is_spicy: bool
     is_vegetarian: bool
     is_new: bool
