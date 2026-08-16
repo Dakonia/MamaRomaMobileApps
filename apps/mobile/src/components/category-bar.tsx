@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { useTheme } from '@/theme/theme-provider';
@@ -14,34 +20,48 @@ type Props = {
   onHero?: boolean;
 };
 
-/** Липкая полоса категорий: подсвечивает текущий раздел и сама к нему подъезжает. */
+const SPRING = { damping: 20, stiffness: 200, mass: 0.7 };
+
+/** Полоса категорий: подсветка перетекает между разделами, активный держится по центру. */
 export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
   const theme = useTheme();
   const scroller = useRef<ScrollView>(null);
   const offsets = useRef<Record<string, { x: number; width: number }>>({});
   const viewport = useRef(0);
-  const scrollX = useRef(0);
   const draggingUntil = useRef(0);
 
-  // Полоса подъезжает к активному разделу только когда он реально уехал за край
-  // и когда её не листает сам гость — иначе она дёргается влево-вправо
+  const pillX = useSharedValue(0);
+  const pillWidth = useSharedValue(0);
+  const pillVisible = useSharedValue(0);
+
   useEffect(() => {
     if (activeId === null) return;
 
     const chip = offsets.current[activeId];
-    if (chip === undefined || viewport.current === 0) return;
-    if (Date.now() < draggingUntil.current) return;
+    if (chip === undefined) return;
 
-    const left = scrollX.current;
-    const right = left + viewport.current;
-    const margin = theme.spacing.xl;
+    // Подсветка перетекает к активному разделу, а не перескакивает
+    if (pillWidth.value === 0) {
+      pillX.value = chip.x;
+      pillWidth.value = chip.width;
+    } else {
+      pillX.value = withSpring(chip.x, SPRING);
+      pillWidth.value = withSpring(chip.width, SPRING);
+    }
+    pillVisible.value = withTiming(1, { duration: theme.motion.duration.fast });
 
-    const hiddenLeft = chip.x < left + margin;
-    const hiddenRight = chip.x + chip.width > right - margin;
-    if (!hiddenLeft && !hiddenRight) return;
+    // Активный раздел держим по центру: соседи слева и справа всегда на виду
+    if (viewport.current > 0 && Date.now() >= draggingUntil.current) {
+      const centred = chip.x - viewport.current / 2 + chip.width / 2;
+      scroller.current?.scrollTo({ x: Math.max(0, centred), animated: true });
+    }
+  }, [activeId, pillVisible, pillWidth, pillX, theme.motion.duration.fast]);
 
-    scroller.current?.scrollTo({ x: Math.max(0, chip.x - margin), animated: true });
-  }, [activeId, theme.spacing.xl]);
+  const pillStyle = useAnimatedStyle(() => ({
+    left: pillX.value,
+    width: pillWidth.value,
+    opacity: pillVisible.value,
+  }));
 
   return (
     <ScrollView
@@ -52,11 +72,8 @@ export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
       onLayout={(event: LayoutChangeEvent) => {
         viewport.current = event.nativeEvent.layout.width;
       }}
-      onScroll={(event) => {
-        scrollX.current = event.nativeEvent.contentOffset.x;
-      }}
       onScrollBeginDrag={() => {
-        // Пока гость листает полосу сам, автоподъезд молчит
+        // Пока полосу листает сам гость, автоцентрирование молчит
         draggingUntil.current = Date.now() + 2500;
       }}
       contentContainerStyle={{
@@ -65,6 +82,20 @@ export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
         paddingVertical: theme.spacing.sm,
       }}
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.pill,
+          {
+            top: theme.spacing.sm,
+            bottom: theme.spacing.sm,
+            borderRadius: theme.radius.pill,
+            backgroundColor: theme.colors.brand,
+          },
+          pillStyle,
+        ]}
+      />
+
       {categories.map((category) => {
         const active = category.id === activeId;
 
@@ -74,41 +105,47 @@ export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
             onLayout={(event) => {
               const { x, width } = event.nativeEvent.layout;
               offsets.current[category.id] = { x, width };
+
+              if (category.id === activeId && pillWidth.value === 0) {
+                pillX.value = x;
+                pillWidth.value = width;
+                pillVisible.value = 1;
+              }
             }}
           >
-          <PressableScale
-            onPress={() => onSelect(category.id)}
-            accessibilityLabel={`Перейти к разделу ${category.title}`}
-            depth={0.94}
-            style={[
-              styles.chip,
-              {
-                minHeight: theme.layout.minTouchTarget - theme.spacing.sm,
-                paddingHorizontal: theme.spacing.base,
-                borderRadius: theme.radius.pill,
-                backgroundColor: active
-                  ? theme.colors.brand
-                  : onHero
-                    ? theme.colors.heroRaised
-                    : theme.colors.surfaceSunken,
-              },
-            ]}
-          >
-            <Text
+            <PressableScale
+              onPress={() => onSelect(category.id)}
+              accessibilityLabel={`Перейти к разделу ${category.title}`}
+              depth={0.94}
               style={[
-                theme.typography.bodyMedium,
+                styles.chip,
                 {
-                  color: active
-                    ? theme.colors.textOnBrand
+                  minHeight: theme.layout.minTouchTarget - theme.spacing.sm,
+                  paddingHorizontal: theme.spacing.base,
+                  borderRadius: theme.radius.pill,
+                  backgroundColor: active
+                    ? 'transparent'
                     : onHero
-                      ? theme.colors.onHeroMuted
-                      : theme.colors.textSecondary,
+                      ? theme.colors.heroRaised
+                      : theme.colors.surfaceSunken,
                 },
               ]}
             >
-              {category.title}
-            </Text>
-          </PressableScale>
+              <Text
+                style={[
+                  theme.typography.bodyMedium,
+                  {
+                    color: active
+                      ? theme.colors.textOnBrand
+                      : onHero
+                        ? theme.colors.onHeroMuted
+                        : theme.colors.textSecondary,
+                  },
+                ]}
+              >
+                {category.title}
+              </Text>
+            </PressableScale>
           </View>
         );
       })}
@@ -118,4 +155,5 @@ export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
 
 const styles = StyleSheet.create({
   chip: { alignItems: 'center', justifyContent: 'center' },
+  pill: { position: 'absolute' },
 });

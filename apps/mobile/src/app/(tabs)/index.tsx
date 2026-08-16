@@ -42,6 +42,7 @@ export default function MenuScreen() {
   // иначе по дороге он подсвечивает все промежуточные категории
   const jumpingUntil = useRef(0);
   const [query, setQuery] = useState('');
+  const searching = query.trim().length > 0;
 
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() });
 
@@ -397,12 +398,14 @@ export default function MenuScreen() {
           style={{
             paddingHorizontal: theme.layout.screenPadding,
             paddingTop: theme.spacing.sm,
+            // Без категорий шапке нужен собственный нижний отступ
+            paddingBottom: searching ? theme.spacing.base : 0,
           }}
         >
           <SearchField value={query} onChange={setQuery} />
         </View>
 
-        {categories.length > 0 && query.trim().length === 0 ? (
+        {categories.length > 0 && !searching ? (
           <CategoryBar categories={categories} activeId={activeCategory} onSelect={jumpTo} onHero />
         ) : null}
       </View>
