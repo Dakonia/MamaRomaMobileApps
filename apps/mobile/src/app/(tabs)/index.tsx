@@ -41,9 +41,13 @@ export default function MenuScreen() {
   // Пока список едет к выбранному разделу, слежение за прокруткой молчит:
   // иначе по дороге он подсвечивает все промежуточные категории
   const jumpingUntil = useRef(0);
-  // Реальные координаты заголовков внутри списка: прокрутка по номеру строки
-  // не переставляет элемент, который уже попал на экран
-  const titleOffsets = useRef<Record<string, number>>({});
+  // Прокрутка по номеру строки не переставляет элемент, который уже виден,
+  // поэтому доводим вручную: держим ссылки на заголовки, текущее смещение
+  // списка и его верхнюю границу на экране
+  const titleNodes = useRef<Record<string, View | null>>({});
+  const scrollOffset = useRef(0);
+  const listTop = useRef(0);
+  const listWrapper = useRef<View>(null);
   const [query, setQuery] = useState('');
   const searching = query.trim().length > 0;
 
@@ -159,21 +163,30 @@ export default function MenuScreen() {
     jumpingUntil.current = Date.now() + 1600;
     setActiveCategory(categoryId);
 
-    // Если заголовок уже показывался, мы знаем его точную координату
-    const known = titleOffsets.current[categoryId];
-    if (known !== undefined) {
-      await list.scrollToOffset({ offset: known, animated: true });
-      return;
-    }
-
-    // Иначе прыгаем по номеру строки, а затем доводим по измеренной координате
+    // Сначала прыгаем примерно — после этого заголовок точно отрисован
     await list.scrollToIndex({ index, animated: true, viewPosition: 0 });
 
-    const measured = titleOffsets.current[categoryId];
-    if (measured !== undefined) {
-      await list.scrollToOffset({ offset: measured, animated: false });
+    // Затем измеряем, где он оказался на экране, и сдвигаем список на разницу
+    for (let pass = 0; pass < 2; pass += 1) {
+      const shift = await measureShift(categoryId);
+      if (shift === null || Math.abs(shift) < 2) break;
+
+      await list.scrollToOffset({
+        offset: Math.max(0, scrollOffset.current + shift),
+        animated: pass === 0,
+      });
     }
   };
+
+  const measureShift = (categoryId: string) =>
+    new Promise<number | null>((resolve) => {
+      const node = titleNodes.current[categoryId];
+      if (!node) {
+        resolve(null);
+        return;
+      }
+      node.measureInWindow((_x, y) => resolve(y - listTop.current));
+    });
 
   const onViewable = useRef(
     ({ viewableItems }: { viewableItems: { item: Row }[] }) => {
@@ -244,8 +257,8 @@ export default function MenuScreen() {
 
       return (
         <View
-          onLayout={(event) => {
-            titleOffsets.current[item.categoryId] = event.nativeEvent.layout.y;
+          ref={(node) => {
+            titleNodes.current[item.categoryId] = node;
           }}
           style={{
             paddingHorizontal: theme.layout.screenPadding,
@@ -344,6 +357,10 @@ export default function MenuScreen() {
     return (
       <FlashList
         ref={listRef}
+        onScroll={(event) => {
+          scrollOffset.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={32}
         data={rows}
         keyExtractor={(row) => row.key}
         getItemType={(row) => row.kind}
@@ -436,7 +453,17 @@ export default function MenuScreen() {
         ) : null}
       </View>
 
-      {body()}
+      <View
+        style={styles.grow}
+        onLayout={() => {
+          listWrapper.current?.measureInWindow((_x, y) => {
+            listTop.current = y;
+          });
+        }}
+        ref={listWrapper}
+      >
+        {body()}
+      </View>
 
     </View>
   );
