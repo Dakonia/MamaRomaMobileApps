@@ -152,15 +152,19 @@ export default function MenuScreen() {
     const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
     if (index < 0) return;
 
-    jumpingUntil.current = Date.now() + 1200;
+    jumpingUntil.current = Date.now() + 1400;
     setActiveCategory(categoryId);
 
-    // viewPosition 0 ставит заголовок ровно к верхней кромке. Повторный вызов
-    // нужен из-за переработки строк: после первого прыжка высоты уточняются
+    // Список считает высоты строк на лету, поэтому один прыжок всегда
+    // недолетает. Дожимаем после того, как анимация закончилась и размеры
+    // уточнились: две поправки хватает даже на прыжок через всё меню
     listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
-    setTimeout(() => {
-      listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
-    }, 380);
+
+    for (const delay of [520, 900]) {
+      setTimeout(() => {
+        listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
+      }, delay);
+    }
   };
 
   const onViewable = useRef(
