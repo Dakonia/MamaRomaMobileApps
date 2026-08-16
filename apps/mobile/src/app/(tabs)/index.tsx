@@ -41,6 +41,9 @@ export default function MenuScreen() {
   // Пока список едет к выбранному разделу, слежение за прокруткой молчит:
   // иначе по дороге он подсвечивает все промежуточные категории
   const jumpingUntil = useRef(0);
+  // Реальные координаты заголовков внутри списка: прокрутка по номеру строки
+  // не переставляет элемент, который уже попал на экран
+  const titleOffsets = useRef<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const searching = query.trim().length > 0;
 
@@ -150,20 +153,26 @@ export default function MenuScreen() {
 
   const jumpTo = async (categoryId: string) => {
     const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
-    if (index < 0) return;
+    const list = listRef.current;
+    if (index < 0 || list === null) return;
 
     jumpingUntil.current = Date.now() + 1600;
     setActiveCategory(categoryId);
 
-    // Прокрутка асинхронная: пока она считает высоты строк, следующий вызов
-    // бесполезен. Поэтому ждём завершения и дожимаем — после первого прохода
-    // размеры уже известны, и заголовок встаёт ровно к верхней кромке
-    const list = listRef.current;
-    if (list === null) return;
+    // Если заголовок уже показывался, мы знаем его точную координату
+    const known = titleOffsets.current[categoryId];
+    if (known !== undefined) {
+      await list.scrollToOffset({ offset: known, animated: true });
+      return;
+    }
 
+    // Иначе прыгаем по номеру строки, а затем доводим по измеренной координате
     await list.scrollToIndex({ index, animated: true, viewPosition: 0 });
-    await list.scrollToIndex({ index, animated: false, viewPosition: 0 });
-    await list.scrollToIndex({ index, animated: false, viewPosition: 0 });
+
+    const measured = titleOffsets.current[categoryId];
+    if (measured !== undefined) {
+      await list.scrollToOffset({ offset: measured, animated: false });
+    }
   };
 
   const onViewable = useRef(
@@ -235,6 +244,9 @@ export default function MenuScreen() {
 
       return (
         <View
+          onLayout={(event) => {
+            titleOffsets.current[item.categoryId] = event.nativeEvent.layout.y;
+          }}
           style={{
             paddingHorizontal: theme.layout.screenPadding,
             paddingTop: theme.spacing.xl,
