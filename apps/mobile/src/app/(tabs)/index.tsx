@@ -148,23 +148,22 @@ export default function MenuScreen() {
   const subtotal = cartSubtotal(cart.items);
   const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
 
-  const jumpTo = (categoryId: string) => {
+  const jumpTo = async (categoryId: string) => {
     const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
     if (index < 0) return;
 
-    jumpingUntil.current = Date.now() + 1400;
+    jumpingUntil.current = Date.now() + 1600;
     setActiveCategory(categoryId);
 
-    // Список считает высоты строк на лету, поэтому один прыжок всегда
-    // недолетает. Дожимаем после того, как анимация закончилась и размеры
-    // уточнились: две поправки хватает даже на прыжок через всё меню
-    listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
+    // Прокрутка асинхронная: пока она считает высоты строк, следующий вызов
+    // бесполезен. Поэтому ждём завершения и дожимаем — после первого прохода
+    // размеры уже известны, и заголовок встаёт ровно к верхней кромке
+    const list = listRef.current;
+    if (list === null) return;
 
-    for (const delay of [520, 900]) {
-      setTimeout(() => {
-        listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
-      }, delay);
-    }
+    await list.scrollToIndex({ index, animated: true, viewPosition: 0 });
+    await list.scrollToIndex({ index, animated: false, viewPosition: 0 });
+    await list.scrollToIndex({ index, animated: false, viewPosition: 0 });
   };
 
   const onViewable = useRef(
@@ -416,7 +415,12 @@ export default function MenuScreen() {
         </View>
 
         {categories.length > 0 && !searching ? (
-          <CategoryBar categories={categories} activeId={activeCategory} onSelect={jumpTo} onHero />
+          <CategoryBar
+            categories={categories}
+            activeId={activeCategory}
+            onSelect={(categoryId) => void jumpTo(categoryId)}
+            onHero
+          />
         ) : null}
       </View>
 
