@@ -5,14 +5,12 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,104 +21,32 @@ import { formatPrice } from '@/lib/format';
 import { cartSubtotal, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
 
-// Лёгкий перелёт в конце — движение читается как живое, а не как разгон по линейке
-const SPRING = { damping: 17, stiffness: 130, mass: 0.9 };
-
 export default function DishScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const cart = useCart();
-  const { id, x, y, w, h } = useLocalSearchParams<{
-    id: string;
-    x?: string;
-    y?: string;
-    w?: string;
-    h?: string;
-  }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
 
   const heroHeight = width;
-
-  // Замер из сетки. Мусорные значения отбрасываем — из-за них раскрытие дёргалось
-  const rect =
-    x && y && w && h && Number(w) > 40 && Number(h) > 40
-      ? { x: Number(x), y: Number(y), width: Number(w), height: Number(h) }
-      : null;
-
-  const grow = useSharedValue(rect === null ? 1 : 0);
   const scroll = useSharedValue(0);
-
-  useEffect(() => {
-    if (rect === null) return;
-
-    // Стартуем со следующего кадра: до первой отрисовки пружина срывается
-    const frame = requestAnimationFrame(() => {
-      grow.value = withSpring(1, SPRING);
-    });
-    return () => cancelAnimationFrame(frame);
-    // Замер приходит один раз при открытии
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const onScroll = useAnimatedScrollHandler((event) => {
     scroll.value = event.contentOffset.y;
   });
 
-  const start = rect ?? { x: 0, y: 0, width, height: heroHeight };
-
-  const heroStyle = useAnimatedStyle(() => {
-    const progress = Math.min(grow.value, 1);
-    const parallax = interpolate(
-      scroll.value,
-      [-heroHeight, 0, heroHeight],
-      [0, 0, heroHeight * 0.4],
-    );
-
-    return {
-      left: interpolate(progress, [0, 1], [start.x, 0]),
-      top: interpolate(progress, [0, 1], [start.y, 0]),
-      width: interpolate(progress, [0, 1], [start.width, width]),
-      height: interpolate(progress, [0, 1], [start.height, heroHeight]),
-      borderRadius: interpolate(progress, [0, 1], [theme.radius.xl, 0]),
-      transform: [
-        { translateY: parallax * progress },
-        { scale: interpolate(scroll.value, [-heroHeight, 0], [1.5, 1], 'clamp') },
-      ],
-    };
-  });
-
-  // Название переезжает из-под карточки на снимок и по дороге вырастает
-  const titleStyle = useAnimatedStyle(() => {
-    const progress = Math.min(grow.value, 1);
-    return {
-      left: interpolate(progress, [0, 1], [start.x + theme.spacing.md, theme.layout.screenPadding]),
-      top: interpolate(
-        progress,
-        [0, 1],
-        [start.y + start.height + theme.spacing.xs, heroHeight - theme.spacing.huge],
-      ),
-      width: interpolate(progress, [0, 1], [start.width, width - theme.layout.screenPadding * 2]),
-      fontSize: interpolate(
-        progress,
-        [0, 1],
-        [theme.typography.bodyMedium.fontSize, theme.typography.display.fontSize],
-      ),
-      opacity: interpolate(progress, [0, 0.12, 1], [0, 1, 1]),
-    };
-  });
-
-  const backdropStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.min(grow.value, 1), [0, 0.35, 1], [0, 1, 1]),
-  }));
-
-  const veilStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.min(grow.value, 1), [0, 0.8, 1], [0, 0.35, 1]),
-  }));
-
-  const contentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.min(grow.value, 1), [0, 0.62, 1], [0, 0, 1]),
+  // Единственная анимация здесь — параллакс снимка при прокрутке.
+  // Появление экрана рисует система, и делает это плавнее любого самоделья
+  const heroStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateY: interpolate(Math.min(grow.value, 1), [0, 1], [theme.spacing.xxl, 0]) },
+      {
+        translateY: interpolate(
+          scroll.value,
+          [-heroHeight, 0, heroHeight],
+          [0, 0, heroHeight * 0.4],
+        ),
+      },
+      { scale: interpolate(scroll.value, [-heroHeight, 0], [1.5, 1], 'clamp') },
     ],
   }));
 
@@ -185,26 +111,27 @@ export default function DishScreen() {
     dish.volume_ml ? `${dish.volume_ml} мл` : null,
   ].filter((value): value is string => value !== null);
 
+  // Состав приходит строкой через запятую — разбираем на плашки,
+  // так он читается как список, а не как абзац
+  const ingredients = (dish.composition ?? '')
+    .split(/[,;]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 1)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1));
+
   const addToCart = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     cart.add(dish);
   };
 
   return (
-    <View style={styles.root}>
-      <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]} pointerEvents="none">
-        <BlurView
-          intensity={theme.isDark ? 60 : 40}
-          tint={theme.isDark ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFill}
-        />
-        <Animated.View
-          style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.background }, veilStyle]}
-        />
-      </Animated.View>
-
+    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       <Animated.View
-        style={[styles.hero, { backgroundColor: theme.colors.surfaceSunken }, heroStyle]}
+        style={[
+          styles.hero,
+          { height: heroHeight, backgroundColor: theme.colors.surfaceSunken },
+          heroStyle,
+        ]}
       >
         {photo ? (
           <Image
@@ -228,30 +155,9 @@ export default function DishScreen() {
           style={[styles.veilTop, { height: theme.spacing.huge * 2 }]}
           pointerEvents="none"
         />
-        <LinearGradient
-          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)']}
-          style={[styles.veilBottom, { height: theme.spacing.huge * 2.4 }]}
-          pointerEvents="none"
-        />
       </Animated.View>
 
-      <Animated.Text
-        numberOfLines={2}
-        style={[
-          styles.title,
-          {
-            color: '#FFFFFF',
-            fontFamily: theme.typography.display.fontFamily,
-            lineHeight: theme.typography.display.lineHeight,
-          },
-          titleStyle,
-        ]}
-      >
-        {dish.name}
-      </Animated.Text>
-
       <Animated.ScrollView
-        style={contentStyle}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -281,6 +187,10 @@ export default function DishScreen() {
               },
             ]}
           />
+
+          <Text style={[theme.typography.display, { color: theme.colors.textPrimary }]}>
+            {dish.name}
+          </Text>
 
           <View style={[styles.row, { gap: theme.spacing.sm }]}>
             {category ? (
@@ -362,14 +272,30 @@ export default function DishScreen() {
             </Text>
           ) : null}
 
-          {dish.composition ? (
-            <View style={{ gap: theme.spacing.xs }}>
+          {ingredients.length > 0 ? (
+            <View style={{ gap: theme.spacing.sm }}>
               <Text style={[theme.typography.overline, { color: theme.colors.textTertiary }]}>
                 Состав
               </Text>
-              <Text style={[theme.typography.body, { color: theme.colors.textSecondary }]}>
-                {dish.composition}
-              </Text>
+              <View style={[styles.row, { gap: theme.spacing.sm }]}>
+                {ingredients.map((item) => (
+                  <View
+                    key={item}
+                    style={{
+                      paddingHorizontal: theme.spacing.md,
+                      paddingVertical: theme.spacing.xs,
+                      borderRadius: theme.radius.pill,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: theme.colors.border,
+                      backgroundColor: theme.colors.surface,
+                    }}
+                  >
+                    <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
+                      {item}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : null}
 
@@ -389,7 +315,7 @@ export default function DishScreen() {
         </View>
       </Animated.ScrollView>
 
-      <Animated.View style={[StyleSheet.absoluteFill, contentStyle]} pointerEvents="box-none">
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <PressableScale
           onPress={() => router.back()}
           accessibilityLabel="Закрыть"
@@ -410,10 +336,10 @@ export default function DishScreen() {
         >
           <Ionicons name="chevron-down" size={theme.spacing.xl} color="#FFFFFF" />
         </PressableScale>
-      </Animated.View>
+      </View>
 
       {dish.is_available ? (
-        <Animated.View style={[styles.bar, contentStyle]}>
+        <View style={styles.bar}>
           <BlurView
             intensity={theme.isDark ? 40 : 60}
             tint={theme.isDark ? 'dark' : 'light'}
@@ -444,12 +370,13 @@ export default function DishScreen() {
             {quantity > 0 ? (
               <View
                 style={[
-                  styles.row,
+                  styles.stepper,
                   {
-                    gap: theme.spacing.md,
-                    paddingHorizontal: theme.spacing.md,
+                    gap: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    minHeight: theme.layout.minTouchTarget + theme.spacing.xs,
                     borderRadius: theme.radius.pill,
-                    backgroundColor: theme.colors.brandSubtle,
+                    backgroundColor: theme.colors.brand,
                   },
                 ]}
               >
@@ -457,16 +384,18 @@ export default function DishScreen() {
                   onPress={() => cart.setQuantity(dish.id, quantity - 1)}
                   accessibilityLabel="Убрать порцию"
                   depth={0.85}
-                  style={styles.center}
+                  style={[styles.center, { width: theme.spacing.xxl }]}
                 >
-                  <Ionicons
-                    name="remove-circle"
-                    size={theme.spacing.xxl}
-                    color={theme.colors.brand}
-                  />
+                  <Ionicons name="remove" size={theme.spacing.lg} color={theme.colors.textOnBrand} />
                 </PressableScale>
 
-                <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
+                <Text
+                  style={[
+                    theme.typography.button,
+                    styles.counter,
+                    { color: theme.colors.textOnBrand, minWidth: theme.spacing.lg },
+                  ]}
+                >
                   {quantity}
                 </Text>
 
@@ -474,9 +403,9 @@ export default function DishScreen() {
                   onPress={() => cart.setQuantity(dish.id, quantity + 1)}
                   accessibilityLabel="Добавить порцию"
                   depth={0.85}
-                  style={styles.center}
+                  style={[styles.center, { width: theme.spacing.xxl }]}
                 >
-                  <Ionicons name="add-circle" size={theme.spacing.xxl} color={theme.colors.brand} />
+                  <Ionicons name="add" size={theme.spacing.lg} color={theme.colors.textOnBrand} />
                 </PressableScale>
               </View>
             ) : (
@@ -501,7 +430,7 @@ export default function DishScreen() {
               </PressableScale>
             )}
           </View>
-        </Animated.View>
+        </View>
       ) : null}
     </View>
   );
@@ -516,6 +445,8 @@ const styles = StyleSheet.create({
   title: { position: 'absolute' },
   grabber: { alignSelf: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  stepper: { flexDirection: 'row', alignItems: 'center' },
+  counter: { textAlign: 'center' },
   grow: { flex: 1 },
   nutrition: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center' },

@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { mediaUrl, type Dish } from '@/api/client';
@@ -9,13 +8,10 @@ import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';
 import { useTheme } from '@/theme/theme-provider';
 
-export type PhotoRect = { x: number; y: number; width: number; height: number };
-
 type Props = {
   dish: Dish;
   quantity: number;
-  /** Отдаём положение снимка на экране — из него карточка и развернётся. */
-  onOpen: (from: PhotoRect | null) => void;
+  onOpen: () => void;
   onAdd: () => void;
   onChangeQuantity: (quantity: number) => void;
   /** Узкая карточка для горизонтальных полок. */
@@ -34,18 +30,6 @@ export function DishCard({
   highlight,
 }: Props) {
   const theme = useTheme();
-  const photoRef = useRef<View>(null);
-
-  // Замер до перехода: анимация должна стартовать ровно с того места,
-  // где снимок лежит в сетке
-  const open = () => {
-    const node = photoRef.current;
-    if (node === null) {
-      onOpen(null);
-      return;
-    }
-    node.measureInWindow((x, y, width, height) => onOpen({ x, y, width, height }));
-  };
 
   const badges = [
     highlight ? { text: 'Хит', background: theme.colors.highlight, color: theme.colors.onHero } : null,
@@ -75,7 +59,7 @@ export function DishCard({
 
   return (
     <PressableScale
-      onPress={open}
+      onPress={onOpen}
       accessibilityLabel={`Открыть ${dish.name}`}
       style={[
         styles.root,
@@ -89,7 +73,7 @@ export function DishCard({
         },
       ]}
     >
-      <View ref={photoRef} style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
+      <View style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
         {photo ? (
           <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" transition={220} />
         ) : (
@@ -137,7 +121,7 @@ export function DishCard({
                   bottom: theme.spacing.sm,
                   borderRadius: theme.radius.pill,
                   backgroundColor: theme.colors.brand,
-                  paddingHorizontal: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.xxs,
                   ...theme.elevation.raised,
                 },
               ]}

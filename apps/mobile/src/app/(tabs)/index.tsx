@@ -8,7 +8,6 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, type Dish } from '@/api/client';
-import type { PhotoRect } from '@/components/dish-card';
 import { CartPill } from '@/components/cart-pill';
 import { CategoryBar, type CategoryChip } from '@/components/category-bar';
 import { DishCard } from '@/components/dish-card';
@@ -116,13 +115,6 @@ export default function MenuScreen() {
   const subtotal = cartSubtotal(cart.items);
   const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
 
-  const openDish = (dishId: string, from: PhotoRect | null) => {
-    const rect = from
-      ? `?x=${Math.round(from.x)}&y=${Math.round(from.y)}&w=${Math.round(from.width)}&h=${Math.round(from.height)}`
-      : '';
-    router.push(`/dish/${dishId}${rect}`);
-  };
-
   const jumpTo = (categoryId: string) => {
     const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
     if (index >= 0) {
@@ -185,7 +177,7 @@ export default function MenuScreen() {
                 width={cardWidth}
                 highlight
                 quantity={quantityOf(dish.id)}
-                onOpen={(from) => openDish(dish.id, from)}
+                onOpen={() => router.push(`/dish/${dish.id}`)}
                 onAdd={() => cart.add(dish)}
                 onChangeQuantity={(quantity) => cart.setQuantity(dish.id, quantity)}
               />
@@ -229,7 +221,7 @@ export default function MenuScreen() {
         <DishCard
           dish={item.left}
           quantity={quantityOf(item.left.id)}
-          onOpen={(from) => openDish(item.left.id, from)}
+          onOpen={() => router.push(`/dish/${item.left.id}`)}
           onAdd={() => cart.add(item.left)}
           onChangeQuantity={(quantity) => cart.setQuantity(item.left.id, quantity)}
         />
@@ -238,7 +230,7 @@ export default function MenuScreen() {
           <DishCard
             dish={right}
             quantity={quantityOf(right.id)}
-            onOpen={(from) => openDish(right.id, from)}
+            onOpen={() => router.push(`/dish/${right.id}`)}
             onAdd={() => cart.add(right)}
             onChangeQuantity={(quantity) => cart.setQuantity(right.id, quantity)}
           />
