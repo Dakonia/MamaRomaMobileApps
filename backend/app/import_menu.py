@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -42,6 +43,10 @@ ITEM_RE = re.compile(
     re.S,
 )
 PHOTO_ID_RE = re.compile(r"/(\d+)\.jpg", re.I)
+
+# Сайт отдаёт собственную заглушку «Скоро здесь будет фото» вместо снимка.
+# Узнаём её по отпечатку уже пережатого файла и не сохраняем
+PLACEHOLDER_DIGESTS = {"b2d056516d46d906eb3a663b6c699bf4"}
 TAG_RE = re.compile(r"<[^>]+>")
 VOLUME_RE = re.compile(r"(\d+)\s*мл")
 LITRE_RE = re.compile(r"([\d.,]+)\s*л\b")
@@ -133,9 +138,16 @@ async def download_photo(client: httpx.AsyncClient, photo_id: str) -> str | None
 
         if response.status_code == 200 and len(response.content) > 1024:
             try:
-                return media_service.save_image(response.content, "image/jpeg", "dishes")
+                url = media_service.save_image(response.content, "image/jpeg", "dishes")
             except media_service.MediaError:
                 return None
+
+            saved = settings.media_root / url.removeprefix(f"{settings.media_url_prefix}/")
+            if hashlib.md5(saved.read_bytes()).hexdigest() in PLACEHOLDER_DIGESTS:
+                saved.unlink(missing_ok=True)
+                return None
+
+            return url
     return None
 
 

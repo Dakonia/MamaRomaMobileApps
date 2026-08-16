@@ -396,7 +396,7 @@ export default function DishScreen() {
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <PressableScale
           onPress={() => router.back()}
-          accessibilityLabel="Закрыть"
+          accessibilityLabel="Назад"
           depth={0.9}
           style={[
             styles.close,
@@ -412,7 +412,7 @@ export default function DishScreen() {
             },
           ]}
         >
-          <Ionicons name="chevron-down" size={theme.spacing.xl} color="#FFFFFF" />
+          <Ionicons name="chevron-back" size={theme.spacing.xl} color="#FFFFFF" />
         </PressableScale>
       </View>
 

@@ -98,9 +98,9 @@ export default function RootLayout() {
               <Stack.Screen
                 name="dish/[id]"
                 options={{
-                  // Во весь экран: фотография доходит до верхнего края, без полоски сверху
-                  presentation: 'fullScreenModal',
-                  animation: 'slide_from_bottom',
+                  // Обычный экран, а не модалка: работает системный свайп от края назад
+                  animation: 'slide_from_right',
+                  gestureEnabled: true,
                 }}
               />
               <Stack.Screen name="promo/[id]" options={{ presentation: 'modal' }} />

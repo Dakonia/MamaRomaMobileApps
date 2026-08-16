@@ -150,11 +150,17 @@ export default function MenuScreen() {
 
   const jumpTo = (categoryId: string) => {
     const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
-    if (index >= 0) {
-      jumpingUntil.current = Date.now() + 900;
-      setActiveCategory(categoryId);
-      listRef.current?.scrollToIndex({ index, animated: true, viewOffset: theme.spacing.sm });
-    }
+    if (index < 0) return;
+
+    jumpingUntil.current = Date.now() + 1200;
+    setActiveCategory(categoryId);
+
+    // viewPosition 0 ставит заголовок ровно к верхней кромке. Повторный вызов
+    // нужен из-за переработки строк: после первого прыжка высоты уточняются
+    listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
+    setTimeout(() => {
+      listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
+    }, 380);
   };
 
   const onViewable = useRef(
