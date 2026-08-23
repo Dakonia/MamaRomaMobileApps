@@ -16,11 +16,13 @@ import { PromosTab } from "./PromosTab";
 import { RestaurantsTab } from "./RestaurantsTab";
 import { ExtrasTab } from "./ExtrasTab";
 import { PromoCodesTab } from "./PromoCodesTab";
+import { NotificationsTab } from "./NotificationsTab";
 import { SyncTab } from "./SyncTab";
 import { ZonesTab } from "./ZonesTab";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
 
 type Tab =
+  | "notifications"
   | "menu"
   | "orders"
   | "reservations"
@@ -333,6 +335,7 @@ export default function App() {
     { key: "extras", label: "Добавки" },
     { key: "promo-codes", label: "Промокоды" },
     { key: "guests", label: "Гости" },
+    { key: "notifications", label: "Уведомления" },
     { key: "sync", label: "Обновление" },
   ];
 
@@ -377,6 +380,7 @@ export default function App() {
         {tab === "guests" ? <GuestsTab /> : null}
         {tab === "extras" ? <ExtrasTab /> : null}
         {tab === "promo-codes" ? <PromoCodesTab /> : null}
+        {tab === "notifications" ? <NotificationsTab /> : null}
         {tab === "sync" ? <SyncTab /> : null}
       </main>
     </div>

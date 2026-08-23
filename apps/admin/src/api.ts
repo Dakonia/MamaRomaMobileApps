@@ -238,6 +238,74 @@ export type AdminRestaurant = {
 
 export type RestaurantDraft = Omit<AdminRestaurant, "id">;
 
+export type NotificationRule = {
+  id?: string | null;
+  restaurant_id?: string | null;
+  event: string;
+  is_enabled: boolean;
+  title: string;
+  body: string;
+};
+
+export type QuietHours = {
+  quiet_from: string;
+  quiet_to: string;
+  weekly_limit: number;
+};
+
+/** Кому уходит рассылка: пустые поля означают «всем подряд». */
+export type Audience = {
+  cities?: string[];
+  restaurants?: string[];
+  ordered_within_days?: number;
+  min_orders?: number;
+  booked?: boolean;
+  tiers?: string[];
+};
+
+export type CampaignTarget = { screen?: string; id?: string };
+
+export type Campaign = {
+  id: string;
+  name: string;
+  title: string;
+  body: string;
+  image_url: string | null;
+  kind: string;
+  status: string;
+  target: CampaignTarget;
+  audience: Audience;
+  scheduled_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  planned_count: number;
+  sent_count: number;
+  opened_count: number;
+  error: string | null;
+};
+
+export type CampaignWrite = {
+  name: string;
+  title: string;
+  body: string;
+  image_url: string | null;
+  target: CampaignTarget;
+  audience: Audience;
+  scheduled_at: string | null;
+};
+
+export type Automation = {
+  id?: string;
+  trigger: string;
+  is_enabled: boolean;
+  title: string;
+  body: string;
+  target: CampaignTarget;
+  params: Record<string, number>;
+  last_run_at?: string | null;
+  sent_count?: number;
+};
+
 export type Zone = {
   id: string;
   city_id: string;
@@ -428,6 +496,49 @@ export const api = {
     }>,
   ) => request<Zone>(`/admin/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteZone: (id: string) => request<void>(`/admin/zones/${id}`, { method: "DELETE" }),
+
+  // --- Уведомления ---
+
+  notificationRules: () => request<NotificationRule[]>("/admin/notifications/rules"),
+
+  saveNotificationRule: (payload: NotificationRule) =>
+    request<NotificationRule>("/admin/notifications/rules", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  notificationHours: () => request<QuietHours>("/admin/notifications/hours"),
+
+  saveNotificationHours: (payload: QuietHours) =>
+    request<QuietHours>("/admin/notifications/hours", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  campaigns: () => request<Campaign[]>("/admin/campaigns"),
+
+  createCampaign: (payload: CampaignWrite) =>
+    request<Campaign>("/admin/campaigns", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateCampaign: (id: string, payload: CampaignWrite) =>
+    request<Campaign>(`/admin/campaigns/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  campaignAudience: (audience: Audience) =>
+    request<{ count: number }>("/admin/campaigns/audience", {
+      method: "POST",
+      body: JSON.stringify({ audience }),
+    }),
+
+  sendCampaign: (id: string) =>
+    request<Campaign>(`/admin/campaigns/${id}/send`, { method: "POST" }),
+
+  automations: () => request<Automation[]>("/admin/automations"),
+
+  saveAutomation: (payload: Automation) =>
+    request<Automation>("/admin/automations", { method: "PUT", body: JSON.stringify(payload) }),
 
   createZone: (payload: {
     city_id: string;
