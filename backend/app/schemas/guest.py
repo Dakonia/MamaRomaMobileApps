@@ -8,6 +8,8 @@ from app.models.enums import DevicePlatform, Gender
 
 class GuestUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=120)
+    # Акции и новости: согласие отдельное от уведомлений о заказе
+    marketing_opt_in: bool | None = None
     email: EmailStr | None = None
     birthday: date | None = None
     gender: Gender | None = None

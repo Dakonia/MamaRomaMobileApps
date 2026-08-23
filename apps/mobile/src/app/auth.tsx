@@ -152,6 +152,8 @@ export default function AuthScreen() {
           name: name.trim(),
           gender,
           birthday: iso,
+          // Согласие на акции по умолчанию есть, отключается тумблером в профиле
+          marketing_opt_in: true,
         });
         await signIn(session);
         return;

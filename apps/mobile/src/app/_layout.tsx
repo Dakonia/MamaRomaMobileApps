@@ -219,7 +219,8 @@ export default function RootLayout() {
               <Stack.Screen name="address-map" options={{ presentation: 'modal' }} />
             </Stack>
 
-            <PushInvite />
+            {/* Пока идёт заставка, поверх неё ничего не показываем */}
+            {booting ? null : <PushInvite />}
             <UpdateReady />
             <OfflineScreen />
 

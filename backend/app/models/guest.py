@@ -26,6 +26,10 @@ class Guest(UUIDMixin, TenantMixin, TimestampMixin, Base):
     # данных в ней уже нет и войти под ней нельзя
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
+    # Акции и новости: согласие отдельное от уведомлений о заказе. Отписался
+    # от рекламы — про своего курьера гость всё равно узнает
+    marketing_opt_in: Mapped[bool] = mapped_column(default=True)
+
     is_blocked: Mapped[bool] = mapped_column(default=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 

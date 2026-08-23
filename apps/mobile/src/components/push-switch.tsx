@@ -4,52 +4,62 @@ import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { track } from '@/lib/analytics';
 import { disablePush, enablePush, lastPushError, pushAllowed, sendTestNotification } from '@/lib/push';
+import { usePushAsk } from '@/store/push-ask';
 import { useTheme } from '@/theme/theme-provider';
 
 /**
- * Уведомления о заказе в профиле. Выключить можно прямо здесь, а вот вернуть
- * после системного отказа — только в настройках телефона: второй раз система
- * спросить не даст, и честнее отвести туда, чем показывать бесполезный тумблер.
+ * Уведомления о заказе в профиле.
+ *
+ * Тумблер показывает выбор гостя, а не разрешение телефона: это разные вещи.
+ * Разрешение выдаётся один раз навсегда, а тумблером пользуются как хотят —
+ * выключил, и приложение перестаёт слать, не трогая системную настройку.
+ * Вернуть после системного отказа можно только в настройках телефона: второй
+ * раз система спросить не даст.
  */
 export function PushSwitch() {
   const theme = useTheme();
-  const [on, setOn] = useState(false);
+  const wanted = usePushAsk((state) => state.wanted);
+  const setWanted = usePushAsk((state) => state.setWanted);
+
+  const [allowed, setAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const allowed = await pushAllowed();
-      setOn(allowed);
+      const granted = await pushAllowed();
+      setAllowed(granted);
 
-      // Разрешение есть — молча обновляем токен на сервере и показываем, если
-      // что-то мешает: гость видел «включено», а уведомления не приходили
-      if (allowed) {
+      // Токен живёт не вечно — молча обновляем, но только если гость сам не
+      // выключил уведомления. Иначе тумблер «включался» бы сам по себе
+      if (granted && wanted) {
         const token = await enablePush(false);
         setFailure(token === null ? lastPushError : null);
       }
     })();
-  }, []);
+  }, [wanted]);
 
   const toggle = (next: boolean) => {
     setBusy(true);
-    setOn(next);
+    setWanted(next);
 
     void (async () => {
       if (next) {
         const token = await enablePush(true);
         track('push_toggled', { on: token !== null });
         setFailure(token === null ? lastPushError : null);
+        setAllowed(token !== null);
 
         if (token === null) {
-          setOn(false);
-          // Система уже отказала раньше — открываем настройки приложения
+          setWanted(false);
+          // Система уже отказала раньше — своими силами не вернуть
           void Linking.openSettings();
         }
       } else {
         await disablePush();
         track('push_toggled', { on: false });
+        setFailure(null);
       }
 
       setBusy(false);
@@ -88,12 +98,14 @@ export function PushSwitch() {
           Уведомления о заказе
         </Text>
         <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-          Когда ресторан примет заказ и курьер выедет
+          {wanted && !allowed
+            ? 'Телефон запретил уведомления — включите в его настройках'
+            : 'Когда ресторан примет заказ и курьер выедет'}
         </Text>
       </View>
 
       <Switch
-        value={on}
+        value={wanted && allowed}
         disabled={busy}
         onValueChange={toggle}
           trackColor={{ false: theme.colors.border, true: theme.colors.brand }}
@@ -108,8 +120,18 @@ export function PushSwitch() {
         </Text>
       ) : null}
 
+      {/* Только на разработке: вернуть плашку с предложением включить */}
+      {__DEV__ ? (
+        <Text
+          onPress={() => usePushAsk.getState().forget()}
+          style={[theme.typography.caption, styles.hint, { color: theme.colors.textTertiary }]}
+        >
+          Показать плашку с предложением заново
+        </Text>
+      ) : null}
+
       {/* Только на разработке: посмотреть, как уведомление выглядит на телефоне */}
-      {__DEV__ && on ? (
+      {__DEV__ && wanted && allowed ? (
         <Text
           onPress={() => void sendTestNotification().then(setSent)}
           style={[

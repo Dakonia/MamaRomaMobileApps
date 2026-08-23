@@ -46,6 +46,15 @@ export async function pushAllowed(): Promise<boolean> {
 }
 
 /**
+ * Гость запретил уведомления насовсем: системное окно больше не появится,
+ * вернуть можно только в настройках телефона.
+ */
+export async function pushBlocked(): Promise<boolean> {
+  const status = await Notifications.getPermissionsAsync();
+  return !status.granted && !status.canAskAgain;
+}
+
+/**
  * Спрашивает разрешение и отдаёт токен устройства. Токен привязывается к гостю
  * на сервере — по нему приходит статус его заказа.
  */
@@ -68,6 +77,13 @@ export async function enablePush(ask: boolean): Promise<string | null> {
     await prepareChannels();
 
     const current = await Notifications.getPermissionsAsync();
+
+    if (!current.granted && ask && !current.canAskAgain) {
+      // Один раз уже отказали: системное окно больше никогда не покажется
+      lastPushError = 'settings';
+      return null;
+    }
+
     const granted =
       current.granted || (ask && (await Notifications.requestPermissionsAsync()).granted);
 

@@ -1027,6 +1027,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/notifications/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Правила уведомлений по шагам заказа
+         * @description Что сохранено в базе плюс заготовки для шагов, которых там ещё нет.
+         */
+        get: operations["notification_rules_api_v1_admin_notifications_rules_get"];
+        /** Изменить правило шага */
+        put: operations["save_notification_rule_api_v1_admin_notifications_rules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notifications/hours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Тихие часы и частота рассылок */
+        get: operations["notification_hours_api_v1_admin_notifications_hours_get"];
+        /** Изменить тихие часы */
+        put: operations["save_notification_hours_api_v1_admin_notifications_hours_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Рассылки */
+        get: operations["campaigns_api_v1_admin_campaigns_get"];
+        put?: never;
+        /** Создать рассылку */
+        post: operations["create_campaign_api_v1_admin_campaigns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/campaigns/{campaign_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Изменить рассылку */
+        patch: operations["update_campaign_api_v1_admin_campaigns__campaign_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/campaigns/audience": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Сколько гостей попадёт в рассылку */
+        post: operations["campaign_audience_api_v1_admin_campaigns_audience_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/campaigns/{campaign_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отправить рассылку сейчас */
+        post: operations["send_campaign_now_api_v1_admin_campaigns__campaign_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Сценарии */
+        get: operations["automations_api_v1_admin_automations_get"];
+        /** Изменить сценарий */
+        put: operations["save_automation_api_v1_admin_automations_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1188,10 +1314,130 @@ export interface components {
             /** Is Default */
             is_default?: boolean | null;
         };
+        /** AudienceQuery */
+        AudienceQuery: {
+            /** Audience */
+            audience?: {
+                [key: string]: unknown;
+            };
+        };
+        /** AutomationRead */
+        AutomationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Trigger */
+            trigger: string;
+            /** Is Enabled */
+            is_enabled: boolean;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Target */
+            target: {
+                [key: string]: string;
+            };
+            /** Params */
+            params: {
+                [key: string]: number;
+            };
+            /** Last Run At */
+            last_run_at: string | null;
+            /** Sent Count */
+            sent_count: number;
+        };
+        /** AutomationWrite */
+        AutomationWrite: {
+            /** Trigger */
+            trigger: string;
+            /**
+             * Is Enabled
+             * @default false
+             */
+            is_enabled: boolean;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Target */
+            target?: {
+                [key: string]: string;
+            };
+            /** Params */
+            params?: {
+                [key: string]: number;
+            };
+        };
         /** Body_upload_api_v1_admin_uploads_post */
         Body_upload_api_v1_admin_uploads_post: {
             /** File */
             file: string;
+        };
+        /** CampaignRead */
+        CampaignRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Image Url */
+            image_url: string | null;
+            /** Kind */
+            kind: string;
+            /** Status */
+            status: string;
+            /** Target */
+            target: {
+                [key: string]: string;
+            };
+            /** Audience */
+            audience: {
+                [key: string]: unknown;
+            };
+            /** Scheduled At */
+            scheduled_at: string | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Planned Count */
+            planned_count: number;
+            /** Sent Count */
+            sent_count: number;
+            /** Opened Count */
+            opened_count: number;
+            /** Error */
+            error: string | null;
+        };
+        /** CampaignWrite */
+        CampaignWrite: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Image Url */
+            image_url?: string | null;
+            /** Target */
+            target?: {
+                [key: string]: string;
+            };
+            /** Audience */
+            audience?: {
+                [key: string]: unknown;
+            };
+            /** Scheduled At */
+            scheduled_at?: string | null;
         };
         /** CategoryAdminRead */
         CategoryAdminRead: {
@@ -1920,6 +2166,11 @@ export interface components {
             email: string | null;
             /** Birthday */
             birthday: string | null;
+            /**
+             * Marketing Opt In
+             * @default true
+             */
+            marketing_opt_in: boolean;
             gender: components["schemas"]["Gender"] | null;
         };
         /** GuestReservationRead */
@@ -1959,6 +2210,8 @@ export interface components {
         GuestUpdate: {
             /** Name */
             name?: string | null;
+            /** Marketing Opt In */
+            marketing_opt_in?: boolean | null;
             /** Email */
             email?: string | null;
             /** Birthday */
@@ -1981,6 +2234,39 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HoursRead */
+        HoursRead: {
+            /**
+             * Quiet From
+             * Format: time
+             */
+            quiet_from: string;
+            /**
+             * Quiet To
+             * Format: time
+             */
+            quiet_to: string;
+            /** Weekly Limit */
+            weekly_limit: number;
+        };
+        /** HoursWrite */
+        HoursWrite: {
+            /**
+             * Quiet From
+             * Format: time
+             */
+            quiet_from: string;
+            /**
+             * Quiet To
+             * Format: time
+             */
+            quiet_to: string;
+            /**
+             * Weekly Limit
+             * @default 2
+             */
+            weekly_limit: number;
         };
         /** LoyaltyRead */
         LoyaltyRead: {
@@ -2839,6 +3125,40 @@ export interface components {
              */
             preorder_enabled: boolean;
         };
+        /**
+         * RuleRead
+         * @description Шаг заказа: пишем ли гостю и какими словами.
+         */
+        RuleRead: {
+            /** Id */
+            id?: string | null;
+            /** Restaurant Id */
+            restaurant_id?: string | null;
+            /** Event */
+            event: string;
+            /** Is Enabled */
+            is_enabled: boolean;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+        };
+        /** RuleWrite */
+        RuleWrite: {
+            /** Restaurant Id */
+            restaurant_id?: string | null;
+            /** Event */
+            event: string;
+            /**
+             * Is Enabled
+             * @default true
+             */
+            is_enabled: boolean;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+        };
         /** SessionRead */
         SessionRead: {
             /**
@@ -2867,7 +3187,12 @@ export interface components {
             name: string;
             gender?: components["schemas"]["Gender"] | null;
             /** Birthday */
-            birthday?: string | null;
+            birthday: string | null;
+            /**
+             * Marketing Opt In
+             * @default true
+             */
+            marketing_opt_in: boolean;
         };
         /**
          * SignupRequired
@@ -5947,6 +6272,377 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DishExtraAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notification_rules_api_v1_admin_notifications_rules_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_notification_rule_api_v1_admin_notifications_rules_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notification_hours_api_v1_admin_notifications_hours_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoursRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_notification_hours_api_v1_admin_notifications_hours_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HoursWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoursRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    campaigns_api_v1_admin_campaigns_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_campaign_api_v1_admin_campaigns_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CampaignWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_campaign_api_v1_admin_campaigns__campaign_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CampaignWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    campaign_audience_api_v1_admin_campaigns_audience_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudienceQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_campaign_now_api_v1_admin_campaigns__campaign_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    automations_api_v1_admin_automations_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_automation_api_v1_admin_automations_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRead"];
                 };
             };
             /** @description Validation Error */

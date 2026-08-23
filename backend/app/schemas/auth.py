@@ -31,7 +31,8 @@ class SignupRequest(BaseModel):
     signup_token: str
     name: str = Field(min_length=2, max_length=120)
     gender: Gender | None = None
-    birthday: date | None = None
+    birthday: date | None
+    marketing_opt_in: bool = True
 
 
 class GuestRead(BaseModel):
@@ -42,6 +43,7 @@ class GuestRead(BaseModel):
     name: str | None
     email: str | None
     birthday: date | None
+    marketing_opt_in: bool = True
     gender: Gender | None
 
 

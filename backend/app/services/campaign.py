@@ -38,6 +38,8 @@ async def audience(session: AsyncSession, tenant: Tenant, filters: dict[str, Any
             Guest.tenant_id == tenant.id,
             Guest.deleted_at.is_(None),
             Guest.is_blocked.is_(False),
+            # Реклама — только с согласия: статусы заказа это не затрагивает
+            Guest.marketing_opt_in.is_(True),
             Device.is_active.is_(True),
         )
         .distinct()

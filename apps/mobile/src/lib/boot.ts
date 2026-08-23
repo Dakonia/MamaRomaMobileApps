@@ -55,8 +55,12 @@ const JOBS: (() => Promise<unknown>)[] = [
       queryFn: () => api.promotions(currentRestaurant(), true),
     }),
   () => Image.prefetch([require('../../assets/images/hero-pizza.jpg')]),
-  // Токен устройства живёт не вечно: обновляем молча, ничего не спрашивая
-  () => enablePush(false),
+  // Токен живёт не вечно: обновляем молча — но только если гость не выключил
+  // уведомления сам. Иначе выключенный тумблер оживал бы при каждом запуске
+  async () => {
+    await usePushAsk.getState().restore();
+    if (usePushAsk.getState().wanted) await enablePush(false);
+  },
 ];
 
 /**

@@ -24,6 +24,7 @@ import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { ActiveOrder } from '@/components/active-order';
 import { OrderHistoryCard } from '@/components/order-history-card';
 import { PressableScale } from '@/components/pressable-scale';
+import { MarketingSwitch } from '@/components/marketing-switch';
 import { PushSwitch } from '@/components/push-switch';
 import { ReservationStrip } from '@/components/reservation-strip';
 import { PrimaryButton } from '@/components/primary-button';
@@ -451,6 +452,7 @@ export default function ProfileScreen() {
           >
             {title('Приложение')}
             <PushSwitch />
+            <MarketingSwitch />
             <AppearanceSwitch />
           </Animated.View>
         ) : null}
