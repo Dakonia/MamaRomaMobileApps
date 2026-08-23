@@ -1716,12 +1716,17 @@ async def update_campaign(
 async def campaign_audience(
     payload: AudienceQuery, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> dict[str, int]:
-    return {"count": await campaign_service.preview_size(session, tenant, payload.audience)}
+    """Не только число, но и разбор: почему остальные не получат."""
+    return await campaign_service.reach_report(session, tenant, payload.audience)
 
 
 @router.post("/campaigns/{campaign_id}/send", summary="Отправить рассылку сейчас")
 async def send_campaign_now(
-    campaign_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+    campaign_id: UUID,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    force: Annotated[bool, Query()] = False,
 ) -> CampaignRead:
     campaign = await session.scalar(
         select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
@@ -1729,7 +1734,7 @@ async def send_campaign_now(
     if campaign is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Рассылка не найдена")
 
-    await campaign_service.send_campaign(session, tenant, campaign)
+    await campaign_service.send_campaign(session, tenant, campaign, force=force)
     await session.refresh(campaign)
     return CampaignRead.model_validate(campaign)
 

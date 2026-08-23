@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { track } from '@/lib/analytics';
-import { BLOCKED_BY_SETTINGS, disablePush, enablePush, lastPushError, pushAllowed } from '@/lib/push';
+import { BLOCKED_BY_SETTINGS, disablePush, enablePush, lastPushError } from '@/lib/push';
+import { usePushPermission } from '@/lib/use-push-permission';
 import { usePushAsk } from '@/store/push-ask';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -21,23 +22,20 @@ export function PushSwitch() {
   const wanted = usePushAsk((state) => state.wanted);
   const setWanted = usePushAsk((state) => state.setWanted);
 
-  const [allowed, setAllowed] = useState(false);
+  const allowed = usePushPermission();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const granted = await pushAllowed();
-      setAllowed(granted);
-
       // Токен живёт не вечно — молча обновляем, но только если гость сам не
       // выключил уведомления. Иначе тумблер «включался» бы сам по себе
-      if (granted && wanted) {
+      if (allowed && wanted) {
         const token = await enablePush(false);
         setFailure(token === null ? lastPushError : null);
       }
     })();
-  }, [wanted]);
+  }, [wanted, allowed]);
 
   const toggle = (next: boolean) => {
     setBusy(true);
@@ -48,7 +46,6 @@ export function PushSwitch() {
         const token = await enablePush(true);
         track('push_toggled', { on: token !== null });
         setFailure(token === null ? lastPushError : null);
-        setAllowed(token !== null);
 
         if (token === null) {
           setWanted(false);

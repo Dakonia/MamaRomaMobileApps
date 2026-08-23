@@ -265,6 +265,14 @@ export type Audience = {
 
 export type CampaignTarget = { screen?: string; id?: string };
 
+/** Разбор охвата: сколько получат и почему остальные — нет. */
+export type Reach = {
+  count: number;
+  guests: number;
+  with_push: number;
+  agreed: number;
+};
+
 export type Campaign = {
   id: string;
   name: string;
@@ -527,13 +535,13 @@ export const api = {
     }),
 
   campaignAudience: (audience: Audience) =>
-    request<{ count: number }>("/admin/campaigns/audience", {
+    request<Reach>("/admin/campaigns/audience", {
       method: "POST",
       body: JSON.stringify({ audience }),
     }),
 
-  sendCampaign: (id: string) =>
-    request<Campaign>(`/admin/campaigns/${id}/send`, { method: "POST" }),
+  sendCampaign: (id: string, force = false) =>
+    request<Campaign>(`/admin/campaigns/${id}/send?force=${force}`, { method: "POST" }),
 
   automations: () => request<Automation[]>("/admin/automations"),
 

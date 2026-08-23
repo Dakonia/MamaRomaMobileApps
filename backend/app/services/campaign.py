@@ -95,15 +95,69 @@ async def preview_size(session: AsyncSession, tenant: Tenant, filters: dict[str,
     return len(await audience(session, tenant, filters))
 
 
-async def send_campaign(session: AsyncSession, tenant: Tenant, campaign: Campaign) -> int:
-    """Отправляет рассылку по её условиям. Повторно одному гостю не пишем."""
+async def reach_report(
+    session: AsyncSession, tenant: Tenant, filters: dict[str, Any]
+) -> dict[str, int]:
+    """Разбор охвата: сколько получат и почему остальные — нет.
+
+    Без этого цифра «1 гость» выглядит поломкой, хотя на деле у остальных
+    просто выключены уведомления.
+    """
+    guests = await session.scalar(
+        select(func.count())
+        .select_from(Guest)
+        .where(Guest.tenant_id == tenant.id, Guest.deleted_at.is_(None))
+    )
+    with_push = await session.scalar(
+        select(func.count(func.distinct(Guest.id)))
+        .select_from(Guest)
+        .join(Device, Device.guest_id == Guest.id)
+        .where(
+            Guest.tenant_id == tenant.id,
+            Guest.deleted_at.is_(None),
+            Device.is_active.is_(True),
+        )
+    )
+    agreed = await session.scalar(
+        select(func.count(func.distinct(Guest.id)))
+        .select_from(Guest)
+        .join(Device, Device.guest_id == Guest.id)
+        .where(
+            Guest.tenant_id == tenant.id,
+            Guest.deleted_at.is_(None),
+            Guest.marketing_opt_in.is_(True),
+            Device.is_active.is_(True),
+        )
+    )
+
+    return {
+        "count": len(await audience(session, tenant, filters)),
+        "guests": guests or 0,
+        "with_push": with_push or 0,
+        "agreed": agreed or 0,
+    }
+
+
+async def send_campaign(
+    session: AsyncSession, tenant: Tenant, campaign: Campaign, force: bool = False
+) -> int:
+    """Отправляет рассылку по её условиям. Повторно одному гостю не пишем.
+
+    Ночью по своей воле не будим — но менеджер может настоять: он отправляет
+    вручную и знает, что делает.
+    """
     zone = ZoneInfo(tenant.timezone)
 
-    if campaign.kind is NotificationKind.MARKETING and await push_service.quiet_now(
-        session, tenant.id, zone
+    if (
+        not force
+        and campaign.kind is NotificationKind.MARKETING
+        and await push_service.quiet_now(session, tenant.id, zone)
     ):
-        # Ночью не будим: рассылка подождёт следующего запуска
+        campaign.error = "Сейчас тихие часы — рассылка уйдёт, когда они закончатся"
+        await session.commit()
         return 0
+
+    campaign.error = None
 
     campaign.status = CampaignStatus.SENDING
     campaign.started_at = campaign.started_at or datetime.now(UTC)

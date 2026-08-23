@@ -9,6 +9,7 @@ import {
   type CampaignWrite,
   type City,
   type Promotion,
+  type Reach,
 } from "./api";
 import { Badge, Button, c, radius, spacing, styles, typography } from "./ui";
 
@@ -60,7 +61,8 @@ export function CampaignsTab() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [draft, setDraft] = useState<CampaignWrite>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
-  const [reach, setReach] = useState<number | null>(null);
+  const [reach, setReach] = useState<Reach | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -91,7 +93,7 @@ export function CampaignsTab() {
     const timer = setTimeout(() => {
       void api
         .campaignAudience(draft.audience)
-        .then((result) => alive && setReach(result.count))
+        .then((result) => alive && setReach(result))
         .catch(() => alive && setReach(null));
     }, 400);
 
@@ -109,16 +111,27 @@ export function CampaignsTab() {
   const audience = (patch: Partial<Audience>) =>
     setDraft({ ...draft, audience: { ...draft.audience, ...patch } });
 
-  const save = async (send: boolean) => {
+  const save = async (send: boolean, force = false) => {
     setBusy(true);
     setFailure(null);
+    setNote(null);
 
     try {
       const saved = editing
         ? await api.updateCampaign(editing, draft)
         : await api.createCampaign(draft);
 
-      if (send) await api.sendCampaign(saved.id);
+      if (send) {
+        const sent = await api.sendCampaign(saved.id, force);
+
+        // Сервер мог отложить отправку — например, из-за тихих часов
+        if (sent.error) {
+          setNote(sent.error);
+          setEditing(saved.id);
+          await load();
+          return;
+        }
+      }
 
       setDraft(EMPTY);
       setEditing(null);
@@ -133,6 +146,35 @@ export function CampaignsTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: spacing.lg }}>
       {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
+
+      {note ? (
+        <div
+          style={{
+            background: c.warningSubtle,
+            color: c.warning,
+            borderRadius: radius.lg,
+            padding: spacing.base,
+            display: "flex",
+            alignItems: "center",
+            gap: spacing.md,
+          }}
+        >
+          <span style={{ flex: 1 }}>{note}</span>
+          <Button
+            tone="quiet"
+            onClick={() => {
+              if (editing) void api.sendCampaign(editing, true).then(() => {
+                setNote(null);
+                setDraft(EMPTY);
+                setEditing(null);
+                void load();
+              });
+            }}
+          >
+            Отправить всё равно
+          </Button>
+        </div>
+      ) : null}
 
       <div style={{ ...styles.card, padding: spacing.base, display: "flex", flexDirection: "column", gap: spacing.md }}>
         <div style={{ fontWeight: 600 }}>{editing ? "Правка рассылки" : "Новая рассылка"}</div>
@@ -339,9 +381,11 @@ export function CampaignsTab() {
           }}
         >
           <div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{reach ?? "…"}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{reach?.count ?? "…"}</div>
             <div style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-              гостей получит рассылку
+              {reach
+                ? `получат рассылку · всего гостей ${reach.guests}, из них с включёнными уведомлениями ${reach.with_push}, согласны на акции ${reach.agreed}`
+                : "считаем охват"}
             </div>
           </div>
 
@@ -444,7 +488,15 @@ export function CampaignsTab() {
                         Открыть
                       </Button>
                       <Button
-                        onClick={() => void api.sendCampaign(row.id).then(load)}
+                        onClick={() =>
+                          void api.sendCampaign(row.id).then((sent) => {
+                            if (sent.error) {
+                              setNote(sent.error);
+                              setEditing(sent.id);
+                            }
+                            return load();
+                          })
+                        }
                         disabled={row.status === "sending"}
                       >
                         Отправить
