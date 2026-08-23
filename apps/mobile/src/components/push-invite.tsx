@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PressableScale } from '@/components/pressable-scale';
 import { track } from '@/lib/analytics';
-import { enablePush, lastPushError, pushAllowed, pushBlocked } from '@/lib/push';
+import { BLOCKED_BY_SETTINGS, enablePush, lastPushError, pushAllowed, pushBlocked } from '@/lib/push';
 import { usePushAsk } from '@/store/push-ask';
 import { useSession } from '@/store/session';
 import { useTheme } from '@/theme/theme-provider';
@@ -107,7 +107,7 @@ export function PushInvite() {
       track('push_invite', { allowed: token !== null });
 
       // Отказали раньше — системное окно больше не появится, ведём в настройки
-      if (token === null && lastPushError === 'settings') {
+      if (token === null && lastPushError === BLOCKED_BY_SETTINGS) {
         setBlocked(true);
         skipNag();
         setShow(false);

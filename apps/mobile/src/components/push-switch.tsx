@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { track } from '@/lib/analytics';
-import { disablePush, enablePush, lastPushError, pushAllowed } from '@/lib/push';
+import { BLOCKED_BY_SETTINGS, disablePush, enablePush, lastPushError, pushAllowed } from '@/lib/push';
 import { usePushAsk } from '@/store/push-ask';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -65,60 +65,65 @@ export function PushSwitch() {
     })();
   };
 
+  // Код отказа переводим на человеческий: гостю ни к чему наши метки
+  const message =
+    failure === BLOCKED_BY_SETTINGS
+      ? 'Уведомления запрещены в настройках телефона — включите их там'
+      : failure;
+
   return (
     <View style={{ gap: theme.spacing.sm }}>
       <View
         style={[
           styles.row,
-        {
-          padding: theme.spacing.base,
-          borderRadius: theme.radius.xl,
-          backgroundColor: theme.colors.surface,
-          gap: theme.spacing.md,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.icon,
           {
-            width: theme.spacing.xxl,
-            height: theme.spacing.xxl,
-            borderRadius: theme.radius.md,
-            backgroundColor: theme.colors.brandSubtle,
+            padding: theme.spacing.base,
+            borderRadius: theme.radius.xl,
+            backgroundColor: theme.colors.surface,
+            gap: theme.spacing.md,
           },
         ]}
       >
-        <Ionicons name="notifications-outline" size={18} color={theme.colors.brand} />
-      </View>
+        <View
+          style={[
+            styles.icon,
+            {
+              width: theme.spacing.xxl,
+              height: theme.spacing.xxl,
+              borderRadius: theme.radius.md,
+              backgroundColor: theme.colors.brandSubtle,
+            },
+          ]}
+        >
+          <Ionicons name="notifications-outline" size={18} color={theme.colors.brand} />
+        </View>
 
-      <View style={styles.grow}>
-        <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
-          Уведомления о заказе
-        </Text>
-        <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-          {wanted && !allowed
-            ? 'Телефон запретил уведомления — включите в его настройках'
-            : 'Когда ресторан примет заказ и курьер выедет'}
-        </Text>
-      </View>
+        <View style={styles.grow}>
+          <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
+            Уведомления о заказе
+          </Text>
+          <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
+            {wanted && !allowed
+              ? 'Телефон запретил уведомления — включите в его настройках'
+              : 'Когда ресторан примет заказ и курьер выедет'}
+          </Text>
+        </View>
 
-      <Switch
-        value={wanted && allowed}
-        disabled={busy}
-        onValueChange={toggle}
+        <Switch
+          value={wanted && allowed}
+          disabled={busy}
+          onValueChange={toggle}
           trackColor={{ false: theme.colors.border, true: theme.colors.brand }}
           thumbColor={theme.colors.surface}
         />
       </View>
 
       {/* Почему не включилось: без этого причина видна только в отчётах */}
-      {failure ? (
+      {message ? (
         <Text style={[theme.typography.caption, styles.hint, { color: theme.colors.danger }]}>
-          {failure}
+          {message}
         </Text>
       ) : null}
-
     </View>
   );
 }

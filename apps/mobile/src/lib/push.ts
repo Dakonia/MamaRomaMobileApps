@@ -58,6 +58,9 @@ export async function pushBlocked(): Promise<boolean> {
  * Спрашивает разрешение и отдаёт токен устройства. Токен привязывается к гостю
  * на сервере — по нему приходит статус его заказа.
  */
+/** Телефон запретил уведомления насовсем: код, а не текст для гостя. */
+export const BLOCKED_BY_SETTINGS = 'settings';
+
 export let lastPushError: string | null = null;
 
 export async function enablePush(ask: boolean): Promise<string | null> {
@@ -80,7 +83,7 @@ export async function enablePush(ask: boolean): Promise<string | null> {
 
     if (!current.granted && ask && !current.canAskAgain) {
       // Один раз уже отказали: системное окно больше никогда не покажется
-      lastPushError = 'settings';
+      lastPushError = BLOCKED_BY_SETTINGS;
       return null;
     }
 
