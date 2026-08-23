@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, insert, or_, select
 from app.api.deps import SessionDep, StaffDep, TenantDep
 from app.core.db import SessionLocal
 from app.core.security import create_token, normalize_phone, verify_password
-from app.models.enums import OrderStatus, ReservationStatus, TriggerKind
+from app.models.enums import CampaignStatus, OrderStatus, ReservationStatus, TriggerKind
 from app.models.geo import City, DeliveryZone, Restaurant
 from app.models.guest import Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
@@ -1666,6 +1666,15 @@ async def create_campaign(
     payload: CampaignWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> CampaignRead:
     campaign = Campaign(tenant_id=tenant.id, **payload.model_dump())
+
+    # Охват считаем сразу: менеджеру важно видеть его и у черновика
+    campaign.planned_count = await campaign_service.preview_size(
+        session, tenant, campaign.audience
+    )
+    # Указано время — рассылка ждёт его, иначе остаётся черновиком
+    if campaign.scheduled_at is not None:
+        campaign.status = CampaignStatus.SCHEDULED
+
     session.add(campaign)
     await session.commit()
     await session.refresh(campaign)
@@ -1688,6 +1697,15 @@ async def update_campaign(
 
     for field, value in payload.model_dump().items():
         setattr(campaign, field, value)
+
+    campaign.planned_count = await campaign_service.preview_size(
+        session, tenant, campaign.audience
+    )
+
+    if campaign.status in (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED):
+        campaign.status = (
+            CampaignStatus.SCHEDULED if campaign.scheduled_at else CampaignStatus.DRAFT
+        )
 
     await session.commit()
     await session.refresh(campaign)

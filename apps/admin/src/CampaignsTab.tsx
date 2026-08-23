@@ -375,7 +375,7 @@ export function CampaignsTab() {
             <tr>
               <th style={styles.th}>Рассылка</th>
               <th style={styles.th}>Состояние</th>
-              <th style={styles.th}>Охват</th>
+              <th style={styles.th}>Кому</th>
               <th style={styles.th} />
             </tr>
           </thead>
@@ -395,7 +395,34 @@ export function CampaignsTab() {
                     <Badge text={state.label} tone={state.tone} />
                   </td>
                   <td style={styles.td}>
-                    {row.sent_count} из {row.planned_count || "—"}
+                    {row.status === "sent" || row.sent_count > 0 ? (
+                      <>
+                        <div style={{ fontWeight: 600 }}>
+                          отправлено {row.sent_count}
+                        </div>
+                        <div
+                          style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}
+                        >
+                          из {row.planned_count} в аудитории
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 600 }}>{row.planned_count} гостей</div>
+                        <div
+                          style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}
+                        >
+                          {row.scheduled_at
+                            ? `отправим ${new Date(row.scheduled_at).toLocaleString("ru-RU", {
+                                day: "numeric",
+                                month: "long",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}`
+                            : "ждёт отправки"}
+                        </div>
+                      </>
+                    )}
                   </td>
                   <td style={{ ...styles.td, textAlign: "right" }}>
                     <div style={{ display: "flex", gap: spacing.sm, justifyContent: "flex-end" }}>
