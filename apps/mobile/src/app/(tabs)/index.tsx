@@ -5,6 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
+  Easing,
   FadeIn,
   runOnJS,
   useAnimatedScrollHandler,
@@ -128,9 +129,22 @@ export default function MenuScreen() {
     [scrollOffset],
   );
 
+  /**
+   * Шапка складывается один раз за проход, а не тянется следом за пальцем.
+   * Высота — свойство разметки: пересчитывать её на каждый кадр значит
+   * заставлять список перестраиваться шестьдесят раз в секунду, и на неновых
+   * телефонах прокрутка от этого дёргается. Порог на складывание и на возврат
+   * разный, иначе шапка хлопает у самой границы.
+   */
   const onScroll = useAnimatedScrollHandler((event) => {
     const offset = event.contentOffset.y;
-    collapse.value = Math.min(1, Math.max(0, (offset - 12) / 90));
+
+    if (collapse.value < 0.5 && offset > 90) {
+      collapse.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
+    } else if (collapse.value > 0.5 && offset < 40) {
+      collapse.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) });
+    }
+
     runOnJS(rememberOffset)(offset);
   });
 

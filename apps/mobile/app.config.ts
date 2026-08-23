@@ -32,11 +32,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: stores.androidPackage,
-    // Ключ Firebase для пуш-уведомлений. Файла нет — собираем без пушей,
-    // приложение работает как прежде
-    googleServicesFile: existsSync("./google-services.json")
-      ? "./google-services.json"
-      : undefined,
+    // Ключ Firebase для пуш-уведомлений. В репозиторий файл не кладём: на
+    // сборке его подставляет EAS через переменную, локально берём с диска
+    googleServicesFile:
+      process.env.GOOGLE_SERVICES_JSON ??
+      (existsSync("./google-services.json") ? "./google-services.json" : undefined),
     adaptiveIcon: {
       backgroundColor: branding.androidAdaptiveBackground,
       foregroundImage: "./assets/images/android-icon-foreground.png",

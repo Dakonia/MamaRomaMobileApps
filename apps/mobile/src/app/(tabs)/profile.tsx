@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '@/api/client';
 import { LoyaltyCard } from '@/components/loyalty-card';
+import { AppearanceSwitch } from '@/components/appearance-switch';
 import { ConfirmSheet } from '@/components/confirm-sheet';
 import { EmptyArt } from '@/components/empty-art';
 import { LoyaltyRules } from '@/components/loyalty-rules';
@@ -448,8 +449,9 @@ export default function ProfileScreen() {
             entering={FadeInDown.duration(340).delay(220)}
             style={{ gap: theme.spacing.md }}
           >
-            {title('Уведомления')}
+            {title('Приложение')}
             <PushSwitch />
+            <AppearanceSwitch />
           </Animated.View>
         ) : null}
 

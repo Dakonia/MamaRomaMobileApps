@@ -49,9 +49,20 @@ export async function pushAllowed(): Promise<boolean> {
  * Спрашивает разрешение и отдаёт токен устройства. Токен привязывается к гостю
  * на сервере — по нему приходит статус его заказа.
  */
+export let lastPushError: string | null = null;
+
 export async function enablePush(ask: boolean): Promise<string | null> {
-  // На эмуляторе пушей не бывает: там нет ни Firebase, ни APNs
-  if (!Device.isDevice || !projectId) return null;
+  lastPushError = null;
+
+  if (!Device.isDevice) {
+    lastPushError = 'Эмулятор: уведомления не поддерживаются';
+    return null;
+  }
+
+  if (!projectId) {
+    lastPushError = 'В сборке нет идентификатора проекта';
+    return null;
+  }
 
   try {
     await prepareChannels();
@@ -60,7 +71,10 @@ export async function enablePush(ask: boolean): Promise<string | null> {
     const granted =
       current.granted || (ask && (await Notifications.requestPermissionsAsync()).granted);
 
-    if (!granted) return null;
+    if (!granted) {
+      lastPushError = 'Телефон не дал разрешение на уведомления';
+      return null;
+    }
 
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
 
@@ -72,6 +86,7 @@ export async function enablePush(ask: boolean): Promise<string | null> {
 
     return token;
   } catch (error) {
+    lastPushError = error instanceof Error ? error.message : String(error);
     trackError('Не удалось подключить уведомления', error);
     return null;
   }

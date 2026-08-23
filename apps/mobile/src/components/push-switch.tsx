@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { track } from '@/lib/analytics';
-import { disablePush, enablePush, pushAllowed, sendTestNotification } from '@/lib/push';
+import { disablePush, enablePush, lastPushError, pushAllowed, sendTestNotification } from '@/lib/push';
 import { useTheme } from '@/theme/theme-provider';
 
 /**
@@ -16,9 +16,20 @@ export function PushSwitch() {
   const [on, setOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
-    void pushAllowed().then(setOn);
+    void (async () => {
+      const allowed = await pushAllowed();
+      setOn(allowed);
+
+      // Разрешение есть — молча обновляем токен на сервере и показываем, если
+      // что-то мешает: гость видел «включено», а уведомления не приходили
+      if (allowed) {
+        const token = await enablePush(false);
+        setFailure(token === null ? lastPushError : null);
+      }
+    })();
   }, []);
 
   const toggle = (next: boolean) => {
@@ -29,6 +40,7 @@ export function PushSwitch() {
       if (next) {
         const token = await enablePush(true);
         track('push_toggled', { on: token !== null });
+        setFailure(token === null ? lastPushError : null);
 
         if (token === null) {
           setOn(false);
@@ -88,6 +100,13 @@ export function PushSwitch() {
           thumbColor={theme.colors.surface}
         />
       </View>
+
+      {/* Почему не включилось: без этого причина видна только в отчётах */}
+      {failure ? (
+        <Text style={[theme.typography.caption, styles.hint, { color: theme.colors.danger }]}>
+          {failure}
+        </Text>
+      ) : null}
 
       {/* Только на разработке: посмотреть, как уведомление выглядит на телефоне */}
       {__DEV__ && on ? (

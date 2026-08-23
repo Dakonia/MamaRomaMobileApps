@@ -20,7 +20,8 @@
       "distribution": "internal",
       "channel": "preview",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a"
       },
       "ios": {
         "simulator": false
@@ -31,7 +32,8 @@
         "EXPO_PUBLIC_YANDEX_MAPS_KEY": "09c1cc28-f2f1-4929-9187-4066b651bafa",
         "EXPO_PUBLIC_APPMETRICA_KEY": "6dd81aef-eb5d-4321-99b1-15f8a8ec7f19"
       },
-      "node": "22.13.1"
+      "node": "22.13.1",
+      "environment": "preview"
     },
     "production": {
       "channel": "production",
@@ -44,7 +46,8 @@
         "EXPO_PUBLIC_YANDEX_MAPS_KEY": "09c1cc28-f2f1-4929-9187-4066b651bafa",
         "EXPO_PUBLIC_APPMETRICA_KEY": "6dd81aef-eb5d-4321-99b1-15f8a8ec7f19"
       },
-      "node": "22.13.1"
+      "node": "22.13.1",
+      "environment": "production"
     }
   },
   "submit": {

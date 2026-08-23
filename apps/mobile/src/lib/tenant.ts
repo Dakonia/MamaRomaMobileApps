@@ -18,9 +18,14 @@ if (!extra.tenant) {
 
 export const tenant: TenantConfig = extra.tenant;
 
+/** Домашний адрес: 192.168.x.x, 10.x.x.x, 172.16–31.x.x или localhost. */
+function isHomeAddress(url: string): boolean {
+  return /localhost|127\.0\.0\.1|192\.168\.|10\.\d+\.|172\.(1[6-9]|2\d|3[01])\./.test(url);
+}
+
 function resolveApiUrl(configured: string): string {
-  const isLocal = configured.includes('localhost') || configured.includes('127.0.0.1');
-  if (!isLocal) {
+  // Боевой адрес не трогаем: он тот же с любого телефона и из любой сети
+  if (!isHomeAddress(configured)) {
     return configured;
   }
 

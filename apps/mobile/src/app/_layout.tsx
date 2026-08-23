@@ -21,7 +21,7 @@ import { router, Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { AppState, useColorScheme } from 'react-native';
+import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { BootSplash } from '@/components/boot-splash';
@@ -34,6 +34,7 @@ import * as Notifications from 'expo-notifications';
 
 import { useBoot } from '@/lib/boot';
 import { persistOptions, queryClient } from '@/lib/query-client';
+import { useAppearance } from '@/store/appearance';
 import { useSession } from '@/store/session';
 import { darkTheme, lightTheme } from '@/theme';
 import { ThemeProvider } from '@/theme/theme-provider';
@@ -57,7 +58,7 @@ AppState.addEventListener('change', (status) => {
 });
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const appearance = useAppearance((state) => state.mode);
   // Заставка играет один раз за запуск и уходит, когда данные уже в памяти
   const [booting, setBooting] = useState(true);
   const boot = useBoot();
@@ -87,7 +88,7 @@ export default function RootLayout() {
 
     return () => listener.remove();
   }, []);
-  const isDark = colorScheme === 'dark';
+  const isDark = appearance === 'dark';
   const theme = isDark ? darkTheme : lightTheme;
 
   const [fontsLoaded] = useFonts({
