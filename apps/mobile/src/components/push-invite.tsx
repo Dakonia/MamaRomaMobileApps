@@ -34,7 +34,6 @@ export function PushInvite() {
   const answered = usePushAsk((state) => state.answered);
   const wanted = usePushAsk((state) => state.wanted);
   const asked = usePushAsk((state) => state.asked);
-  const preview = usePushAsk((state) => state.preview);
   const launches = usePushAsk((state) => state.launches);
   const nagAt = usePushAsk((state) => state.nagAt);
   const postpone = usePushAsk((state) => state.postpone);
@@ -57,7 +56,7 @@ export function PushInvite() {
       const [allowed, denied] = await Promise.all([pushAllowed(), pushBlocked()]);
 
       // Разрешение выдано — предлагать нечего
-      if (allowed && !preview) {
+      if (allowed) {
         answer();
         setShow(false);
         return;
@@ -67,14 +66,14 @@ export function PushInvite() {
       // запусков, и только тем, кто уведомления вообще хотел
       if (denied) {
         setBlocked(true);
-        setShow(launches >= nagAt || preview);
+        setShow(launches >= nagAt);
         return;
       }
 
       setBlocked(false);
-      setShow((!answered && asked < 2) || preview);
+      setShow(!answered && asked < 2);
     })();
-  }, [authorized, answered, wanted, asked, preview, launches, nagAt, answer]);
+  }, [authorized, answered, wanted, asked, launches, nagAt, answer]);
 
   const bell = useSharedValue(0);
 

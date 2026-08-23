@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { track } from '@/lib/analytics';
-import { disablePush, enablePush, lastPushError, pushAllowed, sendTestNotification } from '@/lib/push';
+import { disablePush, enablePush, lastPushError, pushAllowed } from '@/lib/push';
 import { usePushAsk } from '@/store/push-ask';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -23,7 +23,6 @@ export function PushSwitch() {
 
   const [allowed, setAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,29 +119,6 @@ export function PushSwitch() {
         </Text>
       ) : null}
 
-      {/* Только на разработке: вернуть плашку с предложением включить */}
-      {__DEV__ ? (
-        <Text
-          onPress={() => usePushAsk.getState().forget()}
-          style={[theme.typography.caption, styles.hint, { color: theme.colors.textTertiary }]}
-        >
-          Показать плашку с предложением заново
-        </Text>
-      ) : null}
-
-      {/* Только на разработке: посмотреть, как уведомление выглядит на телефоне */}
-      {__DEV__ && wanted && allowed ? (
-        <Text
-          onPress={() => void sendTestNotification().then(setSent)}
-          style={[
-            theme.typography.caption,
-            styles.hint,
-            { color: sent ? theme.colors.accent : theme.colors.brand },
-          ]}
-        >
-          {sent ? 'Придёт через пять секунд — заблокируйте телефон' : 'Прислать тестовое'}
-        </Text>
-      ) : null}
     </View>
   );
 }

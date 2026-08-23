@@ -30,10 +30,6 @@ type PushAskState = {
   answer: () => void;
   /** Новый заказ — повод предложить ещё раз тем, кто откладывал. */
   revive: () => void;
-  /** Только для разработки: показать плашку заново, не переустанавливая. */
-  forget: () => void;
-  /** Показ ради проверки вида — даже если разрешение уже выдано. */
-  preview: boolean;
   /** Сколько раз уже предлагали: предел бережёт от навязчивости. */
   asked: number;
   /** Сколько раз открывали приложение: по ним отмеряем редкие напоминания. */
@@ -53,7 +49,6 @@ export const usePushAsk = create<PushAskState>((set) => ({
   postponed: false,
   answered: false,
   wanted: true,
-  preview: false,
   asked: 0,
   launches: 0,
   nagAt: NAG_EVERY,
@@ -91,7 +86,7 @@ export const usePushAsk = create<PushAskState>((set) => ({
     set((state) => {
       const asked = state.asked + 1;
       void AsyncStorage.setItem(ASKED_KEY, String(asked));
-      return { ...state, postponed: true, answered: true, preview: false, asked };
+      return { ...state, postponed: true, answered: true, asked };
     });
     void AsyncStorage.setItem(KEY, 'postponed');
   },
@@ -100,7 +95,7 @@ export const usePushAsk = create<PushAskState>((set) => ({
     set((state) => {
       const asked = state.asked + 1;
       void AsyncStorage.setItem(ASKED_KEY, String(asked));
-      return { ...state, answered: true, postponed: false, preview: false, asked };
+      return { ...state, answered: true, postponed: false, asked };
     });
     void AsyncStorage.setItem(KEY, 'answered');
   },
@@ -116,20 +111,8 @@ export const usePushAsk = create<PushAskState>((set) => ({
     set((state) => {
       const nagAt = state.launches + NAG_EVERY;
       void AsyncStorage.setItem(NAG_KEY, String(nagAt));
-      return { ...state, nagAt, preview: false };
+      return { ...state, nagAt };
     });
   },
 
-  forget: () => {
-    set((state) => ({
-      ...state,
-      answered: false,
-      postponed: false,
-      wanted: true,
-      preview: __DEV__,
-      asked: 0,
-      nagAt: state.launches,
-    }));
-    void AsyncStorage.multiRemove([KEY, WANTED_KEY, ASKED_KEY, NAG_KEY]);
-  },
 }));

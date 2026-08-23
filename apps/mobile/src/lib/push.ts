@@ -119,29 +119,3 @@ export async function disablePush(): Promise<void> {
     trackError('Не удалось отключить уведомления', error);
   }
 }
-
-
-/**
- * Тестовое уведомление на разработке: телефон показывает его сам, без сервера
- * и без Firebase. Нужно, чтобы посмотреть на вид и звук ещё до сборки.
- */
-export async function sendTestNotification(): Promise<boolean> {
-  const allowed = await pushAllowed();
-  if (!allowed) return false;
-
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'Курьер в пути · заказ № 1024',
-      body: 'Скоро будем у вас',
-      sound: 'default',
-      data: { screen: 'order' },
-    },
-    // Через пять секунд: успеете заблокировать телефон и увидеть, как придёт
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 5,
-    },
-  });
-
-  return true;
-}
