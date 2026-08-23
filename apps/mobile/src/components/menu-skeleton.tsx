@@ -1,34 +1,16 @@
-import { useEffect } from 'react';
 import { StyleSheet, View, type DimensionValue } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
 
+import { Skeleton } from '@/components/skeleton';
 import { useTheme } from '@/theme/theme-provider';
 
 const CARDS = [0, 1, 2, 3];
 
-/** Пульсирующая заглушка: показывает будущую сетку, а не серый экран. */
+/** Заглушка меню: показывает будущую сетку, а не серый экран. */
 export function MenuSkeleton() {
   const theme = useTheme();
-  const pulse = useSharedValue(0.45);
-
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: theme.motion.duration.lazy }), -1, true);
-  }, [pulse, theme.motion.duration.lazy]);
-
-  const animated = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
   const block = (width: DimensionValue, height: number, radius: number) => (
-    <Animated.View
-      style={[
-        { width, height, borderRadius: radius, backgroundColor: theme.colors.skeleton },
-        animated,
-      ]}
-    />
+    <Skeleton width={width} height={height} radius={radius} />
   );
 
   return (

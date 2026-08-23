@@ -48,6 +48,10 @@ def include_object(
     reflected: bool,
     compare_to: SchemaItem | None,
 ) -> bool:
+    # Триграммный индекс справочника адресов создан руками в миграции:
+    # автоген его не видит в моделях и каждый раз пытается удалить
+    if type_ == "index" and name == "ix_geo_addresses_search":
+        return False
     return not (type_ == "check_constraint" and name in ENUM_CHECK_CONSTRAINTS)
 
 

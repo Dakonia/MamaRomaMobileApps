@@ -1,30 +1,54 @@
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  runOnJS,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, type Dish } from '@/api/client';
-import { CartPill } from '@/components/cart-pill';
+import { DeliveryStatus, PickupStatus } from '@/components/delivery-status';
+import { HeroPhoto } from '@/components/hero-photo';
+import { ModeHeader } from '@/components/mode-header';
 import { CategoryBar, type CategoryChip } from '@/components/category-bar';
 import { DishCard } from '@/components/dish-card';
+import { DishPeek } from '@/components/dish-peek';
 import { EmptyState } from '@/components/empty-state';
 import { MenuSkeleton } from '@/components/menu-skeleton';
 import { PressableScale } from '@/components/pressable-scale';
 import { PromoCarousel } from '@/components/promo-carousel';
+import { ActiveOrder } from '@/components/active-order';
+import { AppDialog } from '@/components/app-dialog';
 import { SearchField } from '@/components/search-field';
 import { formatPrice } from '@/lib/format';
 import { tenant } from '@/lib/tenant';
-import { cartCount, cartSubtotal, useCart } from '@/store/cart';
+import { distanceKm } from '@/lib/geo';
+import { useCoords } from '@/lib/use-coords';
+import { cartSubtotal, useCart } from '@/store/cart';
+import { useSession } from '@/store/session';
+import { keyboardScroll } from '@/lib/keyboard';
+import { mapsAvailable } from '@/lib/tenant';
+import { useRefresher } from '@/components/refresher';
 import { useTheme } from '@/theme/theme-provider';
+
+// Список с анимированной прокруткой: доля сворачивания считается на UI-потоке,
+// иначе каждый кадр дёргает JS и меню подтормаживает
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList<Row>);
 
 // Конфигурация видимости должна быть стабильной ссылкой: список не терпит подмены на лету
 const VIEWABILITY = { itemVisiblePercentThreshold: 40 };
 
 type Row =
+  | { kind: 'order'; key: string }
+  | { kind: 'notice'; key: string }
   | { kind: 'promos'; key: string }
   | { kind: 'popular'; key: string }
   | { kind: 'title'; key: string; categoryId: string; title: string }
@@ -32,6 +56,7 @@ type Row =
 
 export default function MenuScreen() {
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const cart = useCart();
@@ -47,30 +72,191 @@ export default function MenuScreen() {
   const titleNodes = useRef<Record<string, View | null>>({});
   const scrollOffset = useRef(0);
   const listTop = useRef(0);
+  // Шапка сжимается при прокрутке: переключатель и адрес уезжают,
+  // остаются поиск и категории
+  const collapse = useSharedValue(0);
+  const topHeight = useSharedValue(0);
   const listWrapper = useRef<View>(null);
   const [query, setQuery] = useState('');
+  // Блюдо, которое гость держит пальцем: показываем крупно, не уходя с меню
+  const [peek, setPeek] = useState<Dish | null>(null);
   const searching = query.trim().length > 0;
 
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() });
 
+  const session = useSession();
+  const authorized = session.status === 'authorized';
+
+  const addresses = useQuery({
+    queryKey: ['addresses'],
+    queryFn: () => api.addresses(),
+    enabled: authorized,
+  });
+
+  // Адрес доставки: выбранный гостем или основной
+  const address =
+    (addresses.data ?? []).find((row) => row.id === cart.addressId) ??
+    (addresses.data ?? []).find((row) => row.is_default) ??
+    null;
+
+  // На доставку ресторан назначает зона адреса, на самовывоз выбирает гость
   useEffect(() => {
-    const first = restaurants.data?.[0];
-    if (cart.restaurantId === null && first) {
-      cart.selectRestaurant(first.id);
+    if (cart.mode !== 'delivery') return;
+
+    // Нет адреса или он вне зоны — ресторана нет вовсе. Иначе в шапке остаётся
+    // чужой ресторан: от прошлого гостя или от прошлого адреса
+    if (!address?.restaurant_id || !address.delivery_covered) {
+      if (cart.restaurantId !== null) cart.selectRestaurant(null);
+      return;
     }
-  }, [cart, restaurants.data]);
+
+    if (address.restaurant_id !== cart.restaurantId) {
+      cart.selectRestaurant(address.restaurant_id);
+    }
+  }, [cart, address]);
 
   const restaurant = restaurants.data?.find((item) => item.id === cart.restaurantId);
+
+  // Разрешение не спрашиваем: если оно уже есть, подставим ближайший ресторан
+  const here = useCoords();
+
+  // Смещение нужно переходу к категории — держим его в обычной переменной
+  const rememberOffset = useCallback(
+    (offset: number) => {
+      scrollOffset.current = offset;
+    },
+    [scrollOffset],
+  );
+
+  const onScroll = useAnimatedScrollHandler((event) => {
+    const offset = event.contentOffset.y;
+    collapse.value = Math.min(1, Math.max(0, (offset - 12) / 90));
+    runOnJS(rememberOffset)(offset);
+  });
+
+  const topBlock = useAnimatedStyle(() => ({
+    opacity: 1 - collapse.value,
+    transform: [{ translateY: -10 * collapse.value }],
+    height: topHeight.value === 0 ? undefined : topHeight.value * (1 - collapse.value),
+  }));
+
+  // Меню грузим всегда: пока адрес не выбран, показываем общее по сети —
+  // иначе гость видит один скелетон и не понимает, что делать
+  // Возврат на экран — перечитываем меню: стоп-лист меняется в течение дня
+  useFocusEffect(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ['menu'] });
+    }, [queryClient]),
+  );
 
   const menu = useQuery({
     queryKey: ['menu', cart.restaurantId],
     queryFn: () => api.menu(cart.restaurantId ?? undefined),
-    enabled: cart.restaurantId !== null,
   });
 
+  // Условия зоны для строки статуса: время в пути и порог бесплатной доставки
+  const delivery = useQuery({
+    queryKey: ['delivery', address?.id],
+    queryFn: () =>
+      api.resolveDelivery(address?.latitude ?? 0, address?.longitude ?? 0, address?.city_id),
+    enabled: cart.mode === 'delivery' && address?.latitude != null,
+  });
+
+  // Что писать в шапке: адрес и ресторан на доставке, сам ресторан на самовывозе
+  const headline = (() => {
+    if (cart.mode === 'pickup') {
+      return {
+        title: restaurant?.name ?? 'Выберите ресторан',
+        subtitle: restaurant ? 'Заберёте сами' : 'Нажмите, чтобы выбрать',
+        warning: restaurant === undefined,
+      };
+    }
+
+    if (!authorized) {
+      return { title: 'Войдите, чтобы сохранить адрес', subtitle: 'Или закажите самовывоз', warning: true };
+    }
+
+    if (!address) {
+      return { title: 'Укажите адрес доставки', subtitle: 'Определим ближайший ресторан', warning: true };
+    }
+
+    // full_text уже включает населённый пункт — сами его не подставляем
+    const where = address.full_text;
+
+    if (!address.delivery_covered) {
+      return {
+        title: where,
+        subtitle: address.restaurant_name
+          ? `${address.restaurant_name} сейчас не возит`
+          : 'Сюда пока не доставляем',
+        warning: true,
+      };
+    }
+
+    return { title: where, subtitle: `Везёт ${address.restaurant_name}`, warning: false };
+  })();
+
+  // Ресторан сменился — переносим корзину в его меню и рассказываем, что изменилось
+  const [moveReport, setMoveReport] = useState<{
+    unavailable: string[];
+    repriced: string[];
+  } | null>(null);
+  const movedFor = useRef<string | null>(null);
+  useEffect(() => {
+    const dishes = menu.data?.categories.flatMap((category) => category.dishes) ?? [];
+    if (cart.restaurantId === null || dishes.length === 0) return;
+    if (movedFor.current === cart.restaurantId) return;
+
+    movedFor.current = cart.restaurantId;
+    if (cart.items.length === 0) return;
+
+    const report = cart.moveTo(cart.restaurantId, dishes);
+    if (report.unavailable.length === 0 && report.repriced.length === 0) return;
+
+    setMoveReport({
+      unavailable: report.unavailable,
+      repriced: report.repriced.map((row) => `${row.name} · ${formatPrice(row.to)}`),
+    });
+  }, [cart, menu.data]);
+
+  /**
+   * Какой ресторан подставить на самовывозе: прошлый выбор, потом ближайший к
+   * гостю, потом ресторан его адреса. Список открываем, только если выбрать
+   * не из чего — раньше он всплывал при каждом переключении.
+   */
+  const pickupChoice = useCallback((): string | null => {
+    const rows = (restaurants.data ?? []).filter((row) => row.has_pickup);
+    if (rows.length === 0) return null;
+
+    const saved = rows.find((row) => row.id === cart.pickupRestaurantId);
+    if (saved) return saved.id;
+
+    const from =
+      here.coords ??
+      (address?.latitude != null && address.longitude != null
+        ? { latitude: address.latitude, longitude: address.longitude }
+        : null);
+
+    if (from) {
+      const closest = [...rows].sort((a, b) => distanceKm(from, a) - distanceKm(from, b))[0];
+      return closest.id;
+    }
+
+    const byAddress = rows.find((row) => row.id === address?.restaurant_id);
+    return (byAddress ?? rows[0]).id;
+  }, [restaurants.data, cart.pickupRestaurantId, here.coords, address]);
+
+  useEffect(() => {
+    if (cart.mode !== 'pickup' || cart.restaurantId !== null) return;
+
+    const choice = pickupChoice();
+    if (choice) cart.selectPickup(choice);
+  }, [cart, pickupChoice]);
+
+
   const promos = useQuery({
-    queryKey: ['promotions', cart.restaurantId],
-    queryFn: () => api.promotions(cart.restaurantId ?? undefined),
+    queryKey: ['promotions', 'menu', cart.restaurantId],
+    queryFn: () => api.promotions(cart.restaurantId ?? undefined, true),
   });
 
   const popular = useQuery({
@@ -82,6 +268,16 @@ export default function MenuScreen() {
     () => (menu.data?.categories ?? []).map((item) => ({ id: item.id, title: item.name })),
     [menu.data],
   );
+
+  // Потянуть вниз: заново читаем меню, акции, хиты и статус заказа
+  const refresher = useRefresher(async () => {
+    await Promise.all([
+      menu.refetch(),
+      promos.refetch(),
+      popular.refetch(),
+      queryClient.invalidateQueries({ queryKey: ['orders'] }),
+    ]);
+  });
 
   const rows: Row[] = useMemo(() => {
     const result: Row[] = [];
@@ -116,8 +312,19 @@ export default function MenuScreen() {
       return result;
     }
 
+    // Активный заказ — первым делом: за статусом не нужно никуда ходить
+    if (authorized) {
+      result.push({ kind: 'order', key: 'active-order' });
+    }
+
     if ((promos.data ?? []).length > 0) {
       result.push({ kind: 'promos', key: 'promos' });
+    }
+
+    // Ресторан ещё не определён — предупреждаем, что меню общее по сети.
+    // Ставим под акциями: сразу под шапкой блок выглядел тревожно
+    if (cart.restaurantId === null) {
+      result.push({ kind: 'notice', key: 'notice' });
     }
     if ((popular.data ?? []).length > 0) {
       result.push({ kind: 'popular', key: 'popular' });
@@ -146,12 +353,16 @@ export default function MenuScreen() {
     return result;
   }, [menu.data, promos.data, popular.data, query]);
 
+  // Одно блюдо может лежать в корзине несколькими строками — с разными
+  // добавками. На карточке в меню показываем общее количество
   const quantityOf = useCallback(
-    (dishId: string) => cart.items.find((item) => item.dishId === dishId)?.quantity ?? 0,
+    (dishId: string) =>
+      cart.items
+        .filter((item) => item.dishId === dishId)
+        .reduce((sum, item) => sum + item.quantity, 0),
     [cart.items],
   );
 
-  const count = cartCount(cart.items);
   const subtotal = cartSubtotal(cart.items);
   const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
 
@@ -202,9 +413,122 @@ export default function MenuScreen() {
   ).current;
 
   const renderRow = ({ item }: { item: Row }) => {
+    if (item.kind === 'order') {
+      return (
+        <View
+          style={{
+            paddingHorizontal: theme.layout.screenPadding,
+            paddingTop: theme.spacing.base,
+            paddingBottom: theme.spacing.base,
+          }}
+        >
+          <ActiveOrder />
+        </View>
+      );
+    }
+
+    if (item.kind === 'notice') {
+      const guest = session.status === 'authorized';
+      const outside = cart.mode === 'delivery' && address !== null && !address.delivery_covered;
+
+      return (
+        <Animated.View
+          entering={FadeIn.duration(theme.motion.duration.base)}
+          style={{
+            marginHorizontal: theme.layout.screenPadding,
+            marginTop: theme.spacing.base,
+            marginBottom: theme.spacing.base,
+            padding: theme.spacing.base,
+            gap: theme.spacing.sm,
+            borderRadius: theme.radius.lg,
+            backgroundColor: outside ? theme.colors.dangerSubtle : theme.colors.surface,
+          }}
+        >
+          <View style={[styles.rowBetween, { gap: theme.spacing.sm }]}>
+            <Ionicons
+              name={outside ? 'alert-circle' : 'information-circle-outline'}
+              size={18}
+              color={outside ? theme.colors.danger : theme.colors.brand}
+            />
+            <Text
+              style={[
+                theme.typography.bodyMedium,
+                styles.grow,
+                { color: outside ? theme.colors.danger : theme.colors.textPrimary },
+              ]}
+            >
+              {outside ? 'По этому адресу доставки нет' : 'Меню всей сети'}
+            </Text>
+          </View>
+
+          <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
+            {outside
+              ? 'Заказ можно забрать самим — выберите ресторан и заберите готовое.'
+              : 'В вашем ресторане набор блюд и цены могут отличаться. Укажите адрес — покажем его меню.'}
+          </Text>
+
+          <View style={[styles.rowBetween, { gap: theme.spacing.sm }]}>
+            <PressableScale
+              depth={0.96}
+              accessibilityLabel={outside ? 'Перейти к самовывозу' : 'Указать адрес'}
+              onPress={() => {
+                if (outside) {
+                  cart.setMode('pickup');
+                  if (cart.pickupRestaurantId) cart.selectRestaurant(cart.pickupRestaurantId);
+                  return;
+                }
+
+                if (!guest) router.push('/auth');
+                else router.push('/addresses');
+              }}
+              style={{
+                paddingHorizontal: theme.spacing.base,
+                paddingVertical: theme.spacing.sm,
+                borderRadius: theme.radius.pill,
+                backgroundColor: outside ? theme.colors.danger : theme.colors.brand,
+              }}
+            >
+              <Text
+                style={[
+                  theme.typography.button,
+                  { color: outside ? theme.colors.onDanger : theme.colors.textOnBrand },
+                ]}
+              >
+                {outside ? 'Забрать самим' : guest ? 'Указать адрес' : 'Войти и указать адрес'}
+              </Text>
+            </PressableScale>
+          </View>
+        </Animated.View>
+      );
+    }
+
     if (item.kind === 'promos') {
       return (
-        <Animated.View entering={FadeIn.duration(theme.motion.duration.base)}>
+        <Animated.View
+          entering={FadeIn.duration(theme.motion.duration.base)}
+          // Своя подложка и заголовок: иначе полка акций сливается с блюдами.
+          // Поле списка стало кремовым, поэтому полка теперь светлее его
+          style={{
+            backgroundColor: theme.colors.surface,
+            paddingTop: theme.spacing.base,
+            paddingBottom: theme.spacing.sm,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: theme.colors.divider,
+            gap: theme.spacing.xs,
+          }}
+        >
+          <View
+            style={[
+              styles.rowBetween,
+              { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
+            ]}
+          >
+            <Ionicons name="pricetag" size={15} color={theme.colors.brand} />
+            <Text style={[theme.typography.overline, styles.grow, { color: theme.colors.brand }]}>
+              Выгодно заказать
+            </Text>
+          </View>
+
           <PromoCarousel
             promotions={promos.data ?? []}
             onOpen={(promoId) => router.push(`/promo/${promoId}`)}
@@ -242,6 +566,7 @@ export default function MenuScreen() {
                 highlight
                 quantity={quantityOf(dish.id)}
                 onOpen={() => router.push(`/dish/${dish.id}`)}
+                onPeek={() => setPeek(dish)}
                 onAdd={() => cart.add(dish)}
                 onChangeQuantity={(quantity) => cart.setQuantity(dish.id, quantity)}
               />
@@ -305,6 +630,7 @@ export default function MenuScreen() {
           dish={item.left}
           quantity={quantityOf(item.left.id)}
           onOpen={() => router.push(`/dish/${item.left.id}`)}
+          onPeek={() => setPeek(item.left)}
           onAdd={() => cart.add(item.left)}
           onChangeQuantity={(quantity) => cart.setQuantity(item.left.id, quantity)}
         />
@@ -314,6 +640,7 @@ export default function MenuScreen() {
             dish={right}
             quantity={quantityOf(right.id)}
             onOpen={() => router.push(`/dish/${right.id}`)}
+            onPeek={() => setPeek(right)}
             onAdd={() => cart.add(right)}
             onChangeQuantity={(quantity) => cart.setQuantity(right.id, quantity)}
           />
@@ -355,12 +682,12 @@ export default function MenuScreen() {
     }
 
     return (
-      <FlashList
+      <AnimatedFlashList
+        refreshControl={refresher}
         ref={listRef}
-        onScroll={(event) => {
-          scrollOffset.current = event.nativeEvent.contentOffset.y;
-        }}
-        scrollEventThrottle={32}
+        {...keyboardScroll}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         data={rows}
         keyExtractor={(row) => row.key}
         getItemType={(row) => row.kind}
@@ -381,7 +708,33 @@ export default function MenuScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+    // Поле списка чуть теплее белой карточки: иначе блюдо белым по белому
+    // держится на одной тени и край блока не читается
+    <View style={[styles.root, { backgroundColor: theme.colors.backgroundAlt }]}>
+      {/* Пиццы плывут за лентой: сначала фон, потом всё остальное поверх */}
+      <AppDialog
+        visible={moveReport !== null}
+        icon="swap-horizontal"
+        title="Меню ресторана другое"
+        description={[
+          moveReport?.unavailable.length
+            ? `Здесь не готовят: ${moveReport.unavailable.join(', ')}. Блюда остались в корзине — уберите их или выберите другой ресторан.`
+            : null,
+          moveReport?.repriced.length
+            ? `Цены обновились: ${moveReport.repriced.join(', ')}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n')}
+        confirmLabel="Открыть корзину"
+        cancelLabel="Понятно"
+        onConfirm={() => {
+          setMoveReport(null);
+          router.push('/(tabs)/cart');
+        }}
+        onCancel={() => setMoveReport(null)}
+      />
+
       <View
         style={[
           styles.hero,
@@ -393,44 +746,80 @@ export default function MenuScreen() {
           },
         ]}
       >
-        <View
+        <HeroPhoto />
+
+        <Animated.View
           style={[
-            styles.heroTop,
+            topBlock,
+            // Без обрезки схлопнутый блок вылезает поверх поиска
+            styles.clip,
             { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.md },
           ]}
+          onLayout={(event) => {
+            if (topHeight.value === 0) topHeight.value = event.nativeEvent.layout.height;
+          }}
         >
-          <View style={styles.grow}>
-            <Text style={[theme.typography.h1, { color: theme.colors.onHero }]}>
-              {tenant.branding.displayName}
-            </Text>
+          {/* Переключатель и корзина в одном ряду, адрес — во всю ширину под ними:
+              иначе растущая корзина сжимала адрес и он выглядел обрубленным */}
+          <ModeHeader
+            mode={cart.mode}
+            onMode={(mode) => {
+              cart.setMode(mode);
 
-            <PressableScale
-              onPress={() => router.push('/restaurants')}
-              accessibilityLabel="Выбрать ресторан"
-              depth={0.97}
-              style={[styles.picker, { gap: theme.spacing.xs, minHeight: theme.spacing.xxl }]}
-            >
-              <Ionicons
-                name="location-outline"
-                size={theme.spacing.base}
-                color={theme.colors.onHeroMuted}
-              />
-              <Text
-                numberOfLines={1}
-                style={[theme.typography.caption, { color: theme.colors.onHeroMuted }]}
-              >
-                {restaurant?.name ?? 'Выберите ресторан'}
-              </Text>
-              <Ionicons
-                name="chevron-down"
-                size={theme.spacing.base}
-                color={theme.colors.onHeroMuted}
-              />
-            </PressableScale>
-          </View>
+              // Ресторан подставляем сами: спрашиваем, только если сеть ещё
+              // не загрузилась и подставить нечего
+              if (mode === 'pickup') {
+                const choice = pickupChoice();
+                if (choice) cart.selectPickup(choice);
+                else router.push('/restaurants');
+              }
+            }}
+            compact
+          />
 
-          <CartPill count={count} subtotal={subtotal} onPress={() => router.push('/cart')} />
-        </View>
+          <ModeHeader
+            mode={cart.mode}
+            onMode={cart.setMode}
+            title={headline.title}
+            subtitle={headline.subtitle}
+            warning={headline.warning}
+            onPress={() => {
+              if (cart.mode === 'pickup') {
+                router.push('/restaurants');
+                return;
+              }
+
+              // Адрес привязан к гостю: сначала вход, потом сам адрес
+              if (!authorized) {
+                router.push({ pathname: '/auth', params: { next: 'address' } });
+                return;
+              }
+
+              router.push(
+                addresses.data?.length
+                  ? '/addresses'
+                  : mapsAvailable
+                    ? '/address-map'
+                    : '/address-form',
+              );
+            }}
+            lineOnly
+          />
+
+          {cart.mode === 'delivery' ? (
+            <DeliveryStatus
+              delivery={delivery.data ?? null}
+              subtotalKopecks={subtotal}
+              hasAddress={address != null}
+            />
+          ) : (
+            <PickupStatus
+              opensAt={restaurant?.opens_at}
+              closesAt={restaurant?.closes_at}
+              paused={restaurant?.is_paused ? (restaurant.pause_reason ?? 'На паузе') : null}
+            />
+          )}
+        </Animated.View>
 
         <View
           style={{
@@ -453,7 +842,9 @@ export default function MenuScreen() {
         ) : null}
       </View>
 
-      <View
+      <Animated.View
+        key={cart.mode}
+        entering={FadeIn.duration(260)}
         style={styles.grow}
         onLayout={() => {
           listWrapper.current?.measureInWindow((_x, y) => {
@@ -463,8 +854,17 @@ export default function MenuScreen() {
         ref={listWrapper}
       >
         {body()}
-      </View>
+      </Animated.View>
 
+      <DishPeek
+        dish={peek}
+        onClose={() => setPeek(null)}
+        onOpen={() => {
+          const dish = peek;
+          setPeek(null);
+          if (dish) router.push(`/dish/${dish.id}`);
+        }}
+      />
     </View>
   );
 }
@@ -472,7 +872,9 @@ export default function MenuScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   hero: { overflow: 'hidden' },
-  heroTop: { flexDirection: 'row', alignItems: 'flex-start' },
+  heroTop: { flexDirection: 'row', alignItems: 'center' },
+  clip: { overflow: 'hidden' },
+  rowBetween: { flexDirection: 'row', alignItems: 'center' },
   picker: { flexDirection: 'row', alignItems: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'baseline' },
   grow: { flex: 1 },

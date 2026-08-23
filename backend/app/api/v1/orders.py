@@ -4,7 +4,13 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import GuestDep, SessionDep, TenantDep
-from app.schemas.order import CheckoutLimits, OrderCreate, OrderRead
+from app.schemas.order import (
+    CheckoutLimits,
+    CheckoutPreview,
+    CheckoutPreviewRequest,
+    OrderCreate,
+    OrderRead,
+)
 from app.services import order as order_service
 
 router = APIRouter(prefix="/orders", tags=["Заказы"])
@@ -18,6 +24,16 @@ async def limits(
     subtotal_kopecks: Annotated[int, Query(ge=0)],
 ) -> CheckoutLimits:
     return await order_service.checkout_limits(session, tenant, guest, subtotal_kopecks)
+
+
+@router.post("/preview", summary="Счёт по корзине до оформления")
+async def preview(
+    payload: CheckoutPreviewRequest, session: SessionDep, tenant: TenantDep, guest: GuestDep
+) -> CheckoutPreview:
+    try:
+        return await order_service.checkout_preview(session, tenant, guest, payload)
+    except order_service.OrderError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Оформить заказ")

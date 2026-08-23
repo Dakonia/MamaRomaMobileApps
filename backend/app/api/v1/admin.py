@@ -1,33 +1,68 @@
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, or_, select
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import delete, func, insert, or_, select
 
 from app.api.deps import SessionDep, StaffDep, TenantDep
-from app.core.security import create_token, verify_password
+from app.core.db import SessionLocal
+from app.core.security import create_token, normalize_phone, verify_password
 from app.models.enums import OrderStatus, ReservationStatus
-from app.models.geo import Restaurant
-from app.models.menu import Dish, MenuCategory, StopListEntry
-from app.models.order import Order
+from app.models.geo import City, DeliveryZone, Restaurant
+from app.models.guest import Guest, GuestAddress
+from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
+from app.models.menu import (
+    Dish,
+    DishExtra,
+    DishPrice,
+    MenuCategory,
+    StopListEntry,
+    category_extra_links,
+    dish_extra_links,
+)
+from app.models.order import Order, OrderItem
+from app.models.promo_code import PromoCode
 from app.models.promotion import Promotion
 from app.models.reservation import Reservation
 from app.models.staff import StaffUser
+from app.models.sync import SyncChange, SyncRun
 from app.schemas.admin import (
     CategoryAdminRead,
     CategoryPatch,
     CategoryWrite,
     DishAdminRead,
+    DishExtraAdminRead,
+    DishExtraPatch,
+    DishExtraWrite,
     DishPatch,
     DishWrite,
+    ExtraCategoriesWrite,
+    GuestAdminRead,
+    GuestCardRead,
+    GuestOrderRead,
+    GuestPatch,
+    GuestPointsRead,
+    GuestReservationRead,
+    GuestWrite,
     OrderStatusWrite,
+    PromoCodePatch,
+    PromoCodeRead,
+    PromoCodeWrite,
     ReservationStatusWrite,
+    RestaurantAdminRead,
+    RestaurantDishPatch,
+    RestaurantDishRead,
+    RestaurantPatch,
+    RestaurantWrite,
     StaffLogin,
     StaffRead,
     StaffSession,
     StopListRead,
     StopListWrite,
+    ZoneCreate,
+    ZonePatch,
+    ZoneRead,
 )
 from app.schemas.order import OrderRead
 from app.schemas.promotion import (
@@ -36,9 +71,17 @@ from app.schemas.promotion import (
     PromotionWrite,
 )
 from app.schemas.reservation import ReservationRead
+from app.schemas.sync import SyncApply, SyncChangeRead, SyncRunRead
+from app.services import guest as guest_service
+from app.services import loyalty as loyalty_service
 from app.services import media as media_service
 from app.services import order as order_service
+from app.services import promo_code as promo_service
+from app.services import promotions as promotion_service
+from app.services import push as push_service
 from app.services import reservation as reservation_service
+from app.services import sync as sync_service
+from app.services.sync import KIND_TITLES, Change, ChangeAction, SyncKind
 
 router = APIRouter(prefix="/admin", tags=["Админка"])
 
@@ -114,6 +157,7 @@ async def categories(
             sort_order=row.sort_order,
             is_active=row.is_active,
             image_url=row.image_url,
+            show_in_popular=row.show_in_popular,
             dishes_count=counts.get(row.id, 0),
         )
         for row in rows
@@ -375,6 +419,14 @@ async def set_order_status(
 
     await session.commit()
     await session.refresh(order)
+
+    # Пуш гостю: уведомление не должно ломать смену статуса, поэтому молча
+    # переживаем любую ошибку доставки
+    try:
+        await push_service.notify_order(session, tenant.id, order)
+    except Exception as error:
+        print(f"пуш о заказе {order.number} не ушёл: {error}")
+
     return order_service.to_read(order)
 
 
@@ -427,58 +479,62 @@ async def set_reservation_status(
 # ─────────────────────────── акции ───────────────────────────
 
 
-def _promotion_read(promotion: Promotion, restaurant_name: str | None) -> PromotionAdminRead:
+def _promotion_read(promotion: Promotion) -> PromotionAdminRead:
+    read = promotion_service.to_read(promotion)
     return PromotionAdminRead(
-        id=promotion.id,
-        title=promotion.title,
-        description=promotion.description,
-        label=promotion.label,
-        image_url=promotion.image_url,
-        restaurant_id=promotion.restaurant_id,
-        restaurant_name=restaurant_name,
-        starts_at=promotion.starts_at,
-        ends_at=promotion.ends_at,
+        **read.model_dump(),
         sort_order=promotion.sort_order,
         is_active=promotion.is_active,
     )
 
 
-async def _restaurant_names(session: SessionDep, tenant_id: str) -> dict[UUID, str]:
-    rows = await session.execute(
-        select(Restaurant.id, Restaurant.name).where(Restaurant.tenant_id == tenant_id)
+def _measure_photo(promotion: Promotion) -> None:
+    """Запоминаем пропорцию картинки, чтобы приложение не резало кадр."""
+    size = media_service.dimensions(promotion.image_url)
+    promotion.image_width, promotion.image_height = size if size else (None, None)
+
+
+async def _link_restaurants(
+    session: SessionDep, tenant_id: str, promotion: Promotion, ids: list[UUID]
+) -> None:
+    """Пустой список означает «во всех ресторанах сети»."""
+    if not ids:
+        promotion.restaurants = []
+        return
+
+    rows = await session.scalars(
+        select(Restaurant).where(Restaurant.tenant_id == tenant_id, Restaurant.id.in_(ids))
     )
-    return {row.id: row.name for row in rows}
+    promotion.restaurants = list(rows)
 
 
 @router.get("/promotions", summary="Все акции")
 async def promotions(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[PromotionAdminRead]:
-    names = await _restaurant_names(session, tenant.id)
     rows = await session.scalars(
         select(Promotion)
         .where(Promotion.tenant_id == tenant.id)
         .order_by(Promotion.sort_order, Promotion.created_at.desc())
     )
-    return [
-        _promotion_read(row, names.get(row.restaurant_id) if row.restaurant_id else None)
-        for row in rows
-    ]
+    return [_promotion_read(row) for row in rows]
 
 
 @router.post("/promotions", status_code=status.HTTP_201_CREATED, summary="Создать акцию")
 async def create_promotion(
     payload: PromotionWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> PromotionAdminRead:
-    promotion = Promotion(tenant_id=tenant.id, **payload.model_dump())
+    fields = payload.model_dump()
+    restaurant_ids = fields.pop("restaurant_ids")
+
+    promotion = Promotion(tenant_id=tenant.id, **fields)
+    _measure_photo(promotion)
     session.add(promotion)
+    await _link_restaurants(session, tenant.id, promotion, restaurant_ids)
+
     await session.commit()
     await session.refresh(promotion)
-
-    names = await _restaurant_names(session, tenant.id)
-    return _promotion_read(
-        promotion, names.get(promotion.restaurant_id) if promotion.restaurant_id else None
-    )
+    return _promotion_read(promotion)
 
 
 @router.patch("/promotions/{promotion_id}", summary="Изменить акцию")
@@ -495,15 +551,19 @@ async def update_promotion(
     if promotion is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Акция не найдена")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    restaurant_ids = fields.pop("restaurant_ids", None)
+
+    for field, value in fields.items():
         setattr(promotion, field, value)
+    _measure_photo(promotion)
+
+    if restaurant_ids is not None:
+        await _link_restaurants(session, tenant.id, promotion, restaurant_ids)
+
     await session.commit()
     await session.refresh(promotion)
-
-    names = await _restaurant_names(session, tenant.id)
-    return _promotion_read(
-        promotion, names.get(promotion.restaurant_id) if promotion.restaurant_id else None
-    )
+    return _promotion_read(promotion)
 
 
 @router.delete(
@@ -522,4 +582,961 @@ async def delete_promotion(
 
     media_service.delete_image(promotion.image_url)
     await session.delete(promotion)
+    await session.commit()
+
+
+# --- Рестораны ---------------------------------------------------------------
+
+
+@router.get("/restaurants", summary="Рестораны сети")
+async def admin_restaurants(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[RestaurantAdminRead]:
+    rows = await session.scalars(
+        select(Restaurant).where(Restaurant.tenant_id == tenant.id).order_by(Restaurant.name)
+    )
+    return [RestaurantAdminRead.model_validate(row) for row in rows]
+
+
+@router.post("/restaurants", status_code=status.HTTP_201_CREATED, summary="Создать ресторан")
+async def create_restaurant(
+    payload: RestaurantWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> RestaurantAdminRead:
+    city = await session.scalar(
+        select(City).where(City.id == payload.city_id, City.tenant_id == tenant.id)
+    )
+    if city is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Город не найден")
+
+    restaurant = Restaurant(tenant_id=tenant.id, **payload.model_dump())
+    session.add(restaurant)
+    await session.commit()
+    await session.refresh(restaurant)
+    return RestaurantAdminRead.model_validate(restaurant)
+
+
+@router.patch("/restaurants/{restaurant_id}", summary="Изменить ресторан")
+async def update_restaurant(
+    restaurant_id: UUID,
+    payload: RestaurantPatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> RestaurantAdminRead:
+    restaurant = await session.scalar(
+        select(Restaurant).where(
+            Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id
+        )
+    )
+    if restaurant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(restaurant, field, value)
+
+    # Сняли с паузы — причина больше не нужна, иначе она всплывёт в следующий раз
+    if restaurant.is_paused is False:
+        restaurant.pause_reason = None
+
+    await session.commit()
+    await session.refresh(restaurant)
+    return RestaurantAdminRead.model_validate(restaurant)
+
+
+@router.delete(
+    "/restaurants/{restaurant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить ресторан",
+)
+async def delete_restaurant(
+    restaurant_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    restaurant = await session.scalar(
+        select(Restaurant).where(
+            Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id
+        )
+    )
+    if restaurant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
+
+    orders_count = await session.scalar(
+        select(func.count()).select_from(Order).where(Order.restaurant_id == restaurant_id)
+    )
+    if orders_count:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"У ресторана {orders_count} заказов — историю нельзя терять. "
+            "Отключите его галочкой «Работает»",
+        )
+
+    await session.delete(restaurant)
+    await session.commit()
+
+
+# --- Гости -------------------------------------------------------------------
+
+
+@router.get("/guests", summary="Гости сети")
+async def admin_guests(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    search: Annotated[str | None, Query(max_length=120)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[GuestAdminRead]:
+    # Заказы и баллы считаем в том же запросе: иначе список из полусотни гостей
+    # превращается в полторы сотни обращений к базе
+    orders = (
+        select(
+            Order.guest_id.label("guest_id"),
+            func.count(Order.id).label("orders_count"),
+            func.coalesce(func.sum(Order.total_kopecks), 0).label("spent"),
+        )
+        .where(Order.tenant_id == tenant.id)
+        .group_by(Order.guest_id)
+        .subquery()
+    )
+
+    query = (
+        select(Guest, orders.c.orders_count, orders.c.spent, LoyaltyAccount)
+        .outerjoin(orders, orders.c.guest_id == Guest.id)
+        .outerjoin(LoyaltyAccount, LoyaltyAccount.guest_id == Guest.id)
+        .where(Guest.tenant_id == tenant.id)
+    )
+
+    if search:
+        pattern = f"%{search.strip().lower()}%"
+        query = query.where(
+            or_(
+                func.lower(Guest.name).like(pattern),
+                Guest.phone.like(pattern),
+                func.lower(Guest.email).like(pattern),
+                LoyaltyAccount.card_number.like(pattern),
+            )
+        )
+
+    rows = await session.execute(
+        query.order_by(Guest.created_at.desc()).limit(limit).offset(offset)
+    )
+
+    result: list[GuestAdminRead] = []
+    for guest, orders_count, spent, account in rows.all():
+        card = GuestAdminRead.model_validate(guest)
+        card.orders_count = orders_count or 0
+        card.spent_kopecks = spent or 0
+        if account is not None:
+            tier = loyalty_service.tier_by_code(tenant, account.tier_code)
+            card.tier_title = tier.title
+            card.points_balance = account.points_balance
+            card.card_number = account.card_number
+        result.append(card)
+
+    return result
+
+
+async def _guest_or_404(session: SessionDep, tenant: TenantDep, guest_id: UUID) -> Guest:
+    guest = await session.scalar(
+        select(Guest).where(Guest.id == guest_id, Guest.tenant_id == tenant.id)
+    )
+    if guest is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Гость не найден")
+    return guest
+
+
+@router.get("/guests/{guest_id}", summary="Карточка гостя")
+async def guest_card(
+    guest_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> GuestCardRead:
+    guest = await _guest_or_404(session, tenant, guest_id)
+
+    order_rows = await session.execute(
+        select(Order, Restaurant.name)
+        .join(Restaurant, Restaurant.id == Order.restaurant_id)
+        .where(Order.tenant_id == tenant.id, Order.guest_id == guest_id)
+        .order_by(Order.created_at.desc())
+        .limit(50)
+    )
+
+    orders: list[GuestOrderRead] = []
+    for order, restaurant_name in order_rows.all():
+        items = await session.scalars(
+            select(OrderItem).where(OrderItem.order_id == order.id).order_by(OrderItem.name)
+        )
+        orders.append(
+            GuestOrderRead(
+                id=order.id,
+                number=order.number,
+                created_at=order.created_at,
+                type=order.type.value,
+                status=order.status.value,
+                restaurant_name=restaurant_name,
+                address_text=order.address_text,
+                total_kopecks=order.total_kopecks,
+                items=[f"{item.name} × {item.quantity}" for item in items],
+            )
+        )
+
+    reservation_rows = await session.execute(
+        select(Reservation, Restaurant.name)
+        .join(Restaurant, Restaurant.id == Reservation.restaurant_id)
+        .where(Reservation.tenant_id == tenant.id, Reservation.guest_id == guest_id)
+        .order_by(Reservation.reserved_at.desc())
+        .limit(50)
+    )
+
+    address_rows = await session.scalars(
+        select(GuestAddress)
+        .where(GuestAddress.tenant_id == tenant.id, GuestAddress.guest_id == guest_id)
+        .order_by(GuestAddress.is_default.desc(), GuestAddress.created_at.desc())
+    )
+
+    account = await loyalty_service.get_account(session, tenant, guest_id)
+    points: list[GuestPointsRead] = []
+    if account is not None:
+        transactions = await session.scalars(
+            select(LoyaltyTransaction)
+            .where(LoyaltyTransaction.account_id == account.id)
+            .order_by(LoyaltyTransaction.created_at.desc())
+            .limit(50)
+        )
+        points = [
+            GuestPointsRead(
+                created_at=row.created_at,
+                operation=row.operation.value,
+                points=row.points,
+                comment=row.comment,
+            )
+            for row in transactions
+        ]
+
+    card = GuestAdminRead.model_validate(guest)
+    card.orders_count = len(orders)
+    card.spent_kopecks = sum(order.total_kopecks for order in orders)
+    if account is not None:
+        tier = loyalty_service.tier_by_code(tenant, account.tier_code)
+        card.tier_title = tier.title
+        card.points_balance = account.points_balance
+        card.card_number = account.card_number
+
+    return GuestCardRead(
+        guest=card,
+        addresses=[guest_service.to_read(row) for row in address_rows],
+        orders=orders,
+        reservations=[
+            GuestReservationRead(
+                id=reservation.id,
+                reserved_at=reservation.reserved_at,
+                guests_count=reservation.guests_count,
+                status=reservation.status.value,
+                restaurant_name=restaurant_name,
+            )
+            for reservation, restaurant_name in reservation_rows.all()
+        ],
+        points=points,
+    )
+
+
+@router.post("/guests", status_code=status.HTTP_201_CREATED, summary="Завести гостя")
+async def create_guest(
+    payload: GuestWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> GuestAdminRead:
+    try:
+        phone = normalize_phone(payload.phone)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    existing = await session.scalar(
+        select(Guest).where(Guest.tenant_id == tenant.id, Guest.phone == phone)
+    )
+    if existing is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Гость с таким номером уже есть")
+
+    guest = Guest(
+        tenant_id=tenant.id,
+        phone=phone,
+        name=payload.name,
+        email=str(payload.email) if payload.email else None,
+        birthday=payload.birthday,
+        gender=payload.gender,
+        consent_at=datetime.now(UTC),
+        consent_version="1",
+    )
+    session.add(guest)
+    await session.flush()
+    await loyalty_service.open_account(session, tenant, guest.id)
+    await session.commit()
+    await session.refresh(guest)
+    return GuestAdminRead.model_validate(guest)
+
+
+@router.patch("/guests/{guest_id}", summary="Изменить гостя")
+async def update_guest(
+    guest_id: UUID,
+    payload: GuestPatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> GuestAdminRead:
+    guest = await _guest_or_404(session, tenant, guest_id)
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(guest, field, str(value) if field == "email" and value is not None else value)
+
+    await session.commit()
+    await session.refresh(guest)
+    return GuestAdminRead.model_validate(guest)
+
+
+@router.delete(
+    "/guests/{guest_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить гостя"
+)
+async def delete_guest(
+    guest_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    """Удаление по требованию гостя (ФЗ-152 и правила сторов). Заказы держат ссылку
+    на гостя, поэтому при наличии истории удалять запрещаем — сначала обезличивание."""
+    guest = await _guest_or_404(session, tenant, guest_id)
+
+    orders_count = await session.scalar(
+        select(func.count()).select_from(Order).where(Order.guest_id == guest_id)
+    )
+    if orders_count:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"У гостя {orders_count} заказов. Удалить нельзя — заблокируйте профиль",
+        )
+
+    await session.delete(guest)
+    await session.commit()
+
+
+# --- Зоны доставки -----------------------------------------------------------
+
+
+@router.get("/zones", summary="Зоны доставки")
+async def admin_zones(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    city_id: Annotated[UUID | None, Query()] = None,
+) -> list[ZoneRead]:
+    query = (
+        select(DeliveryZone, Restaurant.name)
+        .join(Restaurant, Restaurant.id == DeliveryZone.restaurant_id)
+        .where(DeliveryZone.tenant_id == tenant.id)
+        .order_by(DeliveryZone.sort_order, DeliveryZone.name)
+    )
+    if city_id is not None:
+        query = query.where(DeliveryZone.city_id == city_id)
+
+    result: list[ZoneRead] = []
+    for zone, restaurant_name in (await session.execute(query)).all():
+        row = ZoneRead.model_validate(zone)
+        row.restaurant_name = restaurant_name
+        result.append(row)
+    return result
+
+
+@router.post("/zones", status_code=status.HTTP_201_CREATED, summary="Добавить зону")
+async def create_zone(
+    payload: ZoneCreate,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> ZoneRead:
+    restaurant = await session.scalar(
+        select(Restaurant).where(
+            Restaurant.id == payload.restaurant_id, Restaurant.tenant_id == tenant.id
+        )
+    )
+    if restaurant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
+
+    zone = DeliveryZone(tenant_id=tenant.id, **payload.model_dump())
+    session.add(zone)
+    await session.commit()
+    await session.refresh(zone)
+
+    row = ZoneRead.model_validate(zone)
+    row.restaurant_name = restaurant.name
+    return row
+
+
+@router.patch("/zones/{zone_id}", summary="Изменить зону")
+async def update_zone(
+    zone_id: UUID,
+    payload: ZonePatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> ZoneRead:
+    zone = await session.scalar(
+        select(DeliveryZone).where(
+            DeliveryZone.id == zone_id, DeliveryZone.tenant_id == tenant.id
+        )
+    )
+    if zone is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Зона не найдена")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(zone, field, value)
+
+    await session.commit()
+    await session.refresh(zone)
+
+    restaurant = await session.scalar(select(Restaurant).where(Restaurant.id == zone.restaurant_id))
+    row = ZoneRead.model_validate(zone)
+    row.restaurant_name = restaurant.name if restaurant else ""
+    return row
+
+
+@router.delete("/zones/{zone_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить зону")
+async def delete_zone(
+    zone_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    zone = await session.scalar(
+        select(DeliveryZone).where(
+            DeliveryZone.id == zone_id, DeliveryZone.tenant_id == tenant.id
+        )
+    )
+    if zone is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Зона не найдена")
+
+    await session.delete(zone)
+    await session.commit()
+
+
+# --- Меню конкретного ресторана ---------------------------------------------
+
+
+@router.get("/restaurants/{restaurant_id}/menu", summary="Меню ресторана")
+async def restaurant_menu(
+    restaurant_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[RestaurantDishRead]:
+    rows = await session.execute(
+        select(Dish, MenuCategory.name)
+        .join(MenuCategory, MenuCategory.id == Dish.category_id)
+        .where(Dish.tenant_id == tenant.id, Dish.is_active.is_(True))
+        .order_by(MenuCategory.sort_order, Dish.sort_order, Dish.name)
+    )
+
+    overrides = {
+        row.dish_id: row
+        for row in await session.scalars(
+            select(DishPrice).where(
+                DishPrice.tenant_id == tenant.id, DishPrice.restaurant_id == restaurant_id
+            )
+        )
+    }
+    stopped = set(
+        await session.scalars(
+            select(StopListEntry.dish_id).where(
+                StopListEntry.tenant_id == tenant.id,
+                StopListEntry.restaurant_id == restaurant_id,
+            )
+        )
+    )
+
+    result: list[RestaurantDishRead] = []
+    for dish, category_name in rows.all():
+        override = overrides.get(dish.id)
+        result.append(
+            RestaurantDishRead(
+                dish_id=dish.id,
+                name=dish.name,
+                category_name=category_name,
+                base_price_kopecks=dish.price_kopecks,
+                price_kopecks=override.price_kopecks if override else dish.price_kopecks,
+                is_available=override.is_available if override else True,
+                in_stop_list=dish.id in stopped,
+            )
+        )
+    return result
+
+
+@router.put("/restaurants/{restaurant_id}/menu", summary="Изменить меню ресторана")
+async def update_restaurant_menu(
+    restaurant_id: UUID,
+    payload: RestaurantDishPatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> RestaurantDishRead:
+    dish = await session.scalar(
+        select(Dish).where(Dish.id == payload.dish_id, Dish.tenant_id == tenant.id)
+    )
+    if dish is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Блюдо не найдено")
+
+    override = await session.scalar(
+        select(DishPrice).where(
+            DishPrice.tenant_id == tenant.id,
+            DishPrice.restaurant_id == restaurant_id,
+            DishPrice.dish_id == payload.dish_id,
+        )
+    )
+
+    # Своя цена совпала с общей и блюдо продаётся — строка-исключение не нужна
+    plain = payload.is_available and payload.price_kopecks in (None, dish.price_kopecks)
+
+    if plain:
+        if override is not None:
+            await session.delete(override)
+    elif override is None:
+        session.add(
+            DishPrice(
+                tenant_id=tenant.id,
+                restaurant_id=restaurant_id,
+                dish_id=payload.dish_id,
+                price_kopecks=payload.price_kopecks or dish.price_kopecks,
+                is_available=payload.is_available,
+            )
+        )
+    else:
+        override.price_kopecks = payload.price_kopecks or dish.price_kopecks
+        override.is_available = payload.is_available
+
+    await session.commit()
+
+    category = await session.scalar(
+        select(MenuCategory.name).where(MenuCategory.id == dish.category_id)
+    )
+    return RestaurantDishRead(
+        dish_id=dish.id,
+        name=dish.name,
+        category_name=category or "",
+        base_price_kopecks=dish.price_kopecks,
+        price_kopecks=(
+            dish.price_kopecks if plain else (payload.price_kopecks or dish.price_kopecks)
+        ),
+        is_available=payload.is_available,
+        in_stop_list=False,
+    )
+
+
+# ─────────────────────── обновление с сайта ───────────────────────
+
+
+def _sync_read(run: SyncRun, changes: list[SyncChange] | None = None) -> SyncRunRead:
+    return SyncRunRead(
+        id=run.id,
+        kind=run.kind,
+        title=KIND_TITLES.get(cast(SyncKind, run.kind), run.kind),
+        status=run.status,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        applied_at=run.applied_at,
+        unchanged=run.unchanged,
+        created=run.created,
+        updated=run.updated,
+        removed=run.removed,
+        message=run.message,
+        changes=[SyncChangeRead.model_validate(change) for change in (changes or [])],
+    )
+
+
+async def _check_site(run_id: UUID, tenant_id: str, kind: SyncKind) -> None:
+    """Читает сайт и складывает предлагаемые изменения. База не меняется."""
+    async with SessionLocal() as session:
+        run = await session.get(SyncRun, run_id)
+        if run is None:
+            return
+
+        try:
+            plan = await sync_service.plan(kind)
+        except Exception as error:
+            run.status = "failed"
+            run.message = f"{type(error).__name__}: {error}"[:500]
+        else:
+            for change in plan.changes:
+                session.add(
+                    SyncChange(
+                        tenant_id=tenant_id,
+                        run_id=run.id,
+                        action=change.action,
+                        title=change.title[:200],
+                        summary=change.summary[:400],
+                        group=change.group,
+                        external_id=change.external_id,
+                        payload=change.payload,
+                        applied=False,
+                    )
+                )
+
+            run.status = "ready"
+            run.unchanged = plan.unchanged
+            run.message = "\n".join(plan.notes)[:2000] or None
+
+        run.finished_at = datetime.now(UTC)
+        await session.commit()
+
+
+async def _apply_changes(run_id: UUID, kind: SyncKind, change_ids: list[UUID]) -> None:
+    async with SessionLocal() as session:
+        run = await session.get(SyncRun, run_id)
+        if run is None:
+            return
+
+        rows = list(
+            await session.scalars(
+                select(SyncChange).where(
+                    SyncChange.run_id == run_id, SyncChange.id.in_(change_ids)
+                )
+            )
+        )
+
+        try:
+            report = await sync_service.apply(
+                kind,
+                [
+                    Change(
+                        external_id=row.external_id,
+                        title=row.title,
+                        action=cast(ChangeAction, row.action),
+                        summary=row.summary,
+                        payload=dict(row.payload),
+                        group=row.group,
+                    )
+                    for row in rows
+                ],
+            )
+        except Exception as error:
+            run.status = "failed"
+            run.message = f"{type(error).__name__}: {error}"[:500]
+        else:
+            run.status = "done"
+            run.created = report.created
+            run.updated = report.updated
+            run.removed = report.removed
+            if report.notes:
+                run.message = "\n".join(report.notes)[:2000]
+
+            for row in rows:
+                row.applied = True
+
+        run.applied_at = datetime.now(UTC)
+        await session.commit()
+
+
+async def _load_run(session: SessionDep, run: SyncRun) -> SyncRunRead:
+    changes = list(
+        await session.scalars(
+            select(SyncChange)
+            .where(SyncChange.run_id == run.id)
+            .order_by(SyncChange.group, SyncChange.title)
+        )
+    )
+    return _sync_read(run, changes)
+
+
+@router.get("/sync", summary="Последние сверки с сайтом")
+async def sync_runs(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[SyncRunRead]:
+    latest: list[SyncRunRead] = []
+
+    for kind in KIND_TITLES:
+        run = await session.scalar(
+            select(SyncRun)
+            .where(SyncRun.tenant_id == tenant.id, SyncRun.kind == kind)
+            .order_by(SyncRun.started_at.desc())
+            .limit(1)
+        )
+        if run is not None:
+            latest.append(await _load_run(session, run))
+
+    return latest
+
+
+@router.post("/sync/{kind}", summary="Сверить раздел с сайтом")
+async def start_sync(
+    kind: SyncKind,
+    tasks: BackgroundTasks,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> SyncRunRead:
+    running = await session.scalar(
+        select(SyncRun).where(
+            SyncRun.tenant_id == tenant.id,
+            SyncRun.kind == kind,
+            SyncRun.status.in_(["checking", "applying"]),
+        )
+    )
+    if running is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Эта сверка уже идёт")
+
+    # Прошлый список больше не нужен: сайт мог поменяться
+    old = await session.scalars(
+        select(SyncRun).where(SyncRun.tenant_id == tenant.id, SyncRun.kind == kind)
+    )
+    for previous in old:
+        await session.delete(previous)
+
+    run = SyncRun(
+        tenant_id=tenant.id, kind=kind, status="checking", started_at=datetime.now(UTC)
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+
+    tasks.add_task(_check_site, run.id, tenant.id, kind)
+    return _sync_read(run)
+
+
+@router.post("/sync/{run_id}/apply", summary="Записать выбранные изменения")
+async def apply_sync(
+    run_id: UUID,
+    payload: SyncApply,
+    tasks: BackgroundTasks,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> SyncRunRead:
+    run = await session.scalar(
+        select(SyncRun).where(SyncRun.id == run_id, SyncRun.tenant_id == tenant.id)
+    )
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Сверка не найдена")
+    if run.status not in {"ready", "done"}:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Список изменений ещё не готов")
+    if not payload.change_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Не выбрано ни одного изменения")
+
+    run.status = "applying"
+    await session.commit()
+
+    tasks.add_task(_apply_changes, run.id, cast(SyncKind, run.kind), payload.change_ids)
+    return await _load_run(session, run)
+
+
+@router.delete(
+    "/sync/{run_id}/changes/{change_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Убрать изменение из списка",
+)
+async def drop_change(
+    run_id: UUID, change_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    change = await session.scalar(
+        select(SyncChange).where(
+            SyncChange.id == change_id,
+            SyncChange.run_id == run_id,
+            SyncChange.tenant_id == tenant.id,
+        )
+    )
+    if change is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Изменение не найдено")
+
+    await session.delete(change)
+    await session.commit()
+
+
+# ─────────────────────────── промокоды ───────────────────────────
+
+
+@router.get("/promo-codes", summary="Промокоды")
+async def promo_codes(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[PromoCodeRead]:
+    rows = await session.scalars(
+        select(PromoCode)
+        .where(PromoCode.tenant_id == tenant.id)
+        .order_by(PromoCode.is_active.desc(), PromoCode.created_at.desc())
+    )
+    return [PromoCodeRead.model_validate(row) for row in rows]
+
+
+@router.post("/promo-codes", status_code=status.HTTP_201_CREATED, summary="Создать промокод")
+async def create_promo_code(
+    payload: PromoCodeWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> PromoCodeRead:
+    code = promo_service.normalize(payload.code)
+    exists = await session.scalar(
+        select(PromoCode).where(PromoCode.tenant_id == tenant.id, PromoCode.code == code)
+    )
+    if exists is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Такой промокод уже есть")
+
+    promo = PromoCode(tenant_id=tenant.id, **{**payload.model_dump(), "code": code})
+    session.add(promo)
+    await session.commit()
+    await session.refresh(promo)
+    return PromoCodeRead.model_validate(promo)
+
+
+@router.patch("/promo-codes/{promo_id}", summary="Изменить промокод")
+async def update_promo_code(
+    promo_id: UUID,
+    payload: PromoCodePatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> PromoCodeRead:
+    promo = await session.scalar(
+        select(PromoCode).where(PromoCode.id == promo_id, PromoCode.tenant_id == tenant.id)
+    )
+    if promo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Промокод не найден")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(promo, field, promo_service.normalize(value) if field == "code" else value)
+
+    await session.commit()
+    await session.refresh(promo)
+    return PromoCodeRead.model_validate(promo)
+
+
+@router.delete(
+    "/promo-codes/{promo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить промокод",
+)
+async def delete_promo_code(
+    promo_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    promo = await session.scalar(
+        select(PromoCode).where(PromoCode.id == promo_id, PromoCode.tenant_id == tenant.id)
+    )
+    if promo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Промокод не найден")
+
+    await session.delete(promo)
+    await session.commit()
+
+
+# ─────────────────────────── добавки к блюдам ───────────────────────────
+
+
+async def _extra_read(session: SessionDep, extra: DishExtra) -> DishExtraAdminRead:
+    total = await session.scalar(
+        select(func.count())
+        .select_from(dish_extra_links)
+        .where(dish_extra_links.c.extra_id == extra.id)
+    )
+    categories = await session.scalars(
+        select(category_extra_links.c.category_id).where(
+            category_extra_links.c.extra_id == extra.id
+        )
+    )
+    return DishExtraAdminRead(
+        id=extra.id,
+        name=extra.name,
+        price_kopecks=extra.price_kopecks,
+        is_active=extra.is_active,
+        dishes_count=total or 0,
+        category_ids=list(categories),
+    )
+
+
+@router.get("/extras", summary="Справочник добавок")
+async def extras(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[DishExtraAdminRead]:
+    counts = {
+        row.extra_id: row.total
+        for row in await session.execute(
+            select(dish_extra_links.c.extra_id, func.count().label("total")).group_by(
+                dish_extra_links.c.extra_id
+            )
+        )
+    }
+
+    sections: dict[UUID, list[UUID]] = {}
+    for row in await session.execute(select(category_extra_links)):
+        sections.setdefault(row.extra_id, []).append(row.category_id)
+
+    rows = await session.scalars(
+        select(DishExtra).where(DishExtra.tenant_id == tenant.id).order_by(DishExtra.name)
+    )
+    return [
+        DishExtraAdminRead(
+            id=row.id,
+            name=row.name,
+            price_kopecks=row.price_kopecks,
+            is_active=row.is_active,
+            dishes_count=counts.get(row.id, 0),
+            category_ids=sections.get(row.id, []),
+        )
+        for row in rows
+    ]
+
+
+@router.post("/extras", status_code=status.HTTP_201_CREATED, summary="Создать добавку")
+async def create_extra(
+    payload: DishExtraWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> DishExtraAdminRead:
+    extra = DishExtra(tenant_id=tenant.id, **payload.model_dump())
+    session.add(extra)
+    await session.commit()
+    await session.refresh(extra)
+    return await _extra_read(session, extra)
+
+
+@router.patch("/extras/{extra_id}", summary="Изменить добавку")
+async def update_extra(
+    extra_id: UUID,
+    payload: DishExtraPatch,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> DishExtraAdminRead:
+    extra = await session.scalar(
+        select(DishExtra).where(DishExtra.id == extra_id, DishExtra.tenant_id == tenant.id)
+    )
+    if extra is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Добавка не найдена")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(extra, field, value)
+    await session.commit()
+    await session.refresh(extra)
+    return await _extra_read(session, extra)
+
+
+@router.put("/extras/{extra_id}/categories", summary="Разделы, где предлагается добавка")
+async def set_extra_categories(
+    extra_id: UUID,
+    payload: ExtraCategoriesWrite,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> DishExtraAdminRead:
+    extra = await session.scalar(
+        select(DishExtra).where(DishExtra.id == extra_id, DishExtra.tenant_id == tenant.id)
+    )
+    if extra is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Добавка не найдена")
+
+    # Привязку к разделу пишем напрямую: коллекция у чужой модели тянет
+    # ленивую подгрузку и рвётся на await
+    await session.execute(
+        delete(category_extra_links).where(category_extra_links.c.extra_id == extra.id)
+    )
+    if payload.category_ids:
+        rows = await session.scalars(
+            select(MenuCategory.id).where(
+                MenuCategory.tenant_id == tenant.id, MenuCategory.id.in_(payload.category_ids)
+            )
+        )
+        links = [{"category_id": category_id, "extra_id": extra.id} for category_id in rows]
+        if links:
+            await session.execute(insert(category_extra_links), links)
+
+    await session.commit()
+    return await _extra_read(session, extra)
+
+
+@router.delete(
+    "/extras/{extra_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить добавку"
+)
+async def delete_extra(
+    extra_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    extra = await session.scalar(
+        select(DishExtra).where(DishExtra.id == extra_id, DishExtra.tenant_id == tenant.id)
+    )
+    if extra is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Добавка не найдена")
+
+    await session.delete(extra)
     await session.commit()

@@ -34,3 +34,14 @@ export function formatPhone(phone: string): string {
 export function phoneToUri(phone: string): string {
   return `tel:${phone.replace(/[^\d+]/g, '')}`;
 }
+
+/** Русское склонение по числу: 1 вариант, 2 варианта, 5 вариантов. */
+export function plural(count: number, one: string, few: string, many: string): string {
+  const tens = count % 100;
+  if (tens > 10 && tens < 20) return many;
+
+  const ones = count % 10;
+  if (ones === 1) return one;
+  if (ones > 1 && ones < 5) return few;
+  return many;
+}

@@ -30,8 +30,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Проверить код и войти */
+        /**
+         * Проверить код
+         * @description Знакомый номер — сразу сессия. Незнакомый — билет на регистрацию: гость появится в базе только после того, как назовёт имя.
+         */
         post: operations["verify_api_v1_auth_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Завершить регистрацию */
+        post: operations["signup_api_v1_auth_signup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -82,11 +102,52 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Удалить аккаунт вместе с личными данными
+         * @description Требование Apple к приложениям со входом и право на забвение по ФЗ-152.
+         */
+        delete: operations["delete_me_api_v1_me_delete"];
         options?: never;
         head?: never;
         /** Изменить данные гостя */
         patch: operations["update_me_api_v1_me_patch"];
+        trace?: never;
+    };
+    "/api/v1/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Устройство для пушей
+         * @description Приложение присылает токен при каждом запуске: он может смениться.
+         */
+        put: operations["register_device_api_v1_devices_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/{push_token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отключить уведомления на устройстве */
+        delete: operations["forget_device_api_v1_devices__push_token__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/addresses": {
@@ -119,6 +180,58 @@ export interface paths {
         post?: never;
         /** Удалить адрес */
         delete: operations["delete_address_api_v1_addresses__address_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить адрес */
+        patch: operations["update_address_api_v1_addresses__address_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/addresses/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Подсказки по адресу */
+        get: operations["suggest_api_v1_addresses_suggest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/addresses/locate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Адрес по координатам */
+        get: operations["locate_api_v1_addresses_locate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Итоги гостя: траты и любимые блюда */
+        get: operations["summary_api_v1_me_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -209,6 +322,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/delivery/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Кто везёт на этот адрес */
+        get: operations["resolve_delivery_api_v1_delivery_resolve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/orders/limits": {
         parameters: {
             query?: never;
@@ -220,6 +350,23 @@ export interface paths {
         get: operations["limits_api_v1_orders_limits_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Счёт по корзине до оформления */
+        post: operations["preview_api_v1_orders_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -592,6 +739,294 @@ export interface paths {
         patch: operations["update_promotion_api_v1_admin_promotions__promotion_id__patch"];
         trace?: never;
     };
+    "/api/v1/admin/restaurants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Рестораны сети */
+        get: operations["admin_restaurants_api_v1_admin_restaurants_get"];
+        put?: never;
+        /** Создать ресторан */
+        post: operations["create_restaurant_api_v1_admin_restaurants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/restaurants/{restaurant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить ресторан */
+        delete: operations["delete_restaurant_api_v1_admin_restaurants__restaurant_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить ресторан */
+        patch: operations["update_restaurant_api_v1_admin_restaurants__restaurant_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/guests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Гости сети */
+        get: operations["admin_guests_api_v1_admin_guests_get"];
+        put?: never;
+        /** Завести гостя */
+        post: operations["create_guest_api_v1_admin_guests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/guests/{guest_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Карточка гостя */
+        get: operations["guest_card_api_v1_admin_guests__guest_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Удалить гостя
+         * @description Удаление по требованию гостя (ФЗ-152 и правила сторов). Заказы держат ссылку
+         *     на гостя, поэтому при наличии истории удалять запрещаем — сначала обезличивание.
+         */
+        delete: operations["delete_guest_api_v1_admin_guests__guest_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить гостя */
+        patch: operations["update_guest_api_v1_admin_guests__guest_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Зоны доставки */
+        get: operations["admin_zones_api_v1_admin_zones_get"];
+        put?: never;
+        /** Добавить зону */
+        post: operations["create_zone_api_v1_admin_zones_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/zones/{zone_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить зону */
+        delete: operations["delete_zone_api_v1_admin_zones__zone_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить зону */
+        patch: operations["update_zone_api_v1_admin_zones__zone_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/restaurants/{restaurant_id}/menu": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Меню ресторана */
+        get: operations["restaurant_menu_api_v1_admin_restaurants__restaurant_id__menu_get"];
+        /** Изменить меню ресторана */
+        put: operations["update_restaurant_menu_api_v1_admin_restaurants__restaurant_id__menu_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Последние сверки с сайтом */
+        get: operations["sync_runs_api_v1_admin_sync_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sync/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Сверить раздел с сайтом */
+        post: operations["start_sync_api_v1_admin_sync__kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sync/{run_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Записать выбранные изменения */
+        post: operations["apply_sync_api_v1_admin_sync__run_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sync/{run_id}/changes/{change_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Убрать изменение из списка */
+        delete: operations["drop_change_api_v1_admin_sync__run_id__changes__change_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/promo-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Промокоды */
+        get: operations["promo_codes_api_v1_admin_promo_codes_get"];
+        put?: never;
+        /** Создать промокод */
+        post: operations["create_promo_code_api_v1_admin_promo_codes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/promo-codes/{promo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить промокод */
+        delete: operations["delete_promo_code_api_v1_admin_promo_codes__promo_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить промокод */
+        patch: operations["update_promo_code_api_v1_admin_promo_codes__promo_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/extras": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Справочник добавок */
+        get: operations["extras_api_v1_admin_extras_get"];
+        put?: never;
+        /** Создать добавку */
+        post: operations["create_extra_api_v1_admin_extras_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/extras/{extra_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить добавку */
+        delete: operations["delete_extra_api_v1_admin_extras__extra_id__delete"];
+        options?: never;
+        head?: never;
+        /** Изменить добавку */
+        patch: operations["update_extra_api_v1_admin_extras__extra_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/extras/{extra_id}/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Разделы, где предлагается добавка */
+        put: operations["set_extra_categories_api_v1_admin_extras__extra_id__categories_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -620,10 +1055,14 @@ export interface components {
              * Format: uuid
              */
             city_id: string;
+            /** Locality */
+            locality?: string | null;
             /** Street */
             street: string;
             /** House */
             house: string;
+            /** Building */
+            building?: string | null;
             /** Title */
             title?: string | null;
             /** Flat */
@@ -664,6 +1103,8 @@ export interface components {
             street: string;
             /** House */
             house: string;
+            /** Building */
+            building: string | null;
             /** Flat */
             flat: string | null;
             /** Entrance */
@@ -678,6 +1119,74 @@ export interface components {
             is_default: boolean;
             /** Full Text */
             full_text: string;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
+            /** Locality */
+            locality?: string | null;
+            /** Metro */
+            metro?: string | null;
+            /** Restaurant Id */
+            restaurant_id?: string | null;
+            /** Restaurant Name */
+            restaurant_name?: string | null;
+            /**
+             * Delivery Covered
+             * @default false
+             */
+            delivery_covered: boolean;
+        };
+        /** AddressSuggestion */
+        AddressSuggestion: {
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle: string;
+            /** City */
+            city: string;
+            /** Street */
+            street: string;
+            /** House */
+            house: string;
+            /** Building */
+            building: string;
+            /** Latitude */
+            latitude: number | null;
+            /** Longitude */
+            longitude: number | null;
+        };
+        /**
+         * AddressUpdate
+         * @description Правка сохранённого адреса. Меняем только то, что пришло.
+         */
+        AddressUpdate: {
+            /** Locality */
+            locality?: string | null;
+            /** Street */
+            street?: string | null;
+            /** House */
+            house?: string | null;
+            /** Building */
+            building?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Flat */
+            flat?: string | null;
+            /** Entrance */
+            entrance?: string | null;
+            /** Floor */
+            floor?: string | null;
+            /** Intercom */
+            intercom?: string | null;
+            /** Comment */
+            comment?: string | null;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
+            /** Is Default */
+            is_default?: boolean | null;
         };
         /** Body_upload_api_v1_admin_uploads_post */
         Body_upload_api_v1_admin_uploads_post: {
@@ -702,6 +1211,11 @@ export interface components {
             /** Image Url */
             image_url: string | null;
             /**
+             * Show In Popular
+             * @default true
+             */
+            show_in_popular: boolean;
+            /**
              * Dishes Count
              * @default 0
              */
@@ -719,6 +1233,8 @@ export interface components {
             is_active?: boolean | null;
             /** Image Url */
             image_url?: string | null;
+            /** Show In Popular */
+            show_in_popular?: boolean | null;
         };
         /** CategoryWrite */
         CategoryWrite: {
@@ -738,6 +1254,11 @@ export interface components {
             is_active: boolean;
             /** Image Url */
             image_url?: string | null;
+            /**
+             * Show In Popular
+             * @default true
+             */
+            show_in_popular: boolean;
         };
         /**
          * CheckoutLimits
@@ -750,6 +1271,149 @@ export interface components {
             max_points_to_spend: number;
             /** Cashback Percent */
             cashback_percent: number;
+        };
+        /**
+         * CheckoutPreview
+         * @description Полный счёт до оформления: корзина показывает то же, что посчитает заказ.
+         */
+        CheckoutPreview: {
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            /** Restaurant Name */
+            restaurant_name: string;
+            /** Restaurant Phone */
+            restaurant_phone?: string | null;
+            /** Restaurant Address */
+            restaurant_address?: string | null;
+            type: components["schemas"]["OrderType"];
+            /** Subtotal Kopecks */
+            subtotal_kopecks: number;
+            /** Delivery Kopecks */
+            delivery_kopecks: number;
+            /**
+             * Cutlery Kopecks
+             * @default 0
+             */
+            cutlery_kopecks: number;
+            /**
+             * Cutlery Price Kopecks
+             * @default 0
+             */
+            cutlery_price_kopecks: number;
+            /**
+             * Promo Discount Kopecks
+             * @default 0
+             */
+            promo_discount_kopecks: number;
+            /** Discount Kopecks */
+            discount_kopecks: number;
+            /** Total Kopecks */
+            total_kopecks: number;
+            /** Promo Code */
+            promo_code?: string | null;
+            /** Promo Title */
+            promo_title?: string | null;
+            /** Promo Error */
+            promo_error?: string | null;
+            /**
+             * Min Order Kopecks
+             * @default 0
+             */
+            min_order_kopecks: number;
+            /**
+             * Short Of Min Kopecks
+             * @default 0
+             */
+            short_of_min_kopecks: number;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks?: number | null;
+            /** To Free Delivery Kopecks */
+            to_free_delivery_kopecks?: number | null;
+            /** Delivery Minutes */
+            delivery_minutes?: number | null;
+            /** Delivery Opens At */
+            delivery_opens_at?: string | null;
+            /** Delivery Closes At */
+            delivery_closes_at?: string | null;
+            /**
+             * Delivery Open Now
+             * @default true
+             */
+            delivery_open_now: boolean;
+            /**
+             * Preorder Enabled
+             * @default false
+             */
+            preorder_enabled: boolean;
+            /**
+             * Points Balance
+             * @default 0
+             */
+            points_balance: number;
+            /**
+             * Max Points To Spend
+             * @default 0
+             */
+            max_points_to_spend: number;
+            /**
+             * Points To Spend
+             * @default 0
+             */
+            points_to_spend: number;
+            /**
+             * Points Earned
+             * @default 0
+             */
+            points_earned: number;
+            /**
+             * Points Cover Delivery
+             * @default true
+             */
+            points_cover_delivery: boolean;
+            /**
+             * Cashback Percent
+             * @default 0
+             */
+            cashback_percent: number;
+            /**
+             * Unavailable
+             * @default []
+             */
+            unavailable: components["schemas"]["UnavailableItem"][];
+            /** Blocker */
+            blocker?: string | null;
+        };
+        /** CheckoutPreviewRequest */
+        CheckoutPreviewRequest: {
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            type: components["schemas"]["OrderType"];
+            /** Items */
+            items?: components["schemas"]["OrderItemCreate"][];
+            /** Address Latitude */
+            address_latitude?: number | null;
+            /** Address Longitude */
+            address_longitude?: number | null;
+            /**
+             * Persons Count
+             * @default 0
+             */
+            persons_count: number;
+            /** Delivery At */
+            delivery_at?: string | null;
+            /**
+             * Points To Spend
+             * @default 0
+             */
+            points_to_spend: number;
+            /** Promo Code */
+            promo_code?: string | null;
         };
         /** CityRead */
         CityRead: {
@@ -787,78 +1451,60 @@ export interface components {
             /** Code */
             code: string;
         };
+        /**
+         * DeliveryResolve
+         * @description Кто везёт на этот адрес и на каких условиях.
+         */
+        DeliveryResolve: {
+            /** Covered */
+            covered: boolean;
+            restaurant?: components["schemas"]["RestaurantRead"] | null;
+            /** Zone Name */
+            zone_name?: string | null;
+            /**
+             * Delivery Price Kopecks
+             * @default 0
+             */
+            delivery_price_kopecks: number;
+            /**
+             * Min Order Kopecks
+             * @default 0
+             */
+            min_order_kopecks: number;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks?: number | null;
+            /** Delivery Minutes */
+            delivery_minutes?: number | null;
+            /** Delivery Opens At */
+            delivery_opens_at?: string | null;
+            /** Delivery Closes At */
+            delivery_closes_at?: string | null;
+            /**
+             * Delivery Open Now
+             * @default true
+             */
+            delivery_open_now: boolean;
+            /** Paused Reason */
+            paused_reason?: string | null;
+        };
+        /**
+         * DevicePlatform
+         * @enum {string}
+         */
+        DevicePlatform: "ios" | "android";
+        /**
+         * DeviceWrite
+         * @description Устройство гостя для пуш-уведомлений.
+         */
+        DeviceWrite: {
+            /** Push Token */
+            push_token: string;
+            platform: components["schemas"]["DevicePlatform"];
+            /** App Version */
+            app_version?: string | null;
+        };
         /** DishAdminRead */
         DishAdminRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Category Id
-             * Format: uuid
-             */
-            category_id: string;
-            /** Name */
-            name: string;
-            /** Description */
-            description: string | null;
-            /** Composition */
-            composition: string | null;
-            /** Image Url */
-            image_url: string | null;
-            /** Price Kopecks */
-            price_kopecks: number;
-            /** Weight Grams */
-            weight_grams: number | null;
-            /** Volume Ml */
-            volume_ml: number | null;
-            /** Calories */
-            calories: number | null;
-            /** Is Spicy */
-            is_spicy: boolean;
-            /** Is Vegetarian */
-            is_vegetarian: boolean;
-            /** Is New */
-            is_new: boolean;
-            /** Is Active */
-            is_active: boolean;
-            /** Sort Order */
-            sort_order: number;
-        };
-        /** DishPatch */
-        DishPatch: {
-            /** Category Id */
-            category_id?: string | null;
-            /** Name */
-            name?: string | null;
-            /** Price Kopecks */
-            price_kopecks?: number | null;
-            /** Description */
-            description?: string | null;
-            /** Composition */
-            composition?: string | null;
-            /** Image Url */
-            image_url?: string | null;
-            /** Weight Grams */
-            weight_grams?: number | null;
-            /** Volume Ml */
-            volume_ml?: number | null;
-            /** Calories */
-            calories?: number | null;
-            /** Is Spicy */
-            is_spicy?: boolean | null;
-            /** Is Vegetarian */
-            is_vegetarian?: boolean | null;
-            /** Is New */
-            is_new?: boolean | null;
-            /** Sort Order */
-            sort_order?: number | null;
-            /** Is Active */
-            is_active?: boolean | null;
-        };
-        /** DishRead */
-        DishRead: {
             /**
              * Id
              * Format: uuid
@@ -897,8 +1543,164 @@ export interface components {
             is_vegetarian: boolean;
             /** Is New */
             is_new: boolean;
+            /** Is Active */
+            is_active: boolean;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /** DishExtraAdminRead */
+        DishExtraAdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Price Kopecks */
+            price_kopecks: number;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Dishes Count
+             * @default 0
+             */
+            dishes_count: number;
+            /**
+             * Category Ids
+             * @default []
+             */
+            category_ids: string[];
+        };
+        /** DishExtraPatch */
+        DishExtraPatch: {
+            /** Name */
+            name?: string | null;
+            /** Price Kopecks */
+            price_kopecks?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** DishExtraRead */
+        DishExtraRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Price Kopecks */
+            price_kopecks: number;
+            /**
+             * Is Recommended
+             * @default false
+             */
+            is_recommended: boolean;
+        };
+        /** DishExtraWrite */
+        DishExtraWrite: {
+            /** Name */
+            name: string;
+            /**
+             * Price Kopecks
+             * @default 0
+             */
+            price_kopecks: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+        };
+        /** DishPatch */
+        DishPatch: {
+            /** Category Id */
+            category_id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Price Kopecks */
+            price_kopecks?: number | null;
+            /** Description */
+            description?: string | null;
+            /** Composition */
+            composition?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /** Weight Grams */
+            weight_grams?: number | null;
+            /** Volume Ml */
+            volume_ml?: number | null;
+            /** Calories */
+            calories?: number | null;
+            /** Proteins G */
+            proteins_g?: number | null;
+            /** Fats G */
+            fats_g?: number | null;
+            /** Carbs G */
+            carbs_g?: number | null;
+            /** Is Spicy */
+            is_spicy?: boolean | null;
+            /** Is Vegetarian */
+            is_vegetarian?: boolean | null;
+            /** Is New */
+            is_new?: boolean | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** DishRead */
+        DishRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Category Id
+             * Format: uuid
+             */
+            category_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Composition */
+            composition: string | null;
+            /** Image Url */
+            image_url: string | null;
+            /** Image Blurhash */
+            image_blurhash?: string | null;
+            /** Price Kopecks */
+            price_kopecks: number;
+            /** Weight Grams */
+            weight_grams: number | null;
+            /** Volume Ml */
+            volume_ml: number | null;
+            /** Calories */
+            calories: number | null;
+            /** Proteins G */
+            proteins_g: number | null;
+            /** Fats G */
+            fats_g: number | null;
+            /** Carbs G */
+            carbs_g: number | null;
+            /** Is Spicy */
+            is_spicy: boolean;
+            /** Is Vegetarian */
+            is_vegetarian: boolean;
+            /** Is New */
+            is_new: boolean;
             /** Is Available */
             is_available: boolean;
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /**
+             * Extras
+             * @default []
+             */
+            extras: components["schemas"]["DishExtraRead"][];
         };
         /** DishWrite */
         DishWrite: {
@@ -923,6 +1725,12 @@ export interface components {
             volume_ml?: number | null;
             /** Calories */
             calories?: number | null;
+            /** Proteins G */
+            proteins_g?: number | null;
+            /** Fats G */
+            fats_g?: number | null;
+            /** Carbs G */
+            carbs_g?: number | null;
             /**
              * Is Spicy
              * @default false
@@ -949,6 +1757,154 @@ export interface components {
              */
             is_active: boolean;
         };
+        /** ExtraCategoriesWrite */
+        ExtraCategoriesWrite: {
+            /**
+             * Category Ids
+             * @default []
+             */
+            category_ids: string[];
+        };
+        /** FavouriteDish */
+        FavouriteDish: {
+            /**
+             * Dish Id
+             * Format: uuid
+             */
+            dish_id: string;
+            /** Name */
+            name: string;
+            /** Image Url */
+            image_url: string | null;
+            /** Price Kopecks */
+            price_kopecks: number;
+            /** Times */
+            times: number;
+        };
+        /**
+         * Gender
+         * @enum {string}
+         */
+        Gender: "male" | "female";
+        /** GuestAdminRead */
+        GuestAdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Phone */
+            phone: string;
+            /** Name */
+            name: string | null;
+            /** Email */
+            email: string | null;
+            /** Birthday */
+            birthday: string | null;
+            gender: components["schemas"]["Gender"] | null;
+            /** Is Blocked */
+            is_blocked: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /**
+             * Orders Count
+             * @default 0
+             */
+            orders_count: number;
+            /**
+             * Spent Kopecks
+             * @default 0
+             */
+            spent_kopecks: number;
+            /**
+             * Tier Title
+             * @default
+             */
+            tier_title: string;
+            /**
+             * Points Balance
+             * @default 0
+             */
+            points_balance: number;
+            /**
+             * Card Number
+             * @default
+             */
+            card_number: string;
+        };
+        /**
+         * GuestCardRead
+         * @description Всё про гостя на одном экране: кто он, куда возил, что заказывал.
+         */
+        GuestCardRead: {
+            guest: components["schemas"]["GuestAdminRead"];
+            /** Addresses */
+            addresses: components["schemas"]["AddressRead"][];
+            /** Orders */
+            orders: components["schemas"]["GuestOrderRead"][];
+            /** Reservations */
+            reservations: components["schemas"]["GuestReservationRead"][];
+            /** Points */
+            points: components["schemas"]["GuestPointsRead"][];
+        };
+        /** GuestOrderRead */
+        GuestOrderRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Restaurant Name */
+            restaurant_name: string;
+            /** Address Text */
+            address_text: string | null;
+            /** Total Kopecks */
+            total_kopecks: number;
+            /** Items */
+            items: string[];
+        };
+        /** GuestPatch */
+        GuestPatch: {
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Birthday */
+            birthday?: string | null;
+            gender?: components["schemas"]["Gender"] | null;
+            /** Is Blocked */
+            is_blocked?: boolean | null;
+        };
+        /** GuestPointsRead */
+        GuestPointsRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Operation */
+            operation: string;
+            /** Points */
+            points: number;
+            /** Comment */
+            comment: string | null;
+        };
         /** GuestRead */
         GuestRead: {
             /**
@@ -964,6 +1920,40 @@ export interface components {
             email: string | null;
             /** Birthday */
             birthday: string | null;
+            gender: components["schemas"]["Gender"] | null;
+        };
+        /** GuestReservationRead */
+        GuestReservationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Reserved At
+             * Format: date-time
+             */
+            reserved_at: string;
+            /** Guests Count */
+            guests_count: number;
+            /** Status */
+            status: string;
+            /** Restaurant Name */
+            restaurant_name: string;
+        };
+        /**
+         * GuestSummary
+         * @description Итоги гостя для профиля: сколько заказывал, что берёт чаще, откуда возит.
+         */
+        GuestSummary: {
+            /** Orders Count */
+            orders_count: number;
+            /** Spent Kopecks */
+            spent_kopecks: number;
+            /** Favourite Restaurant */
+            favourite_restaurant: string | null;
+            /** Favourites */
+            favourites: components["schemas"]["FavouriteDish"][];
         };
         /** GuestUpdate */
         GuestUpdate: {
@@ -973,6 +1963,19 @@ export interface components {
             email?: string | null;
             /** Birthday */
             birthday?: string | null;
+            gender?: components["schemas"]["Gender"] | null;
+        };
+        /** GuestWrite */
+        GuestWrite: {
+            /** Phone */
+            phone: string;
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Birthday */
+            birthday?: string | null;
+            gender?: components["schemas"]["Gender"] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -981,6 +1984,16 @@ export interface components {
         };
         /** LoyaltyRead */
         LoyaltyRead: {
+            /**
+             * Card Number
+             * @default
+             */
+            card_number: string;
+            /**
+             * Card Barcode
+             * @default
+             */
+            card_barcode: string;
             /** Tier Code */
             tier_code: string;
             /** Tier Title */
@@ -989,6 +2002,11 @@ export interface components {
             cashback_percent: number;
             /** Points Balance */
             points_balance: number;
+            /**
+             * Lifetime Spent Kopecks
+             * @default 0
+             */
+            lifetime_spent_kopecks: number;
         };
         /** MenuCategoryRead */
         MenuCategoryRead: {
@@ -1003,6 +2021,8 @@ export interface components {
             slug: string;
             /** Image Url */
             image_url: string | null;
+            /** Image Blurhash */
+            image_blurhash?: string | null;
             /** Dishes */
             dishes: components["schemas"]["DishRead"][];
         };
@@ -1041,6 +2061,10 @@ export interface components {
              * @default 0
              */
             points_to_spend: number;
+            /** Promo Code */
+            promo_code?: string | null;
+            /** Change From Kopecks */
+            change_from_kopecks?: number | null;
         };
         /** OrderItemCreate */
         OrderItemCreate: {
@@ -1051,6 +2075,15 @@ export interface components {
             dish_id: string;
             /** Quantity */
             quantity: number;
+            /** Extra Ids */
+            extra_ids?: string[];
+        };
+        /** OrderItemExtraRead */
+        OrderItemExtraRead: {
+            /** Name */
+            name: string;
+            /** Price Kopecks */
+            price_kopecks: number;
         };
         /** OrderItemRead */
         OrderItemRead: {
@@ -1063,6 +2096,13 @@ export interface components {
             dish_id: string | null;
             /** Name */
             name: string;
+            /**
+             * Extras
+             * @default []
+             */
+            extras: components["schemas"]["OrderItemExtraRead"][];
+            /** Image Url */
+            image_url?: string | null;
             /** Unit Price Kopecks */
             unit_price_kopecks: number;
             /** Quantity */
@@ -1088,6 +2128,10 @@ export interface components {
             restaurant_id: string;
             /** Restaurant Name */
             restaurant_name: string;
+            /** Restaurant Phone */
+            restaurant_phone?: string | null;
+            /** Restaurant Address */
+            restaurant_address?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1103,6 +2147,18 @@ export interface components {
             subtotal_kopecks: number;
             /** Delivery Kopecks */
             delivery_kopecks: number;
+            /**
+             * Cutlery Kopecks
+             * @default 0
+             */
+            cutlery_kopecks: number;
+            /** Promo Code */
+            promo_code?: string | null;
+            /**
+             * Promo Discount Kopecks
+             * @default 0
+             */
+            promo_discount_kopecks: number;
             /** Discount Kopecks */
             discount_kopecks: number;
             /** Total Kopecks */
@@ -1111,6 +2167,10 @@ export interface components {
             points_spent: number;
             /** Points Earned */
             points_earned: number;
+            /** Change From Kopecks */
+            change_from_kopecks?: number | null;
+            /** Persons Count */
+            persons_count?: number | null;
             payment_method: components["schemas"]["PaymentMethod"];
             payment_status: components["schemas"]["PaymentStatus"];
             /** Items */
@@ -1147,6 +2207,122 @@ export interface components {
             guest: components["schemas"]["GuestRead"];
             loyalty: components["schemas"]["LoyaltyRead"];
         };
+        /**
+         * PromoCodeKind
+         * @enum {string}
+         */
+        PromoCodeKind: "percent" | "fixed" | "free_delivery";
+        /** PromoCodePatch */
+        PromoCodePatch: {
+            /** Code */
+            code?: string | null;
+            /** Title */
+            title?: string | null;
+            kind?: components["schemas"]["PromoCodeKind"] | null;
+            /** Value */
+            value?: number | null;
+            /** Max Discount Kopecks */
+            max_discount_kopecks?: number | null;
+            /** Min Order Kopecks */
+            min_order_kopecks?: number | null;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Usage Limit */
+            usage_limit?: number | null;
+            /** Per Guest Limit */
+            per_guest_limit?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** PromoCodeRead */
+        PromoCodeRead: {
+            /** Code */
+            code: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** @default percent */
+            kind: components["schemas"]["PromoCodeKind"];
+            /**
+             * Value
+             * @default 0
+             */
+            value: number;
+            /** Max Discount Kopecks */
+            max_discount_kopecks?: number | null;
+            /**
+             * Min Order Kopecks
+             * @default 0
+             */
+            min_order_kopecks: number;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Usage Limit */
+            usage_limit?: number | null;
+            /**
+             * Per Guest Limit
+             * @default 1
+             */
+            per_guest_limit: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Used Count */
+            used_count: number;
+        };
+        /** PromoCodeWrite */
+        PromoCodeWrite: {
+            /** Code */
+            code: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** @default percent */
+            kind: components["schemas"]["PromoCodeKind"];
+            /**
+             * Value
+             * @default 0
+             */
+            value: number;
+            /** Max Discount Kopecks */
+            max_discount_kopecks?: number | null;
+            /**
+             * Min Order Kopecks
+             * @default 0
+             */
+            min_order_kopecks: number;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Usage Limit */
+            usage_limit?: number | null;
+            /**
+             * Per Guest Limit
+             * @default 1
+             */
+            per_guest_limit: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+        };
         /** PromotionAdminRead */
         PromotionAdminRead: {
             /**
@@ -1162,18 +2338,37 @@ export interface components {
             label: string | null;
             /** Image Url */
             image_url: string | null;
-            /** Restaurant Id */
-            restaurant_id: string | null;
+            /** Image Blurhash */
+            image_blurhash?: string | null;
+            /** Image Width */
+            image_width?: number | null;
+            /** Image Height */
+            image_height?: number | null;
+            /**
+             * Restaurant Ids
+             * @default []
+             */
+            restaurant_ids: string[];
+            /**
+             * Restaurant Names
+             * @default []
+             */
+            restaurant_names: string[];
             /** Starts At */
             starts_at: string | null;
             /** Ends At */
             ends_at: string | null;
+            /**
+             * Show In Menu
+             * @default false
+             */
+            show_in_menu: boolean;
+            /** Source Url */
+            source_url?: string | null;
             /** Sort Order */
             sort_order: number;
             /** Is Active */
             is_active: boolean;
-            /** Restaurant Name */
-            restaurant_name?: string | null;
         };
         /** PromotionPatch */
         PromotionPatch: {
@@ -1185,8 +2380,8 @@ export interface components {
             label?: string | null;
             /** Image Url */
             image_url?: string | null;
-            /** Restaurant Id */
-            restaurant_id?: string | null;
+            /** Restaurant Ids */
+            restaurant_ids?: string[] | null;
             /** Starts At */
             starts_at?: string | null;
             /** Ends At */
@@ -1195,6 +2390,8 @@ export interface components {
             sort_order?: number | null;
             /** Is Active */
             is_active?: boolean | null;
+            /** Show In Menu */
+            show_in_menu?: boolean | null;
         };
         /** PromotionRead */
         PromotionRead: {
@@ -1211,12 +2408,33 @@ export interface components {
             label: string | null;
             /** Image Url */
             image_url: string | null;
-            /** Restaurant Id */
-            restaurant_id: string | null;
+            /** Image Blurhash */
+            image_blurhash?: string | null;
+            /** Image Width */
+            image_width?: number | null;
+            /** Image Height */
+            image_height?: number | null;
+            /**
+             * Restaurant Ids
+             * @default []
+             */
+            restaurant_ids: string[];
+            /**
+             * Restaurant Names
+             * @default []
+             */
+            restaurant_names: string[];
             /** Starts At */
             starts_at: string | null;
             /** Ends At */
             ends_at: string | null;
+            /**
+             * Show In Menu
+             * @default false
+             */
+            show_in_menu: boolean;
+            /** Source Url */
+            source_url?: string | null;
         };
         /** PromotionWrite */
         PromotionWrite: {
@@ -1228,8 +2446,11 @@ export interface components {
             label?: string | null;
             /** Image Url */
             image_url?: string | null;
-            /** Restaurant Id */
-            restaurant_id?: string | null;
+            /**
+             * Restaurant Ids
+             * @default []
+             */
+            restaurant_ids: string[];
             /** Starts At */
             starts_at?: string | null;
             /** Ends At */
@@ -1244,6 +2465,11 @@ export interface components {
              * @default true
              */
             is_active: boolean;
+            /**
+             * Show In Menu
+             * @default false
+             */
+            show_in_menu: boolean;
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -1318,6 +2544,159 @@ export interface components {
             /** Table Number */
             table_number?: string | null;
         };
+        /** RestaurantAdminRead */
+        RestaurantAdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * City Id
+             * Format: uuid
+             */
+            city_id: string;
+            /** Name */
+            name: string;
+            /** Address */
+            address: string;
+            /** Metro */
+            metro: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * Opens At
+             * Format: time
+             */
+            opens_at: string;
+            /**
+             * Closes At
+             * Format: time
+             */
+            closes_at: string;
+            /** Delivery Opens At */
+            delivery_opens_at: string | null;
+            /** Delivery Closes At */
+            delivery_closes_at: string | null;
+            /** Has Delivery */
+            has_delivery: boolean;
+            /** Has Pickup */
+            has_pickup: boolean;
+            /** Has Dine In */
+            has_dine_in: boolean;
+            /** Delivery Price Kopecks */
+            delivery_price_kopecks: number;
+            /** Delivery Min Order Kopecks */
+            delivery_min_order_kopecks: number;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks: number | null;
+            /** Description */
+            description: string | null;
+            /** Image Url */
+            image_url: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Is Paused */
+            is_paused: boolean;
+            /** Pause Reason */
+            pause_reason: string | null;
+            /**
+             * Preorder Enabled
+             * @default false
+             */
+            preorder_enabled: boolean;
+        };
+        /** RestaurantDishPatch */
+        RestaurantDishPatch: {
+            /**
+             * Dish Id
+             * Format: uuid
+             */
+            dish_id: string;
+            /** Price Kopecks */
+            price_kopecks?: number | null;
+            /**
+             * Is Available
+             * @default true
+             */
+            is_available: boolean;
+        };
+        /**
+         * RestaurantDishRead
+         * @description Строка меню ресторана: цена и продаётся ли блюдо в этой точке.
+         */
+        RestaurantDishRead: {
+            /**
+             * Dish Id
+             * Format: uuid
+             */
+            dish_id: string;
+            /** Name */
+            name: string;
+            /** Category Name */
+            category_name: string;
+            /** Base Price Kopecks */
+            base_price_kopecks: number;
+            /** Price Kopecks */
+            price_kopecks: number;
+            /** Is Available */
+            is_available: boolean;
+            /** In Stop List */
+            in_stop_list: boolean;
+        };
+        /** RestaurantPatch */
+        RestaurantPatch: {
+            /** City Id */
+            city_id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Address */
+            address?: string | null;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
+            /** Opens At */
+            opens_at?: string | null;
+            /** Closes At */
+            closes_at?: string | null;
+            /** Delivery Opens At */
+            delivery_opens_at?: string | null;
+            /** Delivery Closes At */
+            delivery_closes_at?: string | null;
+            /** Metro */
+            metro?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /** Has Delivery */
+            has_delivery?: boolean | null;
+            /** Has Pickup */
+            has_pickup?: boolean | null;
+            /** Has Dine In */
+            has_dine_in?: boolean | null;
+            /** Delivery Price Kopecks */
+            delivery_price_kopecks?: number | null;
+            /** Delivery Min Order Kopecks */
+            delivery_min_order_kopecks?: number | null;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Is Paused */
+            is_paused?: boolean | null;
+            /** Pause Reason */
+            pause_reason?: string | null;
+            /** Preorder Enabled */
+            preorder_enabled?: boolean | null;
+        };
         /** RestaurantRead */
         RestaurantRead: {
             /**
@@ -1342,6 +2721,16 @@ export interface components {
             latitude: number;
             /** Longitude */
             longitude: number;
+            /**
+             * Opens At
+             * Format: time
+             */
+            opens_at: string;
+            /**
+             * Closes At
+             * Format: time
+             */
+            closes_at: string;
             /** Has Delivery */
             has_delivery: boolean;
             /** Has Pickup */
@@ -1356,9 +2745,108 @@ export interface components {
             free_delivery_from_kopecks: number | null;
             /** Image Url */
             image_url: string | null;
+            /** Image Blurhash */
+            image_blurhash?: string | null;
+            /**
+             * Photos
+             * @default []
+             */
+            photos: string[];
+            /** Is Paused */
+            is_paused: boolean;
+            /** Pause Reason */
+            pause_reason: string | null;
+        };
+        /** RestaurantWrite */
+        RestaurantWrite: {
+            /**
+             * City Id
+             * Format: uuid
+             */
+            city_id: string;
+            /** Name */
+            name: string;
+            /** Address */
+            address: string;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * Opens At
+             * Format: time
+             */
+            opens_at: string;
+            /**
+             * Closes At
+             * Format: time
+             */
+            closes_at: string;
+            /** Delivery Opens At */
+            delivery_opens_at?: string | null;
+            /** Delivery Closes At */
+            delivery_closes_at?: string | null;
+            /** Metro */
+            metro?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /**
+             * Has Delivery
+             * @default true
+             */
+            has_delivery: boolean;
+            /**
+             * Has Pickup
+             * @default true
+             */
+            has_pickup: boolean;
+            /**
+             * Has Dine In
+             * @default true
+             */
+            has_dine_in: boolean;
+            /**
+             * Delivery Price Kopecks
+             * @default 0
+             */
+            delivery_price_kopecks: number;
+            /**
+             * Delivery Min Order Kopecks
+             * @default 0
+             */
+            delivery_min_order_kopecks: number;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks?: number | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is Paused
+             * @default false
+             */
+            is_paused: boolean;
+            /** Pause Reason */
+            pause_reason?: string | null;
+            /**
+             * Preorder Enabled
+             * @default false
+             */
+            preorder_enabled: boolean;
         };
         /** SessionRead */
         SessionRead: {
+            /**
+             * Kind
+             * @default session
+             * @constant
+             */
+            kind: "session";
             /** Access Token */
             access_token: string;
             /** Refresh Token */
@@ -1370,8 +2858,32 @@ export interface components {
             token_type: string;
             guest: components["schemas"]["GuestRead"];
             loyalty: components["schemas"]["LoyaltyRead"];
-            /** Is New Guest */
-            is_new_guest: boolean;
+        };
+        /** SignupRequest */
+        SignupRequest: {
+            /** Signup Token */
+            signup_token: string;
+            /** Name */
+            name: string;
+            gender?: components["schemas"]["Gender"] | null;
+            /** Birthday */
+            birthday?: string | null;
+        };
+        /**
+         * SignupRequired
+         * @description Телефон подтверждён, но гостя ещё нет: ждём имя и только потом заводим.
+         */
+        SignupRequired: {
+            /**
+             * Kind
+             * @default signup
+             * @constant
+             */
+            kind: "signup";
+            /** Signup Token */
+            signup_token: string;
+            /** Phone */
+            phone: string;
         };
         /**
          * SlotRead
@@ -1467,6 +2979,85 @@ export interface components {
             /** Comment */
             comment?: string | null;
         };
+        /**
+         * SyncApply
+         * @description Что именно записать. Пусто — не записываем ничего.
+         */
+        SyncApply: {
+            /**
+             * Change Ids
+             * @default []
+             */
+            change_ids: string[];
+        };
+        /** SyncChangeRead */
+        SyncChangeRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Action */
+            action: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Group */
+            group: string | null;
+            /** Applied */
+            applied: boolean;
+        };
+        /** SyncRunRead */
+        SyncRunRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Applied At */
+            applied_at: string | null;
+            /** Unchanged */
+            unchanged: number;
+            /** Created */
+            created: number;
+            /** Updated */
+            updated: number;
+            /** Removed */
+            removed: number;
+            /** Message */
+            message: string | null;
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["SyncChangeRead"][];
+        };
+        /** UnavailableItem */
+        UnavailableItem: {
+            /**
+             * Dish Id
+             * Format: uuid
+             */
+            dish_id: string;
+            /** Name */
+            name: string;
+            /** Reason */
+            reason: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1479,6 +3070,120 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * ZoneCreate
+         * @description Новая зона: контур рисуется в админке на карте.
+         */
+        ZoneCreate: {
+            /**
+             * City Id
+             * Format: uuid
+             */
+            city_id: string;
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Color
+             * @default #C0392B
+             */
+            color: string;
+            /** Outline */
+            outline: number[][];
+            /**
+             * Delivery Price Kopecks
+             * @default 0
+             */
+            delivery_price_kopecks: number;
+            /**
+             * Min Order Kopecks
+             * @default 0
+             */
+            min_order_kopecks: number;
+            /** Min Order Weekend Kopecks */
+            min_order_weekend_kopecks?: number | null;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks?: number | null;
+            /** Delivery Minutes */
+            delivery_minutes?: number | null;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** ZonePatch */
+        ZonePatch: {
+            /** Restaurant Id */
+            restaurant_id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Color */
+            color?: string | null;
+            /** Outline */
+            outline?: number[][] | null;
+            /** Delivery Price Kopecks */
+            delivery_price_kopecks?: number | null;
+            /** Min Order Kopecks */
+            min_order_kopecks?: number | null;
+            /** Min Order Weekend Kopecks */
+            min_order_weekend_kopecks?: number | null;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks?: number | null;
+            /** Delivery Minutes */
+            delivery_minutes?: number | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** ZoneRead */
+        ZoneRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * City Id
+             * Format: uuid
+             */
+            city_id: string;
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            /**
+             * Restaurant Name
+             * @default
+             */
+            restaurant_name: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+            /** Outline */
+            outline: number[][];
+            /** Delivery Price Kopecks */
+            delivery_price_kopecks: number;
+            /** Min Order Kopecks */
+            min_order_kopecks: number;
+            /** Min Order Weekend Kopecks */
+            min_order_weekend_kopecks: number | null;
+            /** Free Delivery From Kopecks */
+            free_delivery_from_kopecks: number | null;
+            /** Delivery Minutes */
+            delivery_minutes: number | null;
+            /** Sort Order */
+            sort_order: number;
+            /** Is Active */
+            is_active: boolean;
         };
     };
     responses: never;
@@ -1536,6 +3241,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CodeVerify"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRead"] | components["schemas"]["SignupRequired"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    signup_api_v1_auth_signup_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupRequest"];
             };
         };
         responses: {
@@ -1627,6 +3367,35 @@ export interface operations {
             };
         };
     };
+    delete_me_api_v1_me_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_me_api_v1_me_patch: {
         parameters: {
             query?: never;
@@ -1650,6 +3419,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GuestRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_device_api_v1_devices_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_device_api_v1_devices__push_token__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                push_token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1747,6 +3580,142 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_address_api_v1_addresses__address_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                address_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddressUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddressRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_api_v1_addresses_suggest_get: {
+        parameters: {
+            query: {
+                query: string;
+                city_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddressSuggestion"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    locate_api_v1_addresses_locate_get: {
+        parameters: {
+            query: {
+                latitude: number;
+                longitude: number;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddressSuggestion"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_v1_me_summary_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestSummary"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -1925,6 +3894,41 @@ export interface operations {
             };
         };
     };
+    resolve_delivery_api_v1_delivery_resolve_get: {
+        parameters: {
+            query: {
+                latitude: number;
+                longitude: number;
+                city_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryResolve"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     limits_api_v1_orders_limits_get: {
         parameters: {
             query: {
@@ -1945,6 +3949,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CheckoutLimits"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_v1_orders_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutPreview"];
                 };
             };
             /** @description Validation Error */
@@ -2194,6 +4233,7 @@ export interface operations {
         parameters: {
             query?: {
                 restaurant_id?: string | null;
+                in_menu?: boolean | null;
             };
             header?: {
                 "X-Tenant-Id"?: string | null;
@@ -2958,6 +4998,955 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PromotionAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_restaurants_api_v1_admin_restaurants_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestaurantAdminRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_restaurant_api_v1_admin_restaurants_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestaurantWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestaurantAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_restaurant_api_v1_admin_restaurants__restaurant_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                restaurant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_restaurant_api_v1_admin_restaurants__restaurant_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                restaurant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestaurantPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestaurantAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_guests_api_v1_admin_guests_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestAdminRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_guest_api_v1_admin_guests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    guest_card_api_v1_admin_guests__guest_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                guest_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestCardRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_guest_api_v1_admin_guests__guest_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                guest_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_guest_api_v1_admin_guests__guest_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                guest_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_zones_api_v1_admin_zones_get: {
+        parameters: {
+            query?: {
+                city_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoneRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_zone_api_v1_admin_zones_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZoneCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoneRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_zone_api_v1_admin_zones__zone_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                zone_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_zone_api_v1_admin_zones__zone_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                zone_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZonePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoneRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restaurant_menu_api_v1_admin_restaurants__restaurant_id__menu_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                restaurant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestaurantDishRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_restaurant_menu_api_v1_admin_restaurants__restaurant_id__menu_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                restaurant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestaurantDishPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestaurantDishRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_runs_api_v1_admin_sync_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRunRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_sync_api_v1_admin_sync__kind__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                kind: "menu" | "restaurants" | "promos";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_sync_api_v1_admin_sync__run_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncApply"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drop_change_api_v1_admin_sync__run_id__changes__change_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                run_id: string;
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promo_codes_api_v1_admin_promo_codes_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromoCodeRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_promo_code_api_v1_admin_promo_codes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoCodeWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromoCodeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_promo_code_api_v1_admin_promo_codes__promo_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                promo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_promo_code_api_v1_admin_promo_codes__promo_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                promo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoCodePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromoCodeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extras_api_v1_admin_extras_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DishExtraAdminRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_extra_api_v1_admin_extras_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DishExtraWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DishExtraAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_extra_api_v1_admin_extras__extra_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                extra_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_extra_api_v1_admin_extras__extra_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                extra_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DishExtraPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DishExtraAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_extra_categories_api_v1_admin_extras__extra_id__categories_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                extra_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtraCategoriesWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DishExtraAdminRead"];
                 };
             };
             /** @description Validation Error */

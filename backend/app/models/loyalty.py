@@ -17,6 +17,9 @@ class LoyaltyAccount(UUIDMixin, TenantMixin, TimestampMixin, Base):
     guest_id: Mapped[UUID] = mapped_column(ForeignKey("guests.id", ondelete="CASCADE"), index=True)
 
     # Код уровня из tenant.loyalty.tiers — у каждой сети свои, поэтому строка, а не перечисление
+    # Номер карты гостя: шесть цифр, которые он называет на кассе.
+    # Штрихкод для сканера собирается из него же — см. card_barcode()
+    card_number: Mapped[str] = mapped_column(String(6), index=True, default="")
     tier_code: Mapped[str] = mapped_column(String(30))
     points_balance: Mapped[int] = mapped_column(default=0)
     lifetime_spent_kopecks: Mapped[int] = mapped_column(default=0)

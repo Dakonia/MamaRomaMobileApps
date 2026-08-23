@@ -20,7 +20,11 @@ const emptyDraft = (categoryId: string): DishDraft => ({
   description: null,
   composition: null,
   weight_grams: null,
+  volume_ml: null,
   calories: null,
+  proteins_g: null,
+  fats_g: null,
+  carbs_g: null,
   is_spicy: false,
   is_vegetarian: false,
   is_new: false,
@@ -37,7 +41,11 @@ function toDraft(dish: Dish): DishDraft {
     description: dish.description,
     composition: dish.composition,
     weight_grams: dish.weight_grams,
+    volume_ml: dish.volume_ml,
     calories: dish.calories,
+    proteins_g: dish.proteins_g,
+    fats_g: dish.fats_g,
+    carbs_g: dish.carbs_g,
     is_spicy: dish.is_spicy,
     is_vegetarian: dish.is_vegetarian,
     is_new: dish.is_new,
@@ -96,6 +104,11 @@ function DishForm({
     setDraft((current) => ({ ...current, [key]: value }));
 
   const number = (value: string) => (value.trim() === "" ? null : Number(value.replace(/\D/g, "")));
+  // БЖУ бывает дробным: 12,5 г белка — обычное дело
+  const decimal = (value: string) => {
+    const clean = value.replace(",", ".").replace(/[^\d.]/g, "");
+    return clean === "" ? null : Number(clean);
+  };
 
   return (
     <div style={{ ...styles.card, padding: spacing.lg, display: "grid", gap: spacing.base }}>
@@ -150,12 +163,48 @@ function DishForm({
           />
         </Field>
 
-        <Field label="Калорийность">
+        <Field label="Объём, мл">
+          <input
+            style={styles.input}
+            inputMode="numeric"
+            value={draft.volume_ml ?? ""}
+            onChange={(event) => set("volume_ml", number(event.target.value))}
+          />
+        </Field>
+
+        <Field label="Калории, ккал">
           <input
             style={styles.input}
             inputMode="numeric"
             value={draft.calories ?? ""}
             onChange={(event) => set("calories", number(event.target.value))}
+          />
+        </Field>
+
+        <Field label="Белки, г">
+          <input
+            style={styles.input}
+            inputMode="decimal"
+            value={draft.proteins_g ?? ""}
+            onChange={(event) => set("proteins_g", decimal(event.target.value))}
+          />
+        </Field>
+
+        <Field label="Жиры, г">
+          <input
+            style={styles.input}
+            inputMode="decimal"
+            value={draft.fats_g ?? ""}
+            onChange={(event) => set("fats_g", decimal(event.target.value))}
+          />
+        </Field>
+
+        <Field label="Углеводы, г">
+          <input
+            style={styles.input}
+            inputMode="decimal"
+            value={draft.carbs_g ?? ""}
+            onChange={(event) => set("carbs_g", decimal(event.target.value))}
           />
         </Field>
 
@@ -364,6 +413,14 @@ export function MenuTab() {
     onError: fail,
   });
 
+  // Полка «Часто заказывают» в приложении: соусам и напиткам там не место
+  const togglePopular = useMutation({
+    mutationFn: ({ id, show_in_popular }: { id: string; show_in_popular: boolean }) =>
+      api.updateCategory(id, { show_in_popular }),
+    onSuccess: refresh,
+    onError: fail,
+  });
+
   const removeStop = useMutation({
     mutationFn: (id: string) => api.removeStop(id),
     onSuccess: refresh,
@@ -433,6 +490,24 @@ export function MenuTab() {
                 {category.name} · {category.dishes_count}
               </Button>
               {!category.is_active ? <Badge text="скрыта" tone="muted" /> : null}
+              {!category.show_in_popular ? <Badge text="не в хитах" tone="muted" /> : null}
+              <button
+                type="button"
+                title={
+                  category.show_in_popular
+                    ? "Убрать с полки «Часто заказывают»"
+                    : "Вернуть на полку «Часто заказывают»"
+                }
+                onClick={() =>
+                  togglePopular.mutate({
+                    id: category.id,
+                    show_in_popular: !category.show_in_popular,
+                  })
+                }
+                style={ghost}
+              >
+                {category.show_in_popular ? "★" : "☆"}
+              </button>
               <button
                 type="button"
                 title={category.is_active ? "Скрыть" : "Показать"}

@@ -10,11 +10,27 @@ import {
   setToken,
   tenant,
 } from "./api";
+import { GuestsTab } from "./GuestsTab";
 import { MenuTab } from "./MenuTab";
 import { PromosTab } from "./PromosTab";
+import { RestaurantsTab } from "./RestaurantsTab";
+import { ExtrasTab } from "./ExtrasTab";
+import { PromoCodesTab } from "./PromoCodesTab";
+import { SyncTab } from "./SyncTab";
+import { ZonesTab } from "./ZonesTab";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
 
-type Tab = "menu" | "orders" | "reservations" | "promos";
+type Tab =
+  | "menu"
+  | "orders"
+  | "reservations"
+  | "promos"
+  | "restaurants"
+  | "zones"
+  | "guests"
+  | "extras"
+  | "promo-codes"
+  | "sync";
 
 const ORDER_FLOW: Record<string, { label: string; next: { status: string; label: string }[] }> = {
   created: { label: "Оформлен", next: [{ status: "accepted", label: "Принять" }] },
@@ -180,6 +196,22 @@ function OrdersTab() {
                 >
                   Отменить
                 </Button>
+
+                {/* Пока нет интеграции с iiko, статус ставим руками — в том
+                    числе назад, если нажали лишнего */}
+                <select
+                  style={{ ...styles.input, width: 190, marginLeft: "auto" }}
+                  value={order.status}
+                  onChange={(event) =>
+                    setStatus.mutate({ id: order.id, status: event.target.value })
+                  }
+                >
+                  {Object.entries(ORDER_FLOW).map(([status, item]) => (
+                    <option key={status} value={status}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           );
@@ -272,13 +304,23 @@ function ReservationsTab() {
 }
 
 export default function App() {
+  const queryClient = useQueryClient();
   const [authorized, setAuthorized] = useState(getToken() !== null);
   const [tab, setTab] = useState<Tab>("orders");
 
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, enabled: authorized, retry: false });
 
   if (!authorized || me.isError) {
-    return <Login onDone={() => setAuthorized(true)} />;
+    return (
+      <Login
+        onDone={() => {
+          // Со старым токеном запрос профиля уже упал, и его ошибка лежит в кэше.
+          // Без сброса свежий вход не показывал бы ничего, кроме той же формы
+          queryClient.removeQueries({ queryKey: ["me"] });
+          setAuthorized(true);
+        }}
+      />
+    );
   }
 
   const tabs: { key: Tab; label: string }[] = [
@@ -286,6 +328,12 @@ export default function App() {
     { key: "reservations", label: "Брони" },
     { key: "menu", label: "Меню" },
     { key: "promos", label: "Акции" },
+    { key: "restaurants", label: "Рестораны" },
+    { key: "zones", label: "Зоны" },
+    { key: "extras", label: "Добавки" },
+    { key: "promo-codes", label: "Промокоды" },
+    { key: "guests", label: "Гости" },
+    { key: "sync", label: "Обновление" },
   ];
 
   return (
@@ -324,6 +372,12 @@ export default function App() {
         {tab === "reservations" ? <ReservationsTab /> : null}
         {tab === "menu" ? <MenuTab /> : null}
         {tab === "promos" ? <PromosTab /> : null}
+        {tab === "restaurants" ? <RestaurantsTab /> : null}
+        {tab === "zones" ? <ZonesTab /> : null}
+        {tab === "guests" ? <GuestsTab /> : null}
+        {tab === "extras" ? <ExtrasTab /> : null}
+        {tab === "promo-codes" ? <PromoCodesTab /> : null}
+        {tab === "sync" ? <SyncTab /> : null}
       </main>
     </div>
   );

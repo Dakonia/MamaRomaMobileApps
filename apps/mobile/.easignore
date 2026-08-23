@@ -1,0 +1,9 @@
+# В облако не нужны локальные артефакты и чужие приложения
+node_modules
+.expo
+dist
+web-build
+../../backend
+../../apps/admin
+../../node_modules
+../../pnpm-lock 2.yaml

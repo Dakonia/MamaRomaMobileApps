@@ -30,7 +30,7 @@ export const palette = {
     200: "#E7E0D9",
     300: "#D5CBC1",
     400: "#B3A79B",
-    500: "#8C8177",
+    500: "#7A7068",
     600: "#6B615A",
     700: "#4A423C",
     800: "#2C2622",
@@ -39,7 +39,7 @@ export const palette = {
   saffron: {
     100: "#FDF0D9",
     300: "#F2C266",
-    500: "#D98324",
+    500: "#A96B10",
     700: "#A65C13",
   },
   chili: {
@@ -58,9 +58,12 @@ export interface ColorScheme {
 
   accent: string;
   accentSubtle: string;
+  // Текст поверх цветной плашки: в светлой теме фон тёмный, в тёмной — светлый
+  onAccent: string;
 
   highlight: string;
   highlightSubtle: string;
+  onHighlight: string;
 
   /** Тёмная витрина: шапка главного экрана и промо-блоки. */
   hero: string;
@@ -91,6 +94,7 @@ export interface ColorScheme {
   warningSubtle: string;
   danger: string;
   dangerSubtle: string;
+  onDanger: string;
 
   skeleton: string;
   scrim: string;
@@ -104,9 +108,11 @@ export const lightColors: ColorScheme = {
 
   accent: palette.basil[500],
   accentSubtle: palette.basil[50],
+  onAccent: palette.sand[0],
 
   highlight: palette.saffron[700],
   highlightSubtle: palette.saffron[100],
+  onHighlight: palette.sand[0],
 
   hero: palette.sand[900],
   heroRaised: "rgba(255, 255, 255, 0.12)",
@@ -133,25 +139,30 @@ export const lightColors: ColorScheme = {
   success: palette.basil[500],
   successSubtle: palette.basil[50],
   warning: palette.saffron[500],
-  warningSubtle: palette.saffron[100],
+  warningSubtle: "#FCF6E8",
   danger: palette.chili[500],
   dangerSubtle: palette.chili[100],
+  onDanger: palette.sand[0],
 
   skeleton: palette.sand[100],
   scrim: "rgba(255, 255, 255, 0.86)",
 };
 
 export const darkColors: ColorScheme = {
-  brand: palette.terracotta[400],
-  brandPressed: palette.terracotta[300],
-  brandSubtle: "rgba(214, 100, 84, 0.16)",
-  onBrand: palette.sand[900],
+  // В тёмной теме светлая терракота выглядит розовой, поэтому берём более
+  // насыщенный тон и белый текст поверх — кнопка читается как кнопка
+  brand: "#E0705C",
+  brandPressed: "#C8452F",
+  brandSubtle: "rgba(224, 112, 92, 0.20)",
+  onBrand: "#241713",
 
   accent: palette.basil[300],
   accentSubtle: "rgba(111, 185, 152, 0.16)",
+  onAccent: palette.sand[900],
 
   highlight: palette.saffron[300],
   highlightSubtle: "rgba(242, 194, 102, 0.16)",
+  onHighlight: palette.sand[900],
 
   hero: "#241E1A",
   heroRaised: "rgba(255, 255, 255, 0.1)",
@@ -169,7 +180,7 @@ export const darkColors: ColorScheme = {
   textSecondary: palette.sand[300],
   textTertiary: palette.sand[400],
   textInverse: palette.sand[900],
-  textOnBrand: palette.sand[900],
+  textOnBrand: "#241713",
 
   border: "#3B342E",
   borderStrong: "#4E453E",
@@ -181,6 +192,7 @@ export const darkColors: ColorScheme = {
   warningSubtle: "rgba(242, 194, 102, 0.16)",
   danger: palette.chili[300],
   dangerSubtle: "rgba(232, 141, 133, 0.16)",
+  onDanger: palette.sand[900],
 
   skeleton: "#332C27",
   scrim: "rgba(20, 17, 16, 0.86)",

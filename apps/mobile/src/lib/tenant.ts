@@ -5,6 +5,7 @@ type AppExtra = {
   tenantId?: string;
   tenant?: TenantConfig;
   apiUrl?: string;
+  yandexMapsKey?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as AppExtra;
@@ -45,3 +46,9 @@ function resolveApiUrl(configured: string): string {
 }
 
 export const apiUrl: string = resolveApiUrl(extra.apiUrl ?? 'http://localhost:8000');
+
+/** Ключ Яндекс JS API: если задан, карту рисует Яндекс. */
+export const yandexMapsKey: string = extra.yandexMapsKey ?? '';
+
+// Без ключа карту не открываем: пустой экран хуже честной заглушки
+export const mapsAvailable: boolean = yandexMapsKey.length > 0;

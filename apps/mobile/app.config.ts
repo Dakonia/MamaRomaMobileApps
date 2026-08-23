@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import type { ExpoConfig, ConfigContext } from "expo/config";
 
 import type { TenantConfig } from "../../packages/tenants/src/types";
@@ -30,6 +32,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: stores.androidPackage,
+    // Ключ Firebase для пуш-уведомлений. Файла нет — собираем без пушей,
+    // приложение работает как прежде
+    googleServicesFile: existsSync("./google-services.json")
+      ? "./google-services.json"
+      : undefined,
     adaptiveIcon: {
       backgroundColor: branding.androidAdaptiveBackground,
       foregroundImage: "./assets/images/android-icon-foreground.png",
@@ -45,13 +52,29 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     "expo-router",
+    [
+      // Android с 9-й версии режет обычный http. Пока бэкенд крутится на Mac
+      // без сертификата, разрешаем открытый трафик — на проде уберём
+      "expo-build-properties",
+      { android: { usesCleartextTraffic: true } },
+    ],
     "expo-secure-store",
     [
       "expo-splash-screen",
       {
+        // Системную заставку ставим тем же кадром: между ней и экраном
+        // приложения не должно быть видно стыка
         backgroundColor: branding.splashBackground,
-        image: "./assets/images/splash-icon.png",
-        imageWidth: 160,
+        image: "./assets/images/splash-scene.jpg",
+        resizeMode: "cover",
+      },
+    ],
+    [
+      "expo-notifications",
+      {
+        // Значок в статусной строке Android рисуется одним цветом — берём знак сети
+        icon: "./assets/images/android-icon-monochrome.png",
+        color: branding.primary,
       },
     ],
     [
@@ -62,11 +85,26 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
   ],
+  // Обновления по воздуху: правки на TypeScript прилетают гостю без магазина.
+  // Версия окружения привязана к версии приложения — сборка со старой нативной
+  // частью не получит код, которому нужна новая
+  updates: {
+    url: "https://u.expo.dev/9dcc413d-cb80-47f9-bae9-44091b41ad71",
+    fallbackToCacheTimeout: 0,
+  },
+  runtimeVersion: { policy: "appVersion" },
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
   },
   extra: {
+    // Проект в EAS: сюда уходят облачные сборки
+    eas: { projectId: "9dcc413d-cb80-47f9-bae9-44091b41ad71" },
+    // Карта Яндекса: ключ один на обе платформы. Нет ключа — вместо карты
+    // показываем заглушку с ручным вводом адреса, а не пустой экран
+    yandexMapsKey: process.env.EXPO_PUBLIC_YANDEX_MAPS_KEY ?? "",
+    // Аналитика и падения: без ключа сбор просто выключен
+    appMetricaKey: process.env.EXPO_PUBLIC_APPMETRICA_KEY ?? "",
     tenantId: tenant.id,
     tenant,
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000",

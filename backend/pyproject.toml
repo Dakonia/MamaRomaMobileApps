@@ -17,6 +17,7 @@ dependencies = [
     "structlog>=25.5.0",
     "bcrypt>=5.0.0",
     "pillow>=12.3.0",
+    "blurhash-python>=1.2.2",
 ]
 
 [dependency-groups]
@@ -47,6 +48,21 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
+# Тесты пишем без аннотаций: приспособления pytest под строгий режим не ложатся,
+# а проверять типы у самих проверок смысла мало
+exclude = ["^tests/"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Один цикл событий на весь прогон: иначе соединение с базой, открытое в
+# приспособлении, закрывается вместе с циклом предыдущего теста
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+# Тесты запускаются из каталога backend и импортируют приложение как обычно
+pythonpath = ["."]
+testpaths = ["tests"]
+
+# У blurhash нет описаний типов, а сам он крошечный и стабильный
+[[tool.mypy.overrides]]
+module = ["blurhash"]
+ignore_missing_imports = true

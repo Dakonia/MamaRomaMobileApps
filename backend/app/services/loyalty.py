@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import generate_card_number
 from app.core.tenants import LoyaltyTier, Tenant
 from app.models.enums import LoyaltyOperation
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
@@ -20,6 +21,18 @@ def tier_by_code(tenant: Tenant, code: str) -> LoyaltyTier:
     return base_tier(tenant)
 
 
+async def _free_card_number(session: AsyncSession) -> str:
+    """Совпадение почти невероятно, но карта обязана быть уникальной."""
+    for _ in range(10):
+        number = generate_card_number()
+        taken = await session.scalar(
+            select(LoyaltyAccount.id).where(LoyaltyAccount.card_number == number)
+        )
+        if taken is None:
+            return number
+    raise RuntimeError("Не удалось выдать номер карты")
+
+
 async def open_account(
     session: AsyncSession,
     tenant: Tenant,
@@ -32,6 +45,7 @@ async def open_account(
     account = LoyaltyAccount(
         tenant_id=tenant.id,
         guest_id=guest_id,
+        card_number=await _free_card_number(session),
         tier_code=base_tier(tenant).code,
         points_balance=0,
     )

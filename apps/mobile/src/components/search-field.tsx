@@ -4,12 +4,16 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useTheme } from '@/theme/theme-provider';
 
 type Props = {
+  /** Подпись зависит от экрана: блюдо в меню, улица в списке ресторанов. */
+  placeholder?: string;
+  /** Список ресторанов — светлый экран, там нужны обычные цвета. */
+  onLight?: boolean;
   value: string;
   onChange: (value: string) => void;
 };
 
 /** Поиск по меню. Живёт на тёмной витрине, поэтому цвета из ролей hero. */
-export function SearchField({ value, onChange }: Props) {
+export function SearchField({ value, onChange, placeholder = 'Найти блюдо', onLight = false }: Props) {
   const theme = useTheme();
 
   return (
@@ -21,23 +25,30 @@ export function SearchField({ value, onChange }: Props) {
           paddingHorizontal: theme.spacing.md,
           gap: theme.spacing.sm,
           borderRadius: theme.radius.pill,
-          backgroundColor: theme.colors.heroRaised,
+          backgroundColor: onLight ? theme.colors.surfaceSunken : theme.colors.heroRaised,
         },
       ]}
     >
-      <Ionicons name="search" size={theme.spacing.lg} color={theme.colors.onHeroMuted} />
+      <Ionicons
+        name="search"
+        size={theme.spacing.lg}
+        color={onLight ? theme.colors.textTertiary : theme.colors.onHeroMuted}
+      />
 
       <TextInput
         value={value}
         onChangeText={onChange}
-        placeholder="Найти блюдо"
-        placeholderTextColor={theme.colors.onHeroMuted}
+        placeholder={placeholder}
+        placeholderTextColor={onLight ? theme.colors.textTertiary : theme.colors.onHeroMuted}
         returnKeyType="search"
         clearButtonMode="never"
         style={[
           theme.typography.body,
           styles.input,
-          { color: theme.colors.onHero, minHeight: theme.layout.minTouchTarget },
+          {
+            color: onLight ? theme.colors.textPrimary : theme.colors.onHero,
+            minHeight: theme.layout.minTouchTarget,
+          },
         ]}
       />
 
@@ -48,7 +59,11 @@ export function SearchField({ value, onChange }: Props) {
           hitSlop={theme.hitSlop}
           onPress={() => onChange('')}
         >
-          <Ionicons name="close-circle" size={theme.spacing.lg} color={theme.colors.onHeroMuted} />
+          <Ionicons
+            name="close-circle"
+            size={theme.spacing.lg}
+            color={onLight ? theme.colors.textTertiary : theme.colors.onHeroMuted}
+          />
         </Pressable>
       ) : null}
     </View>

@@ -32,5 +32,8 @@ yarn-error.*
 *.mobileprovision
 google-services.json
 GoogleService-Info.plist
+*-firebase-adminsdk-*.json
+firebase-service-account.json
+apps/mobile/credentials/
 
 backend/media/

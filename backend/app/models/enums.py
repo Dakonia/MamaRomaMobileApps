@@ -26,6 +26,12 @@ class PaymentMethod(StrEnum):
     CARD_ON_DELIVERY = "card_on_delivery"
 
 
+class PromoCodeKind(StrEnum):
+    PERCENT = "percent"
+    FIXED = "fixed"
+    FREE_DELIVERY = "free_delivery"
+
+
 class PaymentStatus(StrEnum):
     NOT_REQUIRED = "not_required"
     PENDING = "pending"
@@ -51,6 +57,11 @@ class LoyaltyOperation(StrEnum):
     BIRTHDAY = "birthday"
     EXPIRE = "expire"
     MANUAL = "manual"
+
+
+class Gender(StrEnum):
+    MALE = "male"
+    FEMALE = "female"
 
 
 class StaffRole(StrEnum):

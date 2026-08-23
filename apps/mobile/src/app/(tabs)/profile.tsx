@@ -1,17 +1,54 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
+import { useState } from 'react';
 import { router } from 'expo-router';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '@/api/client';
+import { LoyaltyCard } from '@/components/loyalty-card';
+import { ConfirmSheet } from '@/components/confirm-sheet';
+import { EmptyArt } from '@/components/empty-art';
+import { LoyaltyRules } from '@/components/loyalty-rules';
+import { PizzaBackdrop } from '@/components/pizza-backdrop';
+import { ActiveOrder } from '@/components/active-order';
+import { OrderHistoryCard } from '@/components/order-history-card';
+import { PressableScale } from '@/components/pressable-scale';
+import { PushSwitch } from '@/components/push-switch';
+import { ReservationStrip } from '@/components/reservation-strip';
+import { PrimaryButton } from '@/components/primary-button';
 import { ScreenHeader } from '@/components/screen-header';
-import { formatPhone, formatPoints, formatPrice, phoneToUri } from '@/lib/format';
+import { Skeleton } from '@/components/skeleton';
+import { track } from '@/lib/analytics';
+import { formatPhone, formatPrice, phoneToUri } from '@/lib/format';
+import { formatPhone as formatGuestPhone } from '@/lib/phone';
 import { tenant } from '@/lib/tenant';
 import { useSession } from '@/store/session';
+import { useRefresher } from '@/components/refresher';
 import { useTheme } from '@/theme/theme-provider';
 
-type Row = {
+type Shortcut = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  hint: string;
+  to: '/profile-edit' | '/addresses';
+};
+
+const SHORTCUTS: Shortcut[] = [
+  { icon: 'person-outline', label: 'Личные данные', hint: 'Имя, почта, дата рождения', to: '/profile-edit' },
+  { icon: 'location-outline', label: 'Адреса', hint: 'Дом, работа и другие', to: '/addresses' },
+];
+
+type Link = {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value?: string;
@@ -20,6 +57,7 @@ type Row = {
 
 export default function ProfileScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const session = useSession();
   const authorized = session.status === 'authorized' && session.guest !== null;
 
@@ -29,49 +67,102 @@ export default function ProfileScreen() {
     enabled: authorized,
   });
 
-  const contactRows: Row[] = [
+  // Потянуть вниз: баланс, заказы и брони разом
+  const refresher = useRefresher(async () => {
+    await Promise.all([session.restore(), orders.refetch()]);
+  });
+
+  // Какое из двух окон открыто: выход или удаление аккаунта
+  const [asking, setAsking] = useState<'exit' | 'delete' | null>(null);
+
+  const remove = useMutation({
+    mutationFn: () => {
+      track('account_deleted');
+      return api.deleteAccount();
+    },
+    onSettled: () => {
+      // Что бы ни ответил сервер, на устройстве не остаётся ни токена, ни корзины
+      setAsking(null);
+      void session.signOut();
+    },
+  });
+
+  const summary = useQuery({
+    queryKey: ['guest-summary'],
+    queryFn: () => api.summary(),
+    enabled: authorized,
+    staleTime: 5 * 60_000,
+  });
+
+  // Шапка сжимается при прокрутке: карта уезжает вверх, а её место занимает
+  // узкая полоса с баллами — так баланс виден всегда
+  const scrolled = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrolled.value = withTiming(event.contentOffset.y > 150 ? 1 : 0, { duration: 200 });
+  });
+
+  const compactBar = useAnimatedStyle(() => ({
+    opacity: scrolled.value,
+    transform: [{ translateY: -14 * (1 - scrolled.value) }],
+    pointerEvents: scrolled.value > 0.5 ? 'auto' : 'none',
+  }));
+
+  const contacts: Link[] = [
     {
       icon: 'call-outline',
-      label: 'Позвонить',
+      label: 'Служба доставки',
       value: formatPhone(tenant.supportPhone),
       url: phoneToUri(tenant.supportPhone),
     },
     {
       icon: 'mail-outline',
-      label: 'Написать',
+      label: 'Написать нам',
       value: tenant.supportEmail,
       url: `mailto:${tenant.supportEmail}`,
     },
     { icon: 'globe-outline', label: 'Сайт сети', url: tenant.websiteUrl },
   ];
 
-  const legalRows: Row[] = [
+  const legal: Link[] = [
     { icon: 'shield-outline', label: 'Политика конфиденциальности', url: tenant.privacyPolicyUrl },
     { icon: 'document-text-outline', label: 'Публичная оферта', url: tenant.offerUrl },
   ];
 
-  const renderRow = (row: Row) => (
-    <Pressable
+  const linkRow = (row: Link, index: number, total: number) => (
+    <PressableScale
       key={row.label}
-      accessibilityRole="link"
+      depth={0.985}
+      accessibilityLabel={row.label}
       onPress={() => {
         void Linking.openURL(row.url);
       }}
-      style={({ pressed }) => [
+      style={[
         styles.row,
         {
-          minHeight: theme.layout.minTouchTarget,
-          paddingVertical: theme.spacing.md,
+          minHeight: theme.layout.minTouchTarget + theme.spacing.xs,
           paddingHorizontal: theme.spacing.base,
-          borderRadius: theme.radius.md,
           gap: theme.spacing.md,
-          backgroundColor: pressed ? theme.colors.surfaceSunken : 'transparent',
+          backgroundColor: theme.colors.surface,
+          borderBottomWidth: index === total - 1 ? 0 : StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.divider,
         },
       ]}
     >
-      <Ionicons name={row.icon} size={theme.spacing.lg} color={theme.colors.textTertiary} />
+      <View
+        style={[
+          styles.icon,
+          {
+            width: theme.spacing.xxl,
+            height: theme.spacing.xxl,
+            borderRadius: theme.radius.md,
+            backgroundColor: theme.colors.surfaceSunken,
+          },
+        ]}
+      >
+        <Ionicons name={row.icon} size={18} color={theme.colors.textSecondary} />
+      </View>
 
-      <View style={styles.rowText}>
+      <View style={styles.grow}>
         <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
           {row.label}
         </Text>
@@ -82,229 +173,401 @@ export default function ProfileScreen() {
         ) : null}
       </View>
 
-      <Ionicons name="chevron-forward" size={theme.spacing.base} color={theme.colors.textTertiary} />
-    </Pressable>
+      <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+    </PressableScale>
   );
 
-  return (
-    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-      <ScreenHeader title="Профиль" subtitle="Заказы, адреса и настройки" />
+  const group = (rows: Link[]) => (
+    <View
+      style={{
+        borderRadius: theme.radius.xl,
+        backgroundColor: theme.colors.surface,
+        overflow: 'hidden',
+      }}
+    >
+      {rows.map((row, index) => linkRow(row, index, rows.length))}
+    </View>
+  );
 
-      <ScrollView
-        contentContainerStyle={{
-          padding: theme.layout.screenPadding,
-          gap: theme.spacing.xl,
-          paddingBottom: theme.layout.tabBarHeight + theme.spacing.xxxl,
-        }}
-      >
-        <View
+  const title = (text: string, action?: string, onPress?: () => void) => (
+    <View style={[styles.row, styles.between, { paddingHorizontal: theme.spacing.xs }]}>
+      <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>{text}</Text>
+      {action && onPress ? (
+        <Text
+          onPress={onPress}
+          style={[theme.typography.bodyMedium, { color: theme.colors.brand }]}
+        >
+          {action}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  const history = orders.data ?? [];
+
+  return (
+    <View style={[styles.root, { backgroundColor: theme.colors.backgroundAlt }]}>
+      {/* Тот же фон, что на входе: за карточками медленно плывут пиццы */}
+      <PizzaBackdrop strength={0.7} />
+
+      <ScreenHeader title="Профиль" />
+
+      {authorized && session.loyalty ? (
+        <Animated.View
           style={[
-            styles.card,
+            styles.compact,
+            compactBar,
+            theme.elevation.card,
             {
-              padding: theme.spacing.lg,
-              borderRadius: theme.radius.xl,
-              backgroundColor: theme.colors.surfaceSunken,
-              gap: theme.spacing.xs,
+              top: insets.top + theme.spacing.xs,
+              marginHorizontal: theme.layout.screenPadding,
+              paddingHorizontal: theme.spacing.base,
+              paddingVertical: theme.spacing.sm,
+              borderRadius: theme.radius.pill,
+              backgroundColor: theme.colors.hero,
+              gap: theme.spacing.sm,
             },
           ]}
         >
-          {authorized && session.guest ? (
-            <>
-              <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
-                {session.guest.name ?? formatPhone(session.guest.phone)}
-              </Text>
-              <Text style={[theme.typography.body, { color: theme.colors.textSecondary }]}>
-                {session.loyalty
-                  ? `${session.loyalty.tier_title} · ${formatPoints(session.loyalty.points_balance)}`
-                  : 'Профиль активен'}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={theme.hitSlop}
-                onPress={() => {
-                  void session.signOut();
-                }}
-                style={[styles.cardAction, { marginTop: theme.spacing.sm }]}
-              >
-                <Text style={[theme.typography.bodyMedium, { color: theme.colors.danger }]}>
-                  Выйти
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <Text style={[theme.typography.h3, { color: theme.colors.textPrimary }]}>
-                Вход по номеру телефона
-              </Text>
-              <Text style={[theme.typography.body, { color: theme.colors.textSecondary }]}>
-                После входа здесь появятся история заказов, сохранённые адреса и карта гостя для
-                кассы.
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push('/auth')}
-                style={({ pressed }) => [
-                  styles.cardAction,
-                  {
-                    minHeight: theme.layout.minTouchTarget,
-                    paddingHorizontal: theme.spacing.xl,
-                    borderRadius: theme.radius.pill,
-                    marginTop: theme.spacing.sm,
-                    backgroundColor: pressed ? theme.colors.brandPressed : theme.colors.brand,
-                  },
-                ]}
-              >
-                <Text style={[theme.typography.button, { color: theme.colors.textOnBrand }]}>
-                  Войти
-                </Text>
-              </Pressable>
-            </>
-          )}
-        </View>
+          <Ionicons name="pizza" size={16} color={theme.colors.onHeroMuted} />
+          <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.onHero }]}>
+            {session.loyalty.tier_title}
+          </Text>
+          <Text style={[theme.typography.bodyMedium, { color: theme.colors.onHero }]}>
+            {session.loyalty.points_balance} баллов
+          </Text>
+        </Animated.View>
+      ) : null}
 
-        {authorized && (orders.data?.length ?? 0) > 0 ? (
-          <View style={{ gap: theme.spacing.xxs }}>
-            <Text
-              style={[
-                theme.typography.overline,
-                { color: theme.colors.textTertiary, paddingHorizontal: theme.spacing.base },
-              ]}
-            >
-              Мои заказы
-            </Text>
-            {(orders.data ?? []).slice(0, 5).map((order) => (
-              <Pressable
-                key={order.id}
-                accessibilityRole="button"
-                onPress={() => router.push(`/order/${order.id}`)}
-                style={({ pressed }) => [
-                  styles.row,
-                  {
-                    minHeight: theme.layout.minTouchTarget,
-                    paddingVertical: theme.spacing.md,
-                    paddingHorizontal: theme.spacing.base,
-                    borderRadius: theme.radius.md,
-                    gap: theme.spacing.md,
-                    backgroundColor: pressed ? theme.colors.surfaceSunken : 'transparent',
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="receipt-outline"
-                  size={theme.spacing.lg}
-                  color={theme.colors.textTertiary}
+      <Animated.ScrollView
+        refreshControl={refresher}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{
+          padding: theme.layout.screenPadding,
+          gap: theme.spacing.xl,
+          paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.xxxl,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {authorized && session.guest ? (
+          <>
+            {session.loyalty ? (
+              <Animated.View entering={FadeInDown.duration(340)}>
+                <LoyaltyCard
+                  loyalty={session.loyalty}
+                  name={session.guest.name ?? formatGuestPhone(session.guest.phone)}
+                  birthday={session.guest.birthday}
                 />
-                <View style={styles.rowText}>
+              </Animated.View>
+            ) : null}
+
+            {session.loyalty ? (
+              <Animated.View entering={FadeInDown.duration(340).delay(60)}>
+                <LoyaltyRules tierCode={session.loyalty.tier_code} />
+              </Animated.View>
+            ) : null}
+
+            {/* Сразу под правилами баллов: сначала «что у меня», потом «что сейчас» */}
+            <ActiveOrder compact />
+
+            <ReservationStrip />
+
+            {session.guest.name ? null : (
+              <Animated.View entering={FadeIn}>
+                <PrimaryButton
+                  label="Указать имя"
+                  tone="ghost"
+                  onPress={() => router.push({ pathname: '/auth', params: { step: 'name' } })}
+                />
+              </Animated.View>
+            )}
+
+            <Animated.View
+              entering={FadeInDown.duration(340).delay(80)}
+              style={[styles.tiles, { gap: theme.spacing.md }]}
+            >
+              {SHORTCUTS.map((item) => (
+                <PressableScale
+                  key={item.to}
+                  onPress={() => router.push(item.to)}
+                  accessibilityLabel={item.label}
+                  style={[
+                    styles.tile,
+                    theme.elevation.card,
+                    {
+                      padding: theme.spacing.base,
+                      borderRadius: theme.radius.xl,
+                      backgroundColor: theme.colors.surface,
+                      gap: theme.spacing.sm,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.icon,
+                      {
+                        width: theme.spacing.xxl,
+                        height: theme.spacing.xxl,
+                        borderRadius: theme.radius.md,
+                        backgroundColor: theme.colors.brandSubtle,
+                      },
+                    ]}
+                  >
+                    <Ionicons name={item.icon} size={18} color={theme.colors.brand} />
+                  </View>
                   <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
-                    Заказ {order.number}
+                    {item.label}
+                  </Text>
+                  <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
+                    {item.hint}
+                  </Text>
+                </PressableScale>
+              ))}
+            </Animated.View>
+
+            <Animated.View entering={FadeInDown.duration(340).delay(160)} style={{ gap: theme.spacing.md }}>
+              <View style={[styles.between, { gap: theme.spacing.sm }]}>
+                {title('Последние заказы')}
+
+                {history.length > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    hitSlop={theme.hitSlop}
+                    onPress={() => router.push('/orders')}
+                  >
+                    <Text style={[theme.typography.bodyMedium, { color: theme.colors.brand }]}>
+                      все {history.length}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {orders.isPending ? (
+                [0, 1].map((key) => <Skeleton key={key} height={150} radius={theme.radius.xl} />)
+              ) : history.length === 0 ? (
+                <View
+                  style={{
+                    paddingVertical: theme.spacing.lg,
+                    borderRadius: theme.radius.xl,
+                    backgroundColor: theme.colors.surface,
+                    alignItems: 'center',
+                    gap: theme.spacing.xs,
+                  }}
+                >
+                  <EmptyArt kind="orders" />
+                  <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
+                    Заказов ещё не было
                   </Text>
                   <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-                    {order.restaurant_name}
+                    Загляните в меню — там есть что выбрать
                   </Text>
                 </View>
-                <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
-                  {formatPrice(order.total_kopecks)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+              ) : (
+                // В профиле показываем только пару последних: остальное — на своём экране
+                history.slice(0, 2).map((order) => (
+                  <OrderHistoryCard
+                    key={order.id}
+                    order={order}
+                    onPress={() => router.push(`/order/${order.id}`)}
+                  />
+                ))
+              )}
+
+              {history.length > 2 ? (
+                <PressableScale
+                  depth={0.98}
+                  accessibilityLabel="Открыть все заказы"
+                  onPress={() => router.push('/orders')}
+                  style={{
+                    padding: theme.spacing.base,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: theme.colors.border,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={[theme.typography.bodyMedium, { color: theme.colors.brand }]}>
+                    Вся история заказов
+                  </Text>
+                </PressableScale>
+              ) : null}
+            </Animated.View>
+          </>
+        ) : (
+          <Animated.View
+            entering={FadeInDown.duration(340)}
+            style={[
+              theme.elevation.card,
+              {
+                padding: theme.spacing.xl,
+                borderRadius: theme.radius.xxl,
+                backgroundColor: theme.colors.surface,
+                gap: theme.spacing.sm,
+              },
+            ]}
+          >
+            <Ionicons name="pizza" size={30} color={theme.colors.brand} />
+            <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>
+              Войдите по номеру
+            </Text>
+            <Text style={[theme.typography.body, { color: theme.colors.textSecondary }]}>
+              Начислим {tenant.loyalty.welcomeBonus} приветственных баллов, сохраним адреса и историю
+              заказов.
+            </Text>
+            <View style={{ marginTop: theme.spacing.sm }}>
+              <PrimaryButton label="Войти" onPress={() => router.push('/auth')} />
+            </View>
+          </Animated.View>
+        )}
+
+        {authorized && (summary.data?.orders_count ?? 0) > 0 ? (
+          <Animated.View
+            entering={FadeIn.duration(340)}
+            style={{
+              padding: theme.spacing.base,
+              borderRadius: theme.radius.xl,
+              backgroundColor: theme.colors.surface,
+              gap: theme.spacing.xxs,
+            }}
+          >
+            <Text style={[theme.typography.body, { color: theme.colors.textPrimary }]}>
+              Вы заказали {summary.data?.orders_count} раз на{' '}
+              {formatPrice(summary.data?.spent_kopecks ?? 0)}
+            </Text>
+            {summary.data?.favourite_restaurant ? (
+              <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
+                Чаще всего из ресторана «{summary.data.favourite_restaurant}»
+              </Text>
+            ) : null}
+          </Animated.View>
         ) : null}
 
         {authorized ? (
-          <View style={{ gap: theme.spacing.xxs }}>
-            <Text
+          <Animated.View
+            entering={FadeInDown.duration(340).delay(220)}
+            style={{ gap: theme.spacing.md }}
+          >
+            {title('Уведомления')}
+            <PushSwitch />
+          </Animated.View>
+        ) : null}
+
+        <Animated.View entering={FadeInDown.duration(340).delay(240)} style={{ gap: theme.spacing.md }}>
+          {title('Связаться с нами')}
+          {group(contacts)}
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(340).delay(300)} style={{ gap: theme.spacing.md }}>
+          {title('Документы')}
+          {group(legal)}
+        </Animated.View>
+
+        {authorized ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <PressableScale
+              depth={0.985}
+              accessibilityLabel="Выйти из профиля"
+              onPress={() => setAsking('exit')}
               style={[
-                theme.typography.overline,
-                { color: theme.colors.textTertiary, paddingHorizontal: theme.spacing.base },
+                styles.exit,
+                {
+                  minHeight: theme.layout.minTouchTarget + theme.spacing.sm,
+                  borderRadius: theme.radius.pill,
+                  gap: theme.spacing.sm,
+                  backgroundColor: theme.colors.surface,
+                },
               ]}
             >
-              Мои данные
-            </Text>
+              <Ionicons name="log-out-outline" size={18} color={theme.colors.textSecondary} />
+              <Text style={[theme.typography.button, { color: theme.colors.textSecondary }]}>
+                Выйти
+              </Text>
+            </PressableScale>
 
-            {[
-              { icon: 'person-outline' as const, label: 'Личные данные', to: '/profile-edit' as const },
-              { icon: 'home-outline' as const, label: 'Адреса доставки', to: '/addresses' as const },
-            ].map((item) => (
-              <Pressable
-                key={item.to}
-                accessibilityRole="button"
-                onPress={() => router.push(item.to)}
-                style={({ pressed }) => [
-                  styles.row,
-                  {
-                    minHeight: theme.layout.minTouchTarget,
-                    paddingVertical: theme.spacing.md,
-                    paddingHorizontal: theme.spacing.base,
-                    borderRadius: theme.radius.md,
-                    gap: theme.spacing.md,
-                    backgroundColor: pressed ? theme.colors.surfaceSunken : 'transparent',
-                  },
+            {/* Удаление аккаунта обязано быть в самом приложении: без него
+                Apple не пропускает приложения со входом */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Удалить аккаунт"
+              hitSlop={theme.hitSlop}
+              onPress={() => setAsking('delete')}
+              style={{ minHeight: theme.layout.minTouchTarget, justifyContent: 'center' }}
+            >
+              <Text
+                style={[
+                  theme.typography.caption,
+                  styles.center,
+                  { color: theme.colors.textTertiary },
                 ]}
               >
-                <Ionicons name={item.icon} size={theme.spacing.lg} color={theme.colors.textTertiary} />
-                <Text
-                  style={[theme.typography.bodyMedium, styles.rowText, { color: theme.colors.textPrimary }]}
-                >
-                  {item.label}
-                </Text>
-                <Ionicons
-                  name="chevron-forward"
-                  size={theme.spacing.base}
-                  color={theme.colors.textTertiary}
-                />
-              </Pressable>
-            ))}
+                Удалить аккаунт
+              </Text>
+            </Pressable>
           </View>
         ) : null}
 
-        <View style={{ gap: theme.spacing.xxs }}>
-          <Text
-            style={[
-              theme.typography.overline,
-              { color: theme.colors.textTertiary, paddingHorizontal: theme.spacing.base },
-            ]}
-          >
-            Связаться
-          </Text>
-          {contactRows.map(renderRow)}
-        </View>
-
-        <View style={{ gap: theme.spacing.xxs }}>
-          <Text
-            style={[
-              theme.typography.overline,
-              { color: theme.colors.textTertiary, paddingHorizontal: theme.spacing.base },
-            ]}
-          >
-            Документы
-          </Text>
-          {legalRows.map(renderRow)}
-        </View>
-
-        <Text
-          style={[
-            theme.typography.caption,
-            styles.footer,
-            { color: theme.colors.textTertiary },
-          ]}
-        >
-          {tenant.branding.legalName}
-          {'\n'}
-          Версия {Constants.expoConfig?.version ?? '—'}
+        <Text style={[theme.typography.caption, styles.center, { color: theme.colors.textTertiary }]}>
+          {tenant.branding.displayName} · версия {Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <ConfirmSheet
+        visible={asking === 'exit'}
+        icon="log-out-outline"
+        title="Выйти из профиля?"
+        description="Ничего не пропадёт: баллы, адреса и история заказов останутся на вашем номере."
+        points={[
+          { icon: 'sparkles-outline', text: 'Баллы и уровень сохранятся' },
+          { icon: 'call-outline', text: 'Вернётесь входом по номеру телефона' },
+          { icon: 'bag-handle-outline', text: 'Корзина на этом устройстве очистится' },
+        ]}
+        confirmLabel="Выйти"
+        cancelLabel="Остаться"
+        onConfirm={() => {
+          setAsking(null);
+          void session.signOut();
+        }}
+        onCancel={() => setAsking(null)}
+      />
+
+      <ConfirmSheet
+        visible={asking === 'delete'}
+        icon="trash-outline"
+        title="Удалить аккаунт?"
+        description="Это навсегда. Восстановить данные после удаления мы не сможем."
+        danger
+        hold
+        loading={remove.isPending}
+        points={[
+          {
+            icon: 'sparkles-outline',
+            text: `Сгорят все баллы${
+              session.loyalty ? ` — сейчас их ${session.loyalty.points_balance}` : ''
+            }`,
+          },
+          { icon: 'location-outline', text: 'Удалятся адреса доставки и брони столов' },
+          { icon: 'person-outline', text: 'Сотрутся имя, телефон и дата рождения' },
+        ]}
+        confirmLabel="Удерживайте, чтобы удалить"
+        cancelLabel="Оставить аккаунт"
+        onConfirm={() => remove.mutate()}
+        onCancel={() => setAsking(null)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  card: { width: '100%' },
-  cardAction: { alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rowText: { flex: 1 },
-  footer: { textAlign: 'center' },
+  compact: { position: 'absolute', left: 0, right: 0, zIndex: 5, flexDirection: 'row', alignItems: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  between: { justifyContent: 'space-between' },
+  grow: { flex: 1 },
+  // Плитки тянутся до высоты самой высокой: подсказки в них разной длины
+  tiles: { flexDirection: 'row', alignItems: 'stretch' },
+  tile: { flex: 1 },
+  icon: { alignItems: 'center', justifyContent: 'center' },
+  exit: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  center: { textAlign: 'center' },
 });

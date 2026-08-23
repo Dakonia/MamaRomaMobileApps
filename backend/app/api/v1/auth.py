@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.api.deps import GuestDep, SessionDep, TenantDep
-from app.core.security import InvalidTokenError, create_token, decode_token
+from app.core.security import InvalidTokenError, card_barcode, create_token, decode_token
 from app.models.guest import Guest
 from app.schemas.auth import (
     CodeRequest,
@@ -13,6 +13,8 @@ from app.schemas.auth import (
     ProfileRead,
     RefreshRequest,
     SessionRead,
+    SignupRequest,
+    SignupRequired,
 )
 from app.services import auth as auth_service
 from app.services import loyalty as loyalty_service
@@ -40,10 +42,27 @@ async def request_code(
         raise _http_error(exc) from exc
 
 
-@router.post("/verify", summary="Проверить код и войти")
-async def verify(payload: CodeVerify, session: SessionDep, tenant: TenantDep) -> SessionRead:
+@router.post(
+    "/verify",
+    summary="Проверить код",
+    description=(
+        "Знакомый номер — сразу сессия. Незнакомый — билет на регистрацию: "
+        "гость появится в базе только после того, как назовёт имя."
+    ),
+)
+async def verify(
+    payload: CodeVerify, session: SessionDep, tenant: TenantDep
+) -> SessionRead | SignupRequired:
     try:
         return await auth_service.verify(session, tenant, payload.phone, payload.code)
+    except auth_service.AuthError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/signup", summary="Завершить регистрацию")
+async def signup(payload: SignupRequest, session: SessionDep, tenant: TenantDep) -> SessionRead:
+    try:
+        return await auth_service.signup(session, tenant, payload)
     except auth_service.AuthError as exc:
         raise _http_error(exc) from exc
 
@@ -85,9 +104,12 @@ async def me(session: SessionDep, tenant: TenantDep, guest: GuestDep) -> Profile
     return ProfileRead(
         guest=GuestRead.model_validate(guest),
         loyalty=LoyaltyRead(
+            card_number=account.card_number,
+            card_barcode=card_barcode(account.card_number),
             tier_code=tier.code,
             tier_title=tier.title,
             cashback_percent=tier.cashback_percent,
             points_balance=account.points_balance,
+            lifetime_spent_kopecks=account.lifetime_spent_kopecks,
         ),
     )

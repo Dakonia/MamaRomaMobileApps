@@ -10,6 +10,7 @@ TENANTS_DIR = Path(__file__).resolve().parents[3] / "packages" / "tenants" / "da
 class LoyaltyTier(BaseModel):
     code: str
     title: str
+    note: str = ""
     cashback_percent: int = Field(alias="cashbackPercent")
     threshold_rub: int = Field(alias="thresholdRub")
 
@@ -20,7 +21,14 @@ class Loyalty(BaseModel):
     points_expire_after_days: int = Field(alias="pointsExpireAfterDays")
     welcome_bonus: int = Field(alias="welcomeBonus")
     birthday_bonus: int = Field(alias="birthdayBonus")
+    # Можно ли гасить баллами доставку. Выключишь — баллы уходят только на еду
+    points_cover_delivery: bool = Field(default=True, alias="pointsCoverDelivery")
     tiers: list[LoyaltyTier]
+
+
+class Ordering(BaseModel):
+    # Приборы платные почти во всех сетях: столько стоит один комплект
+    cutlery_price_kopecks: int = Field(default=0, alias="cutleryPriceKopecks")
 
 
 class Branding(BaseModel):
@@ -48,6 +56,7 @@ class Tenant(BaseModel):
     branding: Branding
     features: Features
     loyalty: Loyalty
+    ordering: Ordering = Ordering()
     support_phone: str = Field(alias="supportPhone")
     timezone: str
 

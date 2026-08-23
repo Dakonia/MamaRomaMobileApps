@@ -61,6 +61,7 @@ export type Category = {
   slug: string;
   sort_order: number;
   is_active: boolean;
+  show_in_popular: boolean;
   dishes_count: number;
 };
 export type Dish = {
@@ -74,6 +75,9 @@ export type Dish = {
   weight_grams: number | null;
   volume_ml: number | null;
   calories: number | null;
+  proteins_g: number | null;
+  fats_g: number | null;
+  carbs_g: number | null;
   is_spicy: boolean;
   is_vegetarian: boolean;
   is_new: boolean;
@@ -89,7 +93,11 @@ export type DishDraft = {
   description: string | null;
   composition: string | null;
   weight_grams: number | null;
+  volume_ml: number | null;
   calories: number | null;
+  proteins_g: number | null;
+  fats_g: number | null;
+  carbs_g: number | null;
   is_spicy: boolean;
   is_vegetarian: boolean;
   is_new: boolean;
@@ -122,12 +130,14 @@ export type Promotion = {
   description: string | null;
   label: string | null;
   image_url: string | null;
-  restaurant_id: string | null;
-  restaurant_name: string | null;
+  restaurant_ids: string[];
+  restaurant_names: string[];
+  source_url: string | null;
   starts_at: string | null;
   ends_at: string | null;
   sort_order: number;
   is_active: boolean;
+  show_in_menu: boolean;
 };
 
 export type PromotionDraft = {
@@ -135,13 +145,186 @@ export type PromotionDraft = {
   description: string | null;
   label: string | null;
   image_url: string | null;
-  restaurant_id: string | null;
+  restaurant_ids: string[];
   ends_at: string | null;
+  sort_order: number;
+  is_active: boolean;
+  show_in_menu: boolean;
+};
+
+export type Restaurant = { id: string; name: string };
+
+export type DishExtra = {
+  id: string;
+  name: string;
+  price_kopecks: number;
+  is_active: boolean;
+  dishes_count: number;
+  category_ids: string[];
+};
+
+export type PromoCode = {
+  id: string;
+  code: string;
+  title: string;
+  kind: "percent" | "fixed" | "free_delivery";
+  value: number;
+  max_discount_kopecks: number | null;
+  min_order_kopecks: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  usage_limit: number | null;
+  per_guest_limit: number;
+  used_count: number;
+  is_active: boolean;
+};
+
+export type PromoCodeDraft = Omit<PromoCode, "id" | "used_count">;
+
+export type SyncChange = {
+  id: string;
+  action: "create" | "update" | "delete";
+  title: string;
+  summary: string;
+  group: string | null;
+  applied: boolean;
+};
+
+export type SyncRun = {
+  id: string;
+  kind: "menu" | "restaurants" | "promos";
+  title: string;
+  status: "checking" | "ready" | "applying" | "done" | "failed";
+  started_at: string;
+  finished_at: string | null;
+  applied_at: string | null;
+  unchanged: number;
+  created: number;
+  updated: number;
+  removed: number;
+  message: string | null;
+  changes: SyncChange[];
+};
+
+export type City = { id: string; name: string };
+
+export type AdminRestaurant = {
+  id: string;
+  city_id: string;
+  name: string;
+  address: string;
+  metro: string | null;
+  phone: string | null;
+  latitude: number;
+  longitude: number;
+  opens_at: string;
+  closes_at: string;
+  delivery_opens_at: string | null;
+  delivery_closes_at: string | null;
+  has_delivery: boolean;
+  has_pickup: boolean;
+  has_dine_in: boolean;
+  delivery_price_kopecks: number;
+  delivery_min_order_kopecks: number;
+  free_delivery_from_kopecks: number | null;
+  description: string | null;
+  image_url: string | null;
+  is_active: boolean;
+  is_paused: boolean;
+  pause_reason: string | null;
+  /** Принимать заказы, пока ресторан закрыт: гость выберет время на потом. */
+  preorder_enabled: boolean;
+};
+
+export type RestaurantDraft = Omit<AdminRestaurant, "id">;
+
+export type Zone = {
+  id: string;
+  city_id: string;
+  restaurant_id: string;
+  restaurant_name: string;
+  name: string;
+  color: string;
+  outline: [number, number][];
+  delivery_price_kopecks: number;
+  min_order_kopecks: number;
+  min_order_weekend_kopecks: number | null;
+  free_delivery_from_kopecks: number | null;
+  delivery_minutes: number | null;
   sort_order: number;
   is_active: boolean;
 };
 
-export type Restaurant = { id: string; name: string };
+export type RestaurantDish = {
+  dish_id: string;
+  name: string;
+  category_name: string;
+  base_price_kopecks: number;
+  price_kopecks: number;
+  is_available: boolean;
+  in_stop_list: boolean;
+};
+
+export type Guest = {
+  id: string;
+  phone: string;
+  name: string | null;
+  email: string | null;
+  birthday: string | null;
+  gender: "male" | "female" | null;
+  is_blocked: boolean;
+  created_at: string;
+  last_seen_at: string | null;
+  orders_count: number;
+  spent_kopecks: number;
+  tier_title: string;
+  points_balance: number;
+};
+
+export type GuestAddress = {
+  id: string;
+  title: string | null;
+  full_text: string;
+  locality: string | null;
+  metro: string | null;
+  comment: string | null;
+  is_default: boolean;
+};
+
+export type GuestOrder = {
+  id: string;
+  number: string;
+  created_at: string;
+  type: string;
+  status: string;
+  restaurant_name: string;
+  address_text: string | null;
+  total_kopecks: number;
+  items: string[];
+};
+
+export type GuestReservation = {
+  id: string;
+  reserved_at: string;
+  guests_count: number;
+  status: string;
+  restaurant_name: string;
+};
+
+export type GuestPoints = {
+  created_at: string;
+  operation: string;
+  points: number;
+  comment: string | null;
+};
+
+export type GuestCard = {
+  guest: Guest;
+  addresses: GuestAddress[];
+  orders: GuestOrder[];
+  reservations: GuestReservation[];
+  points: GuestPoints[];
+};
 
 export type Reservation = {
   id: string;
@@ -198,6 +381,11 @@ export const api = {
   },
 
   stopList: () => request<StopEntry[]>("/admin/stop-list"),
+  addStop: (restaurantId: string, dishId: string) =>
+    request<{ id: string }>("/admin/stop-list", {
+      method: "POST",
+      body: JSON.stringify({ restaurant_id: restaurantId, dish_id: dishId, until: null }),
+    }),
   removeStop: (id: string) =>
     request<void>(`/admin/stop-list/${id}`, { method: "DELETE" }),
 
@@ -206,6 +394,84 @@ export const api = {
     request<Order>(`/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
   restaurants: () => request<Restaurant[]>("/restaurants"),
+  cities: () => request<City[]>("/cities"),
+
+  adminRestaurants: () => request<AdminRestaurant[]>("/admin/restaurants"),
+  createRestaurant: (payload: RestaurantDraft) =>
+    request<AdminRestaurant>("/admin/restaurants", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateRestaurant: (id: string, patch: Partial<RestaurantDraft>) =>
+    request<AdminRestaurant>(`/admin/restaurants/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteRestaurant: (id: string) =>
+    request<void>(`/admin/restaurants/${id}`, { method: "DELETE" }),
+
+  zones: () => request<Zone[]>("/admin/zones"),
+  updateZone: (
+    id: string,
+    patch: Partial<{
+      restaurant_id: string;
+      name: string;
+      color: string;
+      outline: [number, number][];
+      delivery_price_kopecks: number;
+      min_order_kopecks: number;
+      min_order_weekend_kopecks: number | null;
+      free_delivery_from_kopecks: number | null;
+      delivery_minutes: number | null;
+      sort_order: number;
+      is_active: boolean;
+    }>,
+  ) => request<Zone>(`/admin/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteZone: (id: string) => request<void>(`/admin/zones/${id}`, { method: "DELETE" }),
+
+  createZone: (payload: {
+    city_id: string;
+    restaurant_id: string;
+    name: string;
+    color: string;
+    outline: [number, number][];
+    delivery_price_kopecks: number;
+    min_order_kopecks: number;
+    delivery_minutes: number | null;
+  }) => request<Zone>("/admin/zones", { method: "POST", body: JSON.stringify(payload) }),
+
+  restaurantMenu: (restaurantId: string) =>
+    request<RestaurantDish[]>(`/admin/restaurants/${restaurantId}/menu`),
+  setRestaurantDish: (
+    restaurantId: string,
+    payload: { dish_id: string; price_kopecks: number | null; is_available: boolean },
+  ) =>
+    request<RestaurantDish>(`/admin/restaurants/${restaurantId}/menu`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  guests: (search: string) =>
+    request<Guest[]>(`/admin/guests${search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""}`),
+  guestCard: (id: string) => request<GuestCard>(`/admin/guests/${id}`),
+  createGuest: (payload: {
+    phone: string;
+    name: string | null;
+    email: string | null;
+    birthday: string | null;
+    gender: "male" | "female" | null;
+  }) => request<Guest>("/admin/guests", { method: "POST", body: JSON.stringify(payload) }),
+  updateGuest: (
+    id: string,
+    patch: Partial<{
+      name: string | null;
+      email: string | null;
+      birthday: string | null;
+      gender: "male" | "female" | null;
+      is_blocked: boolean;
+    }>,
+  ) => request<Guest>(`/admin/guests/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteGuest: (id: string) => request<void>(`/admin/guests/${id}`, { method: "DELETE" }),
 
   promotions: () => request<Promotion[]>("/admin/promotions"),
   createPromotion: (payload: PromotionDraft) =>
@@ -218,6 +484,42 @@ export const api = {
   deletePromotion: (id: string) =>
     request<void>(`/admin/promotions/${id}`, { method: "DELETE" }),
 
+  extras: () => request<DishExtra[]>("/admin/extras"),
+  createExtra: (payload: { name: string; price_kopecks: number; is_active: boolean }) =>
+    request<DishExtra>("/admin/extras", { method: "POST", body: JSON.stringify(payload) }),
+  updateExtra: (
+    id: string,
+    patch: Partial<{ name: string; price_kopecks: number; is_active: boolean }>,
+  ) => request<DishExtra>(`/admin/extras/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  setExtraCategories: (id: string, categoryIds: string[]) =>
+    request<DishExtra>(`/admin/extras/${id}/categories`, {
+      method: "PUT",
+      body: JSON.stringify({ category_ids: categoryIds }),
+    }),
+  deleteExtra: (id: string) => request<void>(`/admin/extras/${id}`, { method: "DELETE" }),
+
+  promoCodes: () => request<PromoCode[]>("/admin/promo-codes"),
+  createPromoCode: (payload: PromoCodeDraft) =>
+    request<PromoCode>("/admin/promo-codes", { method: "POST", body: JSON.stringify(payload) }),
+  updatePromoCode: (id: string, patch: Partial<PromoCodeDraft>) =>
+    request<PromoCode>(`/admin/promo-codes/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deletePromoCode: (id: string) =>
+    request<void>(`/admin/promo-codes/${id}`, { method: "DELETE" }),
+
+  syncRuns: () => request<SyncRun[]>("/admin/sync"),
+  startSync: (kind: SyncRun["kind"]) =>
+    request<SyncRun>(`/admin/sync/${kind}`, { method: "POST" }),
+  applySync: (runId: string, changeIds: string[]) =>
+    request<SyncRun>(`/admin/sync/${runId}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ change_ids: changeIds }),
+    }),
+  dropSyncChange: (runId: string, changeId: string) =>
+    request<void>(`/admin/sync/${runId}/changes/${changeId}`, { method: "DELETE" }),
+
   reservations: () => request<Reservation[]>("/admin/reservations"),
   setReservationStatus: (id: string, status: string) =>
     request<Reservation>(`/admin/reservations/${id}`, {
@@ -228,6 +530,13 @@ export const api = {
 
 export function formatPrice(kopecks: number): string {
   return `${String(Math.round(kopecks / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} ₽`;
+}
+
+export function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`;
 }
 
 export function formatDateTime(iso: string): string {

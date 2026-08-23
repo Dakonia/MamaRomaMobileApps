@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { mediaUrl, type Promotion } from '@/api/client';
@@ -20,13 +21,44 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
 
   // Край следующей карточки виден — так понятно, что полку можно листать
   const cardWidth = width - theme.layout.screenPadding * 2 - theme.spacing.xxl;
+  const step = cardWidth + theme.spacing.md;
+
+  const list = useRef<ScrollView>(null);
+  const index = useRef(0);
+  const [active, setActive] = useState(0);
+  const paused = useRef(false);
+
+  // Полка едет сама, пока её не трогают: акции замечают, только если они движутся
+  useEffect(() => {
+    if (promotions.length < 2) return;
+
+    const timer = setInterval(() => {
+      if (paused.current) return;
+      index.current = (index.current + 1) % promotions.length;
+      setActive(index.current);
+      list.current?.scrollTo({ x: index.current * step, animated: true });
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [promotions.length, step]);
 
   return (
+    <>
     <ScrollView
+      ref={list}
       horizontal
       showsHorizontalScrollIndicator={false}
       decelerationRate="fast"
-      snapToInterval={cardWidth + theme.spacing.md}
+      snapToInterval={step}
+      onTouchStart={() => {
+        paused.current = true;
+      }}
+      onMomentumScrollEnd={(event) => {
+        // Гость пролистал сам — продолжаем с того места, где он остановился
+        index.current = Math.round(event.nativeEvent.contentOffset.x / step);
+        setActive(index.current);
+        paused.current = false;
+      }}
       contentContainerStyle={{
         paddingHorizontal: theme.layout.screenPadding,
         gap: theme.spacing.md,
@@ -48,26 +80,21 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
                 width: cardWidth,
                 height: cardWidth * 0.46,
                 borderRadius: theme.radius.xl,
-                backgroundColor: theme.colors.brandSubtle,
+                backgroundColor: theme.colors.surface,
                 ...theme.elevation.card,
               },
             ]}
           >
+            {/* Фотография в своей квадратной части: раньше она растягивалась
+                на всю карточку и у широкого баннера срезало половину кадра */}
             {photo ? (
               <Image
                 source={{ uri: photo }}
-                style={StyleSheet.absoluteFill}
+                style={{ width: cardWidth * 0.46, height: '100%' }}
                 contentFit="cover"
                 transition={220}
               />
             ) : null}
-
-            <View
-              style={[
-                styles.veil,
-                { backgroundColor: photo ? theme.colors.overlay : 'transparent' },
-              ]}
-            />
 
             <View style={[styles.body, { padding: theme.spacing.base, gap: theme.spacing.xs }]}>
               {promotion.label ? (
@@ -82,7 +109,7 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
                     },
                   ]}
                 >
-                  <Text style={[theme.typography.button, { color: theme.colors.textOnBrand }]}>
+                  <Text style={[theme.typography.overline, { color: theme.colors.textOnBrand }]}>
                     {promotion.label}
                   </Text>
                 </View>
@@ -90,24 +117,48 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
 
               <Text
                 numberOfLines={2}
-                style={[
-                  theme.typography.h2,
-                  { color: photo ? theme.colors.textInverse : theme.colors.textPrimary },
-                ]}
+                style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}
               >
                 {promotion.title}
               </Text>
+
+              {promotion.description ? (
+                <Text
+                  numberOfLines={2}
+                  style={[theme.typography.caption, { color: theme.colors.textSecondary }]}
+                >
+                  {promotion.description.replace(/\s*\n\s*/g, ' ')}
+                </Text>
+              ) : null}
             </View>
           </PressableScale>
         );
       })}
     </ScrollView>
+
+    {promotions.length > 1 ? (
+      <View style={[styles.dots, { gap: theme.spacing.xs }]}>
+        {promotions.map((promotion, position) => (
+          <View
+            key={promotion.id}
+            style={{
+              width: position === active ? 14 : 5,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor:
+                position === active ? theme.colors.brand : theme.colors.border,
+            }}
+          />
+        ))}
+      </View>
+    ) : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { overflow: 'hidden', justifyContent: 'flex-end' },
-  veil: { ...StyleSheet.absoluteFillObject },
-  body: { alignItems: 'flex-start' },
+  card: { overflow: 'hidden', flexDirection: 'row', alignItems: 'stretch' },
+  body: { flex: 1, justifyContent: 'center', alignItems: 'flex-start' },
   label: { alignSelf: 'flex-start' },
+  dots: { flexDirection: 'row', justifyContent: 'center', paddingBottom: 4 },
 });

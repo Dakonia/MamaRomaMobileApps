@@ -8,13 +8,18 @@
     "primary": "#C0392B",
     "onPrimary": "#FFFFFF",
     "accent": "#1B7F5A",
-    "splashBackground": "#FFFFFF",
+    "splashBackground": "#1A120C",
     "androidAdaptiveBackground": "#FFF6F3"
   },
   "stores": {
     "bundleIdentifier": "ru.mamaroma.app",
     "androidPackage": "ru.mamaroma.app",
-    "scheme": "mamaroma"
+    "scheme": "mamaroma",
+    "minSupportedVersion": "1.0.0",
+    "latestVersion": "1.0.0",
+    "appStoreUrl": "",
+    "googlePlayUrl": "",
+    "ruStoreUrl": ""
   },
   "features": {
     "delivery": true,
@@ -30,36 +35,44 @@
     "pointsExpireAfterDays": 180,
     "welcomeBonus": 300,
     "birthdayBonus": 500,
+    "pointsCoverDelivery": true,
     "tiers": [
       {
         "code": "ospite",
         "title": "Ospite",
         "cashbackPercent": 5,
-        "thresholdRub": 0
+        "thresholdRub": 0,
+        "note": "Гость"
       },
       {
         "code": "amico",
         "title": "Amico",
         "cashbackPercent": 7,
-        "thresholdRub": 15000
+        "thresholdRub": 15000,
+        "note": "Друг"
       },
       {
         "code": "famiglia",
         "title": "Famiglia",
         "cashbackPercent": 10,
-        "thresholdRub": 50000
+        "thresholdRub": 50000,
+        "note": "Семья"
       },
       {
         "code": "maestro",
         "title": "Maestro",
         "cashbackPercent": 12,
-        "thresholdRub": 120000
+        "thresholdRub": 120000,
+        "note": "Мастер"
       }
     ]
   },
-  "supportPhone": "+7 (812) 777-77-77",
+  "ordering": {
+    "cutleryPriceKopecks": 3000
+  },
+  "supportPhone": "+7 (812) 925-48-48",
   "supportEmail": "support@mamaroma.ru",
-  "websiteUrl": "https://www.mamaroma.ru",
+  "websiteUrl": "https://www.mamaroma.ru/ru/general",
   "privacyPolicyUrl": "https://www.mamaroma.ru/privacy",
   "offerUrl": "https://www.mamaroma.ru/offer",
   "defaultCityId": "spb",

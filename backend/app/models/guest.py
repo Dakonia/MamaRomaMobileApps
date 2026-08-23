@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, TenantMixin, TimestampMixin, UUIDMixin
-from app.models.enums import DevicePlatform, enum_column
+from app.models.enums import DevicePlatform, Gender, enum_column
 
 
 class Guest(UUIDMixin, TenantMixin, TimestampMixin, Base):
@@ -16,10 +16,15 @@ class Guest(UUIDMixin, TenantMixin, TimestampMixin, Base):
     name: Mapped[str | None] = mapped_column(String(120), default=None)
     email: Mapped[str | None] = mapped_column(String(160), default=None)
     birthday: Mapped[date | None] = mapped_column(default=None)
+    gender: Mapped[Gender | None] = mapped_column(enum_column(Gender), default=None)
 
     # ФЗ-152: момент, когда гость дал согласие на обработку персональных данных
     consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     consent_version: Mapped[str | None] = mapped_column(String(20), default=None)
+
+    # Удалённый аккаунт: строка остаётся ради финансовых документов, но личных
+    # данных в ней уже нет и войти под ней нельзя
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     is_blocked: Mapped[bool] = mapped_column(default=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
@@ -34,6 +39,7 @@ class GuestAddress(UUIDMixin, TenantMixin, TimestampMixin, Base):
     title: Mapped[str | None] = mapped_column(String(60), default=None)
     street: Mapped[str] = mapped_column(String(200))
     house: Mapped[str] = mapped_column(String(20))
+    building: Mapped[str | None] = mapped_column(String(20), default=None)
     flat: Mapped[str | None] = mapped_column(String(20), default=None)
     entrance: Mapped[str | None] = mapped_column(String(20), default=None)
     floor: Mapped[str | None] = mapped_column(String(20), default=None)
@@ -43,6 +49,18 @@ class GuestAddress(UUIDMixin, TenantMixin, TimestampMixin, Base):
     latitude: Mapped[float | None] = mapped_column(Float, default=None)
     longitude: Mapped[float | None] = mapped_column(Float, default=None)
     is_default: Mapped[bool] = mapped_column(default=False)
+
+    # Заполняет справочник адресов при сохранении: код дома в ФИАС нужен
+    # курьерским службам, район и точность координат — будущим зонам доставки.
+    # Населённый пункт отдельно: у адреса в Кудрово город доставки — Петербург,
+    # а сам адрес начинается с «г Кудрово»
+    locality: Mapped[str | None] = mapped_column(String(120), default=None)
+    fias_id: Mapped[str | None] = mapped_column(String(40), default=None)
+    postal_code: Mapped[str | None] = mapped_column(String(10), default=None)
+    city_district: Mapped[str | None] = mapped_column(String(120), default=None)
+    metro: Mapped[str | None] = mapped_column(String(120), default=None)
+    # 0 — координаты дома, 1 — соседнего дома, 2 — улицы, 3+ — только город
+    geo_precision: Mapped[int | None] = mapped_column(default=None)
 
 
 class Device(UUIDMixin, TenantMixin, TimestampMixin, Base):

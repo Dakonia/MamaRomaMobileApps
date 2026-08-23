@@ -20,8 +20,21 @@ pnpm mobile           запустить Expo dev server
 pnpm api              запустить FastAPI (localhost:8000)
 pnpm db:up            поднять postgresql@17 и redis через brew services
 cd backend && uv run alembic upgrade head
+cd backend && uv run pytest
 cd backend && uv run ruff check . && uv run mypy .
+cd apps/mobile && npx tsc --noEmit
 ```
+
+## Проверки перед сдачей задачи
+
+Любая правка бэкенда заканчивается прогоном `uv run pytest`, `ruff check .` и
+`mypy .` — все три должны быть зелёными. Любая правка мобилки — `npx tsc --noEmit`
+и успешная сборка бандла.
+
+Тесты лежат в `backend/tests`, работают на той же базе, что и разработка, и
+чистят за собой. Покрываем то, где ошибка стоит денег: счёт заказа, баллы и
+уровни, зоны доставки, слоты брони, удаление аккаунта. Новая логика в этих
+местах — новый тест вместе с ней.
 
 ## Правила
 

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
@@ -5,20 +6,27 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   interpolate,
   useAnimatedScrollHandler,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, mediaUrl } from '@/api/client';
 import { DishCard } from '@/components/dish-card';
 import { EmptyState } from '@/components/empty-state';
+import { ExtraIcon } from '@/components/extra-icon';
+import { ExtrasSheet } from '@/components/extras-sheet';
 import { PressableScale } from '@/components/pressable-scale';
-import { formatPrice } from '@/lib/format';
-import { cartSubtotal, useCart } from '@/store/cart';
+import { formatPrice, plural } from '@/lib/format';
+import { cartSubtotal, lineKey, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
 
 export default function DishScreen() {
@@ -35,8 +43,14 @@ export default function DishScreen() {
     scroll.value = event.contentOffset.y;
   });
 
-  // Единственная анимация здесь — параллакс снимка при прокрутке.
-  // Появление экрана рисует система, и делает это плавнее любого самоделья
+  // Вход в блюдо: снимок «доезжает» с лёгкого приближения, а текст поднимается
+  // следом. Экран при этом проявляется — вместе это читается как наезд камеры
+  const enter = useSharedValue(0);
+
+  useEffect(() => {
+    enter.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
+  }, [enter]);
+
   const heroStyle = useAnimatedStyle(() => ({
     transform: [
       {
@@ -46,8 +60,57 @@ export default function DishScreen() {
           [0, 0, heroHeight * 0.4],
         ),
       },
-      { scale: interpolate(scroll.value, [-heroHeight, 0], [1.5, 1], 'clamp') },
+      {
+        scale:
+          interpolate(scroll.value, [-heroHeight, 0], [1.5, 1], 'clamp') *
+          (1.07 - enter.value * 0.07),
+      },
     ],
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [{ translateY: (1 - enter.value) * 26 }],
+  }));
+
+  // Оттянуть вниз, чтобы закрыть: экран едет за пальцем с сопротивлением,
+  // отпустили далеко — уходит вниз, близко — возвращается пружиной
+  const pull = useSharedValue(0);
+  const leaving = useSharedValue(false);
+
+  const close = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
+  const swipeDown = Gesture.Pan()
+    .activeOffsetY([-14, 14])
+    .onUpdate((event) => {
+      // Тянем только с самого верха списка, иначе жест мешает прокрутке
+      if (scroll.value > 4 || event.translationY <= 0 || leaving.value) return;
+      pull.value = event.translationY;
+    })
+    .onEnd((event) => {
+      if (leaving.value) return;
+
+      if (pull.value > 130 || event.velocityY > 900) {
+        leaving.value = true;
+        pull.value = withTiming(700, { duration: 260, easing: Easing.in(Easing.cubic) });
+        runOnJS(close)();
+        return;
+      }
+
+      pull.value = withSpring(0, { damping: 18, stiffness: 200 });
+    });
+
+  const screenStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: pull.value },
+      // Чем дальше оттянули, тем меньше карточка — как будто уходит вглубь
+      { scale: 1 - Math.min(pull.value, 400) / 2600 },
+    ],
+    borderRadius: Math.min(pull.value, 200) / 5,
+    overflow: 'hidden',
   }));
 
   const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
@@ -72,7 +135,15 @@ export default function DishScreen() {
     item.dishes.some((entry) => entry.id === id),
   );
 
-  const quantity = cart.items.find((item) => item.dishId === id)?.quantity ?? 0;
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Одна и та же пицца с разными добавками — разные строки корзины
+  const lineId = lineKey(
+    id ?? '',
+    picked.map((extraId: string) => ({ id: extraId, name: '', priceKopecks: 0 })),
+  );
+  const quantity = cart.items.find((item) => item.key === lineId)?.quantity ?? 0;
 
   if (menu.isPending) {
     return (
@@ -127,13 +198,25 @@ export default function DishScreen() {
     .filter((part) => part.length > 1)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1));
 
+  const chosenExtras = (dish.extras ?? []).filter((extra) => picked.includes(extra.id));
+  const extrasPrice = chosenExtras.reduce((sum, extra) => sum + extra.price_kopecks, 0);
+
   const addToCart = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    cart.add(dish);
+    cart.add(
+      dish,
+      chosenExtras.map((extra) => ({
+        id: extra.id,
+        name: extra.name,
+        priceKopecks: extra.price_kopecks,
+      })),
+    );
+    setPicked([]);
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+    <GestureDetector gesture={swipeDown}>
+      <Animated.View style={[styles.root, screenStyle, { backgroundColor: theme.colors.background }]}>
       <Animated.View
         style={[
           styles.hero,
@@ -147,6 +230,8 @@ export default function DishScreen() {
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={200}
+            placeholder={dish.image_blurhash ? { blurhash: dish.image_blurhash } : undefined}
+            placeholderContentFit="cover"
           />
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.center]}>
@@ -173,16 +258,19 @@ export default function DishScreen() {
       >
         <View style={{ height: heroHeight - theme.spacing.lg }} />
 
-        <View
-          style={{
-            backgroundColor: theme.colors.background,
-            borderTopLeftRadius: theme.radius.xxl,
-            borderTopRightRadius: theme.radius.xxl,
-            padding: theme.layout.screenPadding,
-            paddingTop: theme.spacing.lg,
-            gap: theme.spacing.base,
-            minHeight: theme.spacing.huge * 5,
-          }}
+        <Animated.View
+          style={[
+            sheetStyle,
+            {
+              backgroundColor: theme.colors.background,
+              borderTopLeftRadius: theme.radius.xxl,
+              borderTopRightRadius: theme.radius.xxl,
+              padding: theme.layout.screenPadding,
+              paddingTop: theme.spacing.lg,
+              gap: theme.spacing.base,
+              minHeight: theme.spacing.huge * 5,
+            },
+          ]}
         >
           <View
             style={[
@@ -336,6 +424,172 @@ export default function DishScreen() {
             </View>
           ) : null}
 
+          {(dish.extras ?? []).length > 0 ? (
+            <View style={{ gap: theme.spacing.sm }}>
+              {/* Пара добавок помещается кнопками. Полсотни — только списком,
+                  поэтому у пиццы открывается окно выбора */}
+              {(dish.extras ?? []).length <= 3 ? (
+                (dish.extras ?? []).map((extra) => {
+                  const on = picked.includes(extra.id);
+
+                  return (
+                    <PressableScale
+                      key={extra.id}
+                      depth={0.985}
+                      accessibilityLabel={`${on ? 'Убрать' : 'Добавить'} ${extra.name}`}
+                      onPress={() => {
+                        void Haptics.selectionAsync();
+                        setPicked((current) =>
+                          on ? current.filter((id) => id !== extra.id) : [...current, extra.id],
+                        );
+                      }}
+                      style={[
+                        styles.row,
+                        theme.elevation.card,
+                        {
+                          gap: theme.spacing.base,
+                          padding: theme.spacing.base,
+                          borderRadius: theme.radius.xl,
+                          borderWidth: on ? 1.5 : StyleSheet.hairlineWidth,
+                          borderColor: on ? theme.colors.brand : theme.colors.border,
+                          backgroundColor: on ? theme.colors.brandSubtle : theme.colors.surface,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.center,
+                          {
+                            width: 46,
+                            height: 46,
+                            borderRadius: theme.radius.pill,
+                            backgroundColor: on ? theme.colors.brand : theme.colors.brandSubtle,
+                          },
+                        ]}
+                      >
+                        {on ? (
+                          <Ionicons name="checkmark" size={22} color={theme.colors.textOnBrand} />
+                        ) : (
+                          <ExtraIcon name={extra.name} size={24} color={theme.colors.brand} />
+                        )}
+                      </View>
+
+                      <View style={styles.grow}>
+                        <Text
+                          style={[theme.typography.h3, { color: theme.colors.textPrimary }]}
+                        >
+                          {extra.name.charAt(0).toUpperCase() + extra.name.slice(1)}
+                        </Text>
+                        <Text
+                          style={[theme.typography.caption, { color: theme.colors.textTertiary }]}
+                        >
+                          {on ? 'Добавлено к блюду' : 'Добавить к блюду'}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={{
+                          paddingHorizontal: theme.spacing.base,
+                          paddingVertical: theme.spacing.sm,
+                          borderRadius: theme.radius.pill,
+                          backgroundColor: on ? theme.colors.brand : theme.colors.surfaceSunken,
+                        }}
+                      >
+                        <Text
+                          style={[
+                            theme.typography.button,
+                            { color: on ? theme.colors.textOnBrand : theme.colors.textPrimary },
+                          ]}
+                        >
+                          +{formatPrice(extra.price_kopecks)}
+                        </Text>
+                      </View>
+                    </PressableScale>
+                  );
+                })
+              ) : (
+                <>
+                  <PressableScale
+                    depth={0.985}
+                    accessibilityLabel="Выбрать добавки"
+                    onPress={() => setPickerOpen(true)}
+                    style={[
+                      styles.row,
+                      {
+                        gap: theme.spacing.md,
+                        padding: theme.spacing.base,
+                        borderRadius: theme.radius.lg,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor:
+                          chosenExtras.length > 0 ? theme.colors.brand : theme.colors.border,
+                        backgroundColor:
+                          chosenExtras.length > 0 ? theme.colors.brandSubtle : theme.colors.surface,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="add-circle-outline" size={22} color={theme.colors.brand} />
+
+                    <View style={styles.grow}>
+                      <Text
+                        style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}
+                      >
+                        Добавки
+                      </Text>
+                      <Text
+                        style={[theme.typography.caption, { color: theme.colors.textTertiary }]}
+                      >
+                        {chosenExtras.length > 0
+                          ? `Выбрано ${chosenExtras.length} · +${formatPrice(extrasPrice)}`
+                          : `${(dish.extras ?? []).length} ${plural(
+                              (dish.extras ?? []).length,
+                              'вариант',
+                              'варианта',
+                              'вариантов',
+                            )}`}
+                      </Text>
+                    </View>
+
+                    <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+                  </PressableScale>
+
+                  {chosenExtras.length > 0 ? (
+                    <View style={[styles.row, { gap: theme.spacing.xs }]}>
+                      {chosenExtras.map((extra) => (
+                        <PressableScale
+                          key={extra.id}
+                          depth={0.95}
+                          accessibilityLabel={`Убрать ${extra.name}`}
+                          onPress={() =>
+                            setPicked((current) => current.filter((id) => id !== extra.id))
+                          }
+                          style={[
+                            styles.row,
+                            {
+                              gap: theme.spacing.xxs,
+                              paddingLeft: theme.spacing.md,
+                              paddingRight: theme.spacing.sm,
+                              paddingVertical: theme.spacing.xs,
+                              marginBottom: theme.spacing.xs,
+                              borderRadius: theme.radius.pill,
+                              backgroundColor: theme.colors.surfaceSunken,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[theme.typography.caption, { color: theme.colors.textPrimary }]}
+                          >
+                            {extra.name}
+                          </Text>
+                          <Ionicons name="close" size={13} color={theme.colors.textTertiary} />
+                        </PressableScale>
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              )}
+            </View>
+          ) : null}
+
           {!dish.is_available ? (
             <View
               style={{
@@ -349,7 +603,7 @@ export default function DishScreen() {
               </Text>
             </View>
           ) : null}
-        </View>
+        </Animated.View>
 
         {(related.data ?? []).length > 0 ? (
           <Text
@@ -416,6 +670,20 @@ export default function DishScreen() {
         </PressableScale>
       </View>
 
+      <ExtrasSheet
+        visible={pickerOpen}
+        extras={dish.extras ?? []}
+        picked={picked}
+        onToggle={(extraId) =>
+          setPicked((current) =>
+            current.includes(extraId)
+              ? current.filter((id) => id !== extraId)
+              : [...current, extraId],
+          )
+        }
+        onClose={() => setPickerOpen(false)}
+      />
+
       {dish.is_available ? (
         <View
           style={[
@@ -439,7 +707,7 @@ export default function DishScreen() {
           >
             <View style={styles.grow}>
               <Text style={[theme.typography.display, { color: theme.colors.textPrimary }]}>
-                {formatPrice(dish.price_kopecks)}
+                {formatPrice(dish.price_kopecks + extrasPrice)}
               </Text>
               {cart.items.length > 0 ? (
                 <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
@@ -462,7 +730,7 @@ export default function DishScreen() {
                 ]}
               >
                 <PressableScale
-                  onPress={() => cart.setQuantity(dish.id, quantity - 1)}
+                  onPress={() => cart.setQuantity(lineId, quantity - 1)}
                   accessibilityLabel="Убрать порцию"
                   depth={0.85}
                   style={[styles.center, { width: theme.spacing.xxl }]}
@@ -481,7 +749,7 @@ export default function DishScreen() {
                 </Text>
 
                 <PressableScale
-                  onPress={() => cart.setQuantity(dish.id, quantity + 1)}
+                  onPress={() => cart.setQuantity(lineId, quantity + 1)}
                   accessibilityLabel="Добавить порцию"
                   depth={0.85}
                   style={[styles.center, { width: theme.spacing.xxl }]}
@@ -513,7 +781,8 @@ export default function DishScreen() {
           </View>
         </View>
       ) : null}
-    </View>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 

@@ -9,6 +9,8 @@ import { formatPrice } from '@/lib/format';
 import { useTheme } from '@/theme/theme-provider';
 
 type Props = {
+  /** Долгое нажатие: экран сам решает, показывать ли быстрый просмотр. */
+  onPeek?: () => void;
   dish: Dish;
   quantity: number;
   onOpen: () => void;
@@ -24,6 +26,7 @@ export function DishCard({
   dish,
   quantity,
   onOpen,
+  onPeek,
   onAdd,
   onChangeQuantity,
   width,
@@ -32,11 +35,19 @@ export function DishCard({
   const theme = useTheme();
 
   const badges = [
-    highlight ? { text: 'Хит', background: theme.colors.highlight, color: theme.colors.onHero } : null,
-    dish.is_new ? { text: 'Новинка', background: theme.colors.brand, color: theme.colors.onHero } : null,
-    dish.is_spicy ? { text: 'Остро', background: theme.colors.danger, color: theme.colors.onHero } : null,
+    // Цвет текста берём под каждый фон: в тёмной теме плашки светлые,
+    // и белые буквы на них не читаются
+    highlight
+      ? { text: 'Хит', background: theme.colors.highlight, color: theme.colors.onHighlight }
+      : null,
+    dish.is_new
+      ? { text: 'Новинка', background: theme.colors.brand, color: theme.colors.textOnBrand }
+      : null,
+    dish.is_spicy
+      ? { text: 'Остро', background: theme.colors.danger, color: theme.colors.onDanger }
+      : null,
     dish.is_vegetarian
-      ? { text: 'Веган', background: theme.colors.accent, color: theme.colors.onHero }
+      ? { text: 'Веган', background: theme.colors.accent, color: theme.colors.onAccent }
       : null,
   ].filter((badge): badge is { text: string; background: string; color: string } => badge !== null);
 
@@ -59,6 +70,14 @@ export function DishCard({
   return (
     <PressableScale
       onPress={onOpen}
+      onLongPress={
+        onPeek
+          ? () => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onPeek();
+            }
+          : undefined
+      }
       accessibilityLabel={`Открыть ${dish.name}`}
       style={[
         styles.root,
@@ -74,7 +93,15 @@ export function DishCard({
     >
       <View style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
         {photo ? (
-          <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" transition={220} />
+          <Image
+            source={{ uri: photo }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={220}
+            // Пока снимок грузится, на его месте размытое пятно его же цветов
+            placeholder={dish.image_blurhash ? { blurhash: dish.image_blurhash } : undefined}
+            placeholderContentFit="cover"
+          />
         ) : (
           <View style={styles.center}>
             <Ionicons
@@ -185,7 +212,7 @@ export function DishCard({
             ]}
           >
             <Text style={[theme.typography.caption, { color: theme.colors.danger }]}>
-              Закончилось
+              {dish.unavailable_reason ?? 'Закончилось'}
             </Text>
           </View>
         )}
@@ -209,7 +236,7 @@ export function DishCard({
         ) : null}
 
         <View style={[styles.priceRow, { gap: theme.spacing.sm, paddingTop: theme.spacing.xxs }]}>
-          <Text style={[theme.typography.price, { color: theme.colors.textPrimary }]}>
+          <Text style={[theme.typography.price, theme.tabularNums, { color: theme.colors.textPrimary }]}>
             {formatPrice(dish.price_kopecks)}
           </Text>
           {measure ? (

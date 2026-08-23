@@ -16,10 +16,11 @@ const empty: PromotionDraft = {
   description: null,
   label: null,
   image_url: null,
-  restaurant_id: null,
+  restaurant_ids: [],
   ends_at: null,
   sort_order: 0,
   is_active: true,
+  show_in_menu: false,
 };
 
 function toDraft(promotion: Promotion): PromotionDraft {
@@ -28,10 +29,11 @@ function toDraft(promotion: Promotion): PromotionDraft {
     description: promotion.description,
     label: promotion.label,
     image_url: promotion.image_url,
-    restaurant_id: promotion.restaurant_id,
+    restaurant_ids: promotion.restaurant_ids,
     ends_at: promotion.ends_at ? promotion.ends_at.slice(0, 10) : null,
     sort_order: promotion.sort_order,
     is_active: promotion.is_active,
+    show_in_menu: promotion.show_in_menu,
   };
 }
 
@@ -120,21 +122,69 @@ function PromoForm({
           />
         </label>
 
-        <label style={{ display: "grid", gap: 4 }}>
-          {label("Ресторан")}
-          <select
-            style={styles.input}
-            value={draft.restaurant_id ?? ""}
-            onChange={(event) => set("restaurant_id", nullable(event.target.value))}
+        <div style={{ display: "grid", gap: 6, gridColumn: "1 / -1" }}>
+          {label(
+            draft.restaurant_ids.length === 0
+              ? "Рестораны — во всех"
+              : `Рестораны — выбрано ${draft.restaurant_ids.length}`,
+          )}
+
+          <div style={{ display: "flex", gap: spacing.sm, marginBottom: spacing.xs }}>
+            <Button tone="quiet" onClick={() => set("restaurant_ids", [])}>
+              Во всех
+            </Button>
+            <Button
+              tone="quiet"
+              onClick={() =>
+                set(
+                  "restaurant_ids",
+                  restaurants.map((restaurant) => restaurant.id),
+                )
+              }
+            >
+              Отметить все
+            </Button>
+          </div>
+
+          {/* Акция сети часто идёт не везде: «фестиваль в 13 ресторанах» */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: 6,
+              maxHeight: 220,
+              overflowY: "auto",
+              border: `1px solid ${c.border}`,
+              borderRadius: 10,
+              padding: spacing.sm,
+            }}
           >
-            <option value="">Во всех ресторанах</option>
-            {restaurants.map((restaurant) => (
-              <option key={restaurant.id} value={restaurant.id}>
-                {restaurant.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            {restaurants.map((restaurant) => {
+              const picked = draft.restaurant_ids.includes(restaurant.id);
+
+              return (
+                <label
+                  key={restaurant.id}
+                  style={{ display: "flex", gap: spacing.xs, cursor: "pointer" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={picked}
+                    onChange={() =>
+                      set(
+                        "restaurant_ids",
+                        picked
+                          ? draft.restaurant_ids.filter((id) => id !== restaurant.id)
+                          : [...draft.restaurant_ids, restaurant.id],
+                      )
+                    }
+                  />
+                  <span style={{ fontSize: typography.caption.fontSize }}>{restaurant.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
 
         <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
           {label("Текст акции")}
@@ -143,6 +193,26 @@ function PromoForm({
             value={draft.description ?? ""}
             onChange={(event) => set("description", nullable(event.target.value))}
           />
+        </label>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: spacing.sm,
+            gridColumn: "1 / -1",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={draft.show_in_menu}
+            onChange={(event) => set("show_in_menu", event.target.checked)}
+          />
+          <span>
+            Показывать в карусели меню
+            <span style={{ color: c.textTertiary }}> — только для акций доставки</span>
+          </span>
         </label>
 
         <div style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
@@ -255,6 +325,16 @@ export function PromosTab() {
   const expired = (promotion: Promotion) =>
     promotion.ends_at !== null && new Date(promotion.ends_at) < new Date();
 
+  const swap = (from: number, to: number) => {
+    const rows = promos.data ?? [];
+    if (to < 0 || to >= rows.length) return;
+
+    const first = rows[from];
+    const second = rows[to];
+    save.mutate({ id: first.id, draft: { ...toDraft(first), sort_order: second.sort_order } });
+    save.mutate({ id: second.id, draft: { ...toDraft(second), sort_order: first.sort_order } });
+  };
+
   return (
     <Section
       title="Акции"
@@ -287,7 +367,7 @@ export function PromosTab() {
         </p>
       ) : (
         <div style={{ display: "grid", gap: spacing.md }}>
-          {(promos.data ?? []).map((promotion) => (
+          {(promos.data ?? []).map((promotion, index) => (
             <div
               key={promotion.id}
               style={{
@@ -318,6 +398,10 @@ export function PromosTab() {
                   {promotion.label ? <Badge text={promotion.label} tone="warn" /> : null}
                   {expired(promotion) ? <Badge text="истекла" tone="muted" /> : null}
                   {!promotion.is_active ? <Badge text="выключена" tone="muted" /> : null}
+                  {promotion.show_in_menu ? <Badge text="в меню" tone="ok" /> : null}
+                  <span style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+                    №{promotion.sort_order}
+                  </span>
                 </div>
 
                 {promotion.description ? (
@@ -327,14 +411,39 @@ export function PromosTab() {
                 ) : null}
 
                 <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                  {promotion.restaurant_name ?? "Во всех ресторанах"}
+                  {promotion.restaurant_names.length === 0
+                    ? "Во всех ресторанах"
+                    : promotion.restaurant_names.length > 3
+                      ? `${promotion.restaurant_names.length} ресторанов`
+                      : promotion.restaurant_names.join(", ")}
                   {promotion.ends_at
                     ? ` · до ${new Date(promotion.ends_at).toLocaleDateString("ru-RU")}`
                     : " · бессрочно"}
+                  {promotion.source_url ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={promotion.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: c.brand }}
+                      >
+                        страница на сайте
+                      </a>
+                    </>
+                  ) : null}
                 </div>
               </div>
 
               <div style={{ display: "flex", gap: spacing.sm, alignItems: "flex-start" }}>
+                {/* Порядок задаём перестановкой: акция меняется местами с соседней,
+                    поэтому номера не разъезжаются */}
+                <Button tone="quiet" onClick={() => swap(index, index - 1)}>
+                  ↑
+                </Button>
+                <Button tone="quiet" onClick={() => swap(index, index + 1)}>
+                  ↓
+                </Button>
                 <Button
                   tone="quiet"
                   onClick={() => setEditing({ id: promotion.id, draft: toDraft(promotion) })}

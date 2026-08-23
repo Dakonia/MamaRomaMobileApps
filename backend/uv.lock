@@ -214,6 +214,17 @@ wheels = [
 ]
 
 [[package]]
+name = "blurhash-python"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+    { name = "pillow" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/77/a3/9a94cb58332bf0ca76176389f818f37521515ce82acd7d7fed5d15e27150/blurhash-python-1.2.2.tar.gz", hash = "sha256:f2dbb8a58c5a299c8fca81112e52471a15cff38020ca9a65dae96a777609b8d4", size = 178331, upload-time = "2024-01-24T12:09:08.004Z" }
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -825,6 +836,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "bcrypt" },
+    { name = "blurhash-python" },
     { name = "fastapi", extra = ["standard"] },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
@@ -854,6 +866,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.0" },
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
+    { name = "blurhash-python", specifier = ">=1.2.2" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },

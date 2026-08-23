@@ -8,6 +8,7 @@ import {
   palette,
   radius,
   spacing,
+  tabularNums,
   typography,
   type ColorScheme,
 } from "@mr/design-tokens";
@@ -15,6 +16,8 @@ import {
 export type Theme = {
   colors: ColorScheme;
   typography: typeof typography;
+  /** Цифры одинаковой ширины: суммы и счётчики не дёргаются при пересчёте. */
+  tabularNums: typeof tabularNums;
   spacing: typeof spacing;
   radius: typeof radius;
   elevation: typeof elevation;
@@ -26,6 +29,7 @@ export type Theme = {
 
 const shared = {
   typography,
+  tabularNums,
   spacing,
   radius,
   elevation,

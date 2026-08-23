@@ -2,7 +2,19 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { create } from 'zustand';
 
-import { api, setAccessToken, type Guest, type Loyalty, type Session } from '@/api/client';
+import { identify, track } from '@/lib/analytics';
+
+import { useCart } from '@/store/cart';
+
+import {
+  api,
+  onTokens,
+  setAccessToken,
+  setTokens,
+  type Guest,
+  type Loyalty,
+  type Session,
+} from '@/api/client';
 
 const ACCESS_KEY = 'mr.access_token';
 const REFRESH_KEY = 'mr.refresh_token';
@@ -26,6 +38,7 @@ type SessionState = {
   restore: () => Promise<void>;
   signIn: (session: Session) => Promise<void>;
   signOut: () => Promise<void>;
+  setGuest: (guest: Guest) => void;
 };
 
 export const useSession = create<SessionState>((set) => ({
@@ -34,19 +47,24 @@ export const useSession = create<SessionState>((set) => ({
   loyalty: null,
 
   restore: async () => {
-    const token = await storage.get(ACCESS_KEY);
-    if (!token) {
+    const [access, refresh] = await Promise.all([
+      storage.get(ACCESS_KEY),
+      storage.get(REFRESH_KEY),
+    ]);
+
+    if (!access) {
       set({ status: 'anonymous' });
       return;
     }
 
-    setAccessToken(token);
+    setTokens(access, refresh);
     try {
       const profile = await api.me();
+      identify(profile.guest.id);
       set({ status: 'authorized', guest: profile.guest, loyalty: profile.loyalty });
     } catch {
-      // Токен протух или отозван — начинаем как аноним, без падений
-      setAccessToken(null);
+      // Обе стороны пары мертвы — начинаем как аноним, без падений
+      setTokens(null, null);
       await storage.remove(ACCESS_KEY);
       await storage.remove(REFRESH_KEY);
       set({ status: 'anonymous', guest: null, loyalty: null });
@@ -56,7 +74,9 @@ export const useSession = create<SessionState>((set) => ({
   signIn: async (session) => {
     await storage.set(ACCESS_KEY, session.access_token);
     await storage.set(REFRESH_KEY, session.refresh_token);
-    setAccessToken(session.access_token);
+    setTokens(session.access_token, session.refresh_token);
+    identify(session.guest.id);
+    track('signed_in', { tier: session.loyalty?.tier_code ?? null });
     set({ status: 'authorized', guest: session.guest, loyalty: session.loyalty });
   },
 
@@ -64,6 +84,26 @@ export const useSession = create<SessionState>((set) => ({
     await storage.remove(ACCESS_KEY);
     await storage.remove(REFRESH_KEY);
     setAccessToken(null);
+    setTokens(null, null);
+
+    track('signed_out');
+
+    // Корзина, адрес и выбранный ресторан принадлежали прошлому гостю
+    useCart.getState().reset();
+
     set({ status: 'anonymous', guest: null, loyalty: null });
   },
+
+  setGuest: (guest) => set({ guest }),
 }));
+
+// Клиент сам меняет протухший токен на свежий — здесь только сохраняем результат
+onTokens((tokens) => {
+  if (tokens === null) {
+    void useSession.getState().signOut();
+    return;
+  }
+
+  void storage.set(ACCESS_KEY, tokens.access);
+  void storage.set(REFRESH_KEY, tokens.refresh);
+});

@@ -24,8 +24,22 @@ export const typography = {
     letterSpacing: 0.8,
     textTransform: "uppercase" as const,
   },
-  price: { fontFamily: fontFamily.displayBold, fontSize: 19, lineHeight: 26, letterSpacing: -0.2 },
+  // Цифры одинаковой ширины: при пересчёте суммы строка не дёргается
+  price: {
+    fontFamily: fontFamily.displayBold,
+    fontSize: 19,
+    lineHeight: 26,
+    letterSpacing: -0.2,
+  },
   button: { fontFamily: fontFamily.display, fontSize: 16, lineHeight: 22, letterSpacing: -0.1 },
 } as const;
 
 export type TypographyToken = keyof typeof typography;
+
+/**
+ * Цифры одинаковой ширины. Отдельным стилем, а не частью токена: React Native
+ * ждёт здесь изменяемый массив, а весь набор токенов заморожен.
+ */
+export const tabularNums = { fontVariant: ["tabular-nums"] } as {
+  fontVariant: ["tabular-nums"];
+};

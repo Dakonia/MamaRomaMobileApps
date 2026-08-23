@@ -67,6 +67,8 @@ export function DishRow({ dish, quantity, onAdd, onChangeQuantity, onOpen }: Pro
         {dish.image_url ? (
           <Image
             source={{ uri: mediaUrl(dish.image_url) ?? undefined }}
+            placeholder={dish.image_blurhash ? { blurhash: dish.image_blurhash } : undefined}
+            placeholderContentFit="cover"
             style={styles.image}
             contentFit="cover"
             transition={200}
@@ -98,7 +100,7 @@ export function DishRow({ dish, quantity, onAdd, onChangeQuantity, onOpen }: Pro
         ) : null}
 
         <View style={[styles.footer, { gap: theme.spacing.sm, marginTop: theme.spacing.sm }]}>
-          <Text style={[theme.typography.price, { color: theme.colors.textPrimary }]}>
+          <Text style={[theme.typography.price, theme.tabularNums, { color: theme.colors.textPrimary }]}>
             {formatPrice(dish.price_kopecks)}
           </Text>
 

@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base, ExternalSyncMixin, TenantMixin, TimestampMixin, UUIDMixin
@@ -43,8 +44,16 @@ class Order(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Base):
     persons_count: Mapped[int | None] = mapped_column(default=None)
     comment: Mapped[str | None] = mapped_column(Text, default=None)
 
+    # Сдача: с какой купюры готовить, когда платят наличными
+    change_from_kopecks: Mapped[int | None] = mapped_column(default=None)
+
     subtotal_kopecks: Mapped[int] = mapped_column(default=0)
     delivery_kopecks: Mapped[int] = mapped_column(default=0)
+    # Приборы платные: держим отдельной строкой, чтобы было видно в чеке
+    cutlery_kopecks: Mapped[int] = mapped_column(default=0)
+    # Скидка по промокоду и списанные баллы считаем отдельно: в чеке это разные строки
+    promo_code: Mapped[str | None] = mapped_column(String(32), default=None)
+    promo_discount_kopecks: Mapped[int] = mapped_column(default=0)
     discount_kopecks: Mapped[int] = mapped_column(default=0)
     points_spent: Mapped[int] = mapped_column(default=0)
     points_earned: Mapped[int] = mapped_column(default=0)
@@ -80,6 +89,10 @@ class OrderItem(UUIDMixin, TenantMixin, TimestampMixin, Base):
     )
 
     name: Mapped[str] = mapped_column(String(200))
+    # Снимок фотографии на момент заказа: блюдо потом могли переснять или убрать
+    image_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    # Выбранные добавки снимком: [{"name": "бекон 50 гр", "price_kopecks": 9500}]
+    extras: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list)
     unit_price_kopecks: Mapped[int]
     quantity: Mapped[int] = mapped_column(default=1)
     total_kopecks: Mapped[int]

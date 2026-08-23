@@ -7,7 +7,10 @@ export type Restaurant = components['schemas']['RestaurantRead'];
 export type Menu = components['schemas']['MenuRead'];
 export type MenuCategory = components['schemas']['MenuCategoryRead'];
 export type Dish = components['schemas']['DishRead'];
+export type DishExtra = components['schemas']['DishExtraRead'];
 export type Session = components['schemas']['SessionRead'];
+export type SignupRequired = components['schemas']['SignupRequired'];
+export type SignupRequest = components['schemas']['SignupRequest'];
 export type Profile = components['schemas']['ProfileRead'];
 export type Guest = components['schemas']['GuestRead'];
 export type Loyalty = components['schemas']['LoyaltyRead'];
@@ -19,14 +22,73 @@ export type Reservation = components['schemas']['ReservationRead'];
 export type ReservationCreate = components['schemas']['ReservationCreate'];
 export type Slot = components['schemas']['SlotRead'];
 export type Address = components['schemas']['AddressRead'];
+export type CheckoutPreview = components['schemas']['CheckoutPreview'];
+export type CheckoutPreviewRequest = components['schemas']['CheckoutPreviewRequest'];
 export type AddressCreate = components['schemas']['AddressCreate'];
+export type AddressUpdate = components['schemas']['AddressUpdate'];
 export type GuestUpdate = components['schemas']['GuestUpdate'];
 export type Promotion = components['schemas']['PromotionRead'];
+export type DeliveryResolve = components['schemas']['DeliveryResolve'];
+export type GuestSummary = components['schemas']['GuestSummary'];
+export type FavouriteDish = components['schemas']['FavouriteDish'];
+
+export type AddressSuggestion = components['schemas']['AddressSuggestion'];
 
 let accessToken: string | null = null;
+let refreshToken: string | null = null;
+let refreshing: Promise<boolean> | null = null;
+
+type TokenListener = (tokens: { access: string; refresh: string } | null) => void;
+let onTokensChanged: TokenListener = () => {};
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+}
+
+export function setTokens(access: string | null, refresh: string | null) {
+  accessToken = access;
+  refreshToken = refresh;
+}
+
+/** Хранилище подписывается сюда, чтобы класть обновлённую пару в secure-store. */
+export function onTokens(listener: TokenListener) {
+  onTokensChanged = listener;
+}
+
+/**
+ * Доступ живёт полчаса, refresh — два месяца. Меняем пару молча, чтобы гость
+ * не видел экран входа, пока не разлогинится сам. Параллельные запросы ждут
+ * один и тот же обмен, иначе сервер отзовёт свежий токен как повторно использованный.
+ */
+async function refreshTokens(): Promise<boolean> {
+  if (!refreshToken) return false;
+
+  refreshing ??= (async () => {
+    try {
+      const response = await fetch(`${apiUrl}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenant.id },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!response.ok) {
+        setTokens(null, null);
+        onTokensChanged(null);
+        return false;
+      }
+
+      const session = (await response.json()) as Session;
+      setTokens(session.access_token, session.refresh_token);
+      onTokensChanged({ access: session.access_token, refresh: session.refresh_token });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+
+  return refreshing;
 }
 
 export class ApiError extends Error {
@@ -39,7 +101,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
   let response: Response;
 
   try {
@@ -57,12 +119,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, 'Нет связи с сервером. Проверьте интернет');
   }
 
+  if (response.status === 401 && retry && refreshToken) {
+    const renewed = await refreshTokens();
+    if (renewed) {
+      return request<T>(path, init, false);
+    }
+  }
+
   if (!response.ok) {
     let message = 'Что-то пошло не так. Попробуйте ещё раз';
     try {
       const body = (await response.json()) as { detail?: unknown };
       if (typeof body.detail === 'string') {
         message = body.detail;
+      } else if (Array.isArray(body.detail)) {
+        // 422 от проверки схемы приходит списком — берём первую понятную строку,
+        // иначе на экране оставался бы общий текст «что-то пошло не так»
+        const first = body.detail.find(
+          (row): row is { msg?: string; loc?: unknown[] } =>
+            typeof row === 'object' && row !== null,
+        );
+        const where = Array.isArray(first?.loc) ? String(first.loc.at(-1) ?? '') : '';
+        if (first?.msg) message = where ? `${first.msg} (${where})` : first.msg;
       }
     } catch {
       // тело не JSON — оставляем общий текст
@@ -108,11 +186,15 @@ export const api = {
       body: JSON.stringify({ phone }),
     }),
 
+  // Знакомый номер даёт сессию, незнакомый — билет на регистрацию
   verifyCode: (phone: string, code: string) =>
-    request<Session>('/api/v1/auth/verify', {
+    request<Session | SignupRequired>('/api/v1/auth/verify', {
       method: 'POST',
       body: JSON.stringify({ phone, code }),
     }),
+
+  signup: (payload: SignupRequest) =>
+    request<Session>('/api/v1/auth/signup', { method: 'POST', body: JSON.stringify(payload) }),
 
   me: () => request<Profile>('/api/v1/auth/me'),
 
@@ -145,16 +227,76 @@ export const api = {
   updateMe: (payload: GuestUpdate) =>
     request<Guest>('/api/v1/me', { method: 'PATCH', body: JSON.stringify(payload) }),
 
+  summary: () => request<GuestSummary>('/api/v1/me/summary'),
+
   addresses: () => request<Address[]>('/api/v1/addresses'),
+
+  // Счёт по корзине считает сервер: цены, зона, минимум и баллы — одни правила
+  // и для этого экрана, и для самого заказа
+  checkoutPreview: (payload: CheckoutPreviewRequest) =>
+    request<CheckoutPreview>('/api/v1/orders/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  suggestAddresses: (text: string, cityId?: string) =>
+    request<AddressSuggestion[]>(
+      `/api/v1/addresses/suggest${query({ query: text, city_id: cityId })}`,
+    ),
+
+  // Кто везёт на эти координаты и на каких условиях
+  resolveDelivery: (latitude: number, longitude: number, cityId?: string) =>
+    request<DeliveryResolve>(
+      `/api/v1/delivery/resolve${query({
+        latitude: String(latitude),
+        longitude: String(longitude),
+        city_id: cityId,
+      })}`,
+    ),
+
+  locateAddress: (latitude: number, longitude: number) =>
+    request<AddressSuggestion | null>(
+      `/api/v1/addresses/locate${query({
+        latitude: String(latitude),
+        longitude: String(longitude),
+      })}`,
+    ),
 
   addAddress: (payload: AddressCreate) =>
     request<Address>('/api/v1/addresses', { method: 'POST', body: JSON.stringify(payload) }),
 
-  promotions: (restaurantId?: string) =>
-    request<Promotion[]>(`/api/v1/promotions${query({ restaurant_id: restaurantId })}`),
+  // inMenu=true — карусель меню, там только акции доставки
+  promotions: (restaurantId?: string, inMenu?: boolean) =>
+    request<Promotion[]>(
+      `/api/v1/promotions${query({
+        restaurant_id: restaurantId,
+        in_menu: inMenu === undefined ? undefined : String(inMenu),
+      })}`,
+    ),
+
+  updateAddress: (id: string, payload: AddressUpdate) =>
+    request<Address>(`/api/v1/addresses/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
 
   deleteAddress: async (id: string) => {
     await request<unknown>(`/api/v1/addresses/${id}`, { method: 'DELETE' });
+  },
+
+  /** Устройство для пушей: токен обновляется при каждом запуске. */
+  registerDevice: async (payload: {
+    push_token: string;
+    platform: 'ios' | 'android';
+    app_version: string | null;
+  }) => {
+    await request<unknown>('/api/v1/devices', { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
+  forgetDevice: async (token: string) => {
+    await request<unknown>(`/api/v1/devices/${encodeURIComponent(token)}`, { method: 'DELETE' });
+  },
+
+  /** Удаление аккаунта: личные данные стираются, войти под ним больше нельзя. */
+  deleteAccount: async () => {
+    await request<unknown>('/api/v1/me', { method: 'DELETE' });
   },
 };
 

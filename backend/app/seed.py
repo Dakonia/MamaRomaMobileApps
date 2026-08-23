@@ -105,7 +105,13 @@ async def seed() -> None:
             select(City).where(City.tenant_id == TENANT_ID, City.slug == "spb")
         )
         if city is None:
-            city = City(tenant_id=TENANT_ID, name="Санкт-Петербург", slug="spb", sort_order=1)
+            city = City(
+                tenant_id=TENANT_ID,
+                name="Санкт-Петербург",
+                slug="spb",
+                sort_order=1,
+                suggest_regions=["78", "47"],  # Петербург и Ленинградская область
+            )
             session.add(city)
             await session.flush()
 

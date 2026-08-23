@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 30
     refresh_token_ttl_days: int = 60
     staff_token_ttl_hours: int = 12
+    # Столько есть на то, чтобы назвать имя после кода из SMS
+    signup_token_ttl_minutes: int = 20
 
     default_tenant_id: str = "mamaroma"
 
@@ -60,6 +62,18 @@ class Settings(BaseSettings):
         r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|"
         r"172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?"
     )
+
+    # Подсказки адресов. DaData знает российские дома вместе с корпусами и
+    # строениями и отвечает за десятки миллисекунд; без токена откатываемся
+    # на открытую карту OpenStreetMap — она медленная и знает не всё.
+    dadata_token: str = ""
+    # Секретный ключ нужен только стандартизации — она добирает метро и КАД.
+    # На бесплатном тарифе её лимит 100 запросов в сутки против 10 000 у подсказок,
+    # поэтому по умолчанию сохраняем адрес по подсказке, а стандартизацию держим
+    # как запасной вариант. На платном тарифе достаточно поднять флаг.
+    dadata_secret: str = ""
+    dadata_clean_addresses: bool = False
+    yandex_geocoder_key: str = ""
 
     sms_provider_api_key: str = ""
     yookassa_shop_id: str = ""

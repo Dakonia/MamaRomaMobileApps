@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { Text, View } from 'react-native';
 import type { ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tenant } from '@/lib/tenant';
+import { cartCount, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -20,11 +22,56 @@ export default function TabsLayout() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { features } = tenant;
+  const count = useCart((state) => cartCount(state.items));
+
+  /**
+   * Корзина по центру, вровень с остальными вкладками: приподнятый круг с серой
+   * заливкой выглядел чужеродно. Счётчик рисуем сами — системный значок
+   * налезает на сумку.
+   */
+  const cartIcon = ({ focused, color }: { focused: boolean; color: ColorValue }) => {
+    const filled = count > 0;
+
+    return (
+      <View style={{ width: 30, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons
+          name={filled || focused ? 'bag-handle' : 'bag-handle-outline'}
+          size={24}
+          color={filled ? theme.colors.brand : color}
+        />
+
+        {filled ? (
+          <View
+            style={{
+              position: 'absolute',
+              top: -5,
+              right: -8,
+              minWidth: 17,
+              height: 17,
+              paddingHorizontal: 4,
+              borderRadius: theme.radius.pill,
+              borderWidth: 2,
+              borderColor: theme.colors.surface,
+              backgroundColor: theme.colors.brand,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 10, fontWeight: '700', color: theme.colors.textOnBrand }}>
+              {count > 99 ? '99+' : count}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Экраны вкладок не подменяются рывком, а мягко проявляются
+        animation: 'fade',
         tabBarActiveTintColor: theme.colors.brand,
         tabBarInactiveTintColor: theme.colors.textTertiary,
         // Полоса ровно под содержимое: иконка, подпись и системный индикатор снизу
@@ -56,11 +103,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="bonus"
+        name="cart"
         options={{
-          title: 'Бонусы',
-          tabBarIcon: tabIcon('gift-outline', 'gift'),
-          href: features.loyalty ? undefined : null,
+          title: 'Корзина',
+          tabBarIcon: cartIcon,
+          // Оформление — отдельный экран: вкладки внизу тут только мешают,
+          // кнопка «Оформить» должна стоять у самого края
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen

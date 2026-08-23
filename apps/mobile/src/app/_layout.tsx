@@ -9,38 +9,84 @@ import {
   Onest_600SemiBold,
   Onest_700Bold,
 } from '@expo-google-fonts/onest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useFonts } from 'expo-font';
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider as NavigationThemeProvider,
 } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { router, Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { BootSplash } from '@/components/boot-splash';
+import { ErrorBoundary } from '@/components/error-boundary';
+import { OfflineScreen } from '@/components/offline-screen';
+import { UpdateReady } from '@/components/update-ready';
+import { UpdateGate } from '@/components/update-gate';
+import { startAnalytics, trackError, trackScreen } from '@/lib/analytics';
+import * as Notifications from 'expo-notifications';
+
+import { useBoot } from '@/lib/boot';
+import { persistOptions, queryClient } from '@/lib/query-client';
 import { useSession } from '@/store/session';
 import { darkTheme, lightTheme } from '@/theme';
 import { ThemeProvider } from '@/theme/theme-provider';
 
 SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 60_000,
-      retry: 2,
-      refetchOnWindowFocus: false,
-    },
-  },
+// Сбор аналитики и падений включаем до первого экрана: интересны и те ошибки,
+// что случаются на запуске
+startAnalytics();
+
+// Ошибки вне отрисовки — в промисах и обработчиках — иначе теряются молча
+const previousHandler = ErrorUtils.getGlobalHandler();
+ErrorUtils.setGlobalHandler((error, fatal) => {
+  trackError(fatal ? 'Падение приложения' : 'Ошибка в обработчике', error);
+  previousHandler?.(error, fatal);
+});
+
+// Реакту нужно рассказать, что «фокус» на телефоне — это выход из фона
+AppState.addEventListener('change', (status) => {
+  focusManager.setFocused(status === 'active');
 });
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  // Заставка играет один раз за запуск и уходит, когда данные уже в памяти
+  const [booting, setBooting] = useState(true);
+  const boot = useBoot();
+  const pathname = usePathname();
+
+  // Экран, на котором сейчас гость: из этого собирается воронка
+  useEffect(() => {
+    trackScreen(pathname);
+  }, [pathname]);
+
+  // Нажали на уведомление — открываем сам заказ, а не главный экран
+  useEffect(() => {
+    const open = (data: Record<string, unknown> | undefined) => {
+      if (data?.screen === 'order' && typeof data.orderId === 'string') {
+        router.push(`/order/${data.orderId}`);
+      }
+    };
+
+    // Приложение запустили нажатием на уведомление из закрытого состояния
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      open(response?.notification.request.content.data);
+    });
+
+    const listener = Notifications.addNotificationResponseReceivedListener((response) => {
+      open(response.notification.request.content.data);
+    });
+
+    return () => listener.remove();
+  }, []);
   const isDark = colorScheme === 'dark';
   const theme = isDark ? darkTheme : lightTheme;
 
@@ -54,12 +100,16 @@ export default function RootLayout() {
     Onest_700Bold,
   });
 
-  const restore = useSession((state) => state.restore);
+  const status = useSession((state) => state.status);
 
+  // Сменился гость — выбрасываем чужие адреса и заказы из памяти запросов
   useEffect(() => {
-    // Токен лежит в secure-store: поднимаем сессию до первого экрана
-    void restore();
-  }, [restore]);
+    if (status === 'anonymous') {
+      queryClient.removeQueries({ queryKey: ['addresses'] });
+      queryClient.removeQueries({ queryKey: ['orders'] });
+      queryClient.removeQueries({ queryKey: ['guest-summary'] });
+    }
+  }, [status]);
 
   useEffect(() => {
     if (fontsLoaded) {
@@ -84,8 +134,9 @@ export default function RootLayout() {
   };
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+      <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
         <ThemeProvider>
           <NavigationThemeProvider value={navigationTheme}>
             <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -98,18 +149,49 @@ export default function RootLayout() {
               <Stack.Screen
                 name="dish/[id]"
                 options={{
-                  // Обычный экран, а не модалка: работает системный свайп от края назад
-                  animation: 'slide_from_right',
+                  // Обычный экран, а не модалка: работает системный свайп от края назад.
+                  // Экран проявляется, а не въезжает: движение делает летящее фото
+                  animation: 'fade',
+                  animationDuration: 220,
                   gestureEnabled: true,
                 }}
               />
               <Stack.Screen name="promo/[id]" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="profile-edit" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="addresses" options={{ presentation: 'modal' }} />
+              {/* Разделы профиля: в них заходят вглубь, поэтому обычные экраны
+                  со стрелкой назад и системным свайпом от края */}
+              <Stack.Screen
+                name="profile-edit"
+                options={{ animation: 'slide_from_right', gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="addresses"
+                options={{ animation: 'slide_from_right', gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="reservations"
+                options={{ animation: 'slide_from_right', gestureEnabled: true }}
+              />
+              <Stack.Screen name="address-form" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="address-map" options={{ presentation: 'modal' }} />
             </Stack>
+
+            <UpdateReady />
+            <OfflineScreen />
+
+            {/* Заслон поверх всего: со старой сборкой дальше идти нельзя */}
+            <UpdateGate />
+
+            {booting ? (
+              <BootSplash
+                progress={boot.progress}
+                ready={boot.ready && fontsLoaded}
+                onDone={() => setBooting(false)}
+              />
+            ) : null}
           </NavigationThemeProvider>
         </ThemeProvider>
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+      </PersistQueryClientProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }

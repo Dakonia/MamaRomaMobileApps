@@ -80,6 +80,58 @@ def create_token(subject_id: UUID, tenant_id: str, kind: TokenKind) -> str:
     return token
 
 
+def generate_card_number() -> str:
+    """Шесть цифр — столько гость сможет продиктовать по телефону и набрать кассир."""
+    return f"{secrets.randbelow(900000) + 100000}"
+
+
+def card_barcode(card_number: str) -> str:
+    """
+    Тот же номер в виде EAN-13 для сканера: префикс 26 зарезервирован под
+    внутренние коды сетей, дальше нули, шесть цифр карты и контрольная сумма.
+    Кассир видит на экране короткий номер, сканер читает длинный — это один код.
+    """
+    body = f"260000{card_number.zfill(6)}"
+    checksum = sum(int(digit) * (3 if index % 2 else 1) for index, digit in enumerate(body))
+    return f"{body}{(10 - checksum % 10) % 10}"
+
+
+def create_signup_token(phone: str, tenant_id: str) -> str:
+    """
+    Билет на регистрацию: телефон уже подтверждён кодом, но гостя в базе ещё нет.
+    Он появится, только когда человек назовёт имя. Бросил на полпути — в базе
+    не осталось ничего, а билет протухнет сам.
+    """
+    now = datetime.now(UTC)
+    payload = {
+        "sub": phone,
+        "tenant": tenant_id,
+        "kind": "signup",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=settings.signup_token_ttl_minutes)).timestamp()),
+    }
+    token: str = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return token
+
+
+def decode_signup_token(token: str) -> tuple[str, str]:
+    """Возвращает подтверждённый телефон и тенанта."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError as exc:
+        raise InvalidTokenError("Регистрация просрочена, начните заново") from exc
+
+    if payload.get("kind") != "signup":
+        raise InvalidTokenError("Токен не того типа")
+
+    phone = str(payload.get("sub", ""))
+    tenant_id = str(payload.get("tenant", ""))
+    if not phone or not tenant_id:
+        raise InvalidTokenError("Токен неполный")
+
+    return phone, tenant_id
+
+
 def decode_token(token: str, expected_kind: TokenKind) -> tuple[UUID, str]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])

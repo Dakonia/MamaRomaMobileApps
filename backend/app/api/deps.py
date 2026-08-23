@@ -52,7 +52,7 @@ async def get_current_guest(
     guest = await session.scalar(
         select(Guest).where(Guest.id == guest_id, Guest.tenant_id == tenant.id)
     )
-    if guest is None or guest.is_blocked:
+    if guest is None or guest.is_blocked or guest.deleted_at is not None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Гость не найден")
 
     return guest

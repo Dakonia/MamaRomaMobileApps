@@ -1,7 +1,22 @@
-import { lightColors, radius, spacing, typography } from "@mr/design-tokens";
+import { radius, spacing, typography } from "@mr/design-tokens";
 import type { CSSProperties, ReactNode } from "react";
 
-export const c = lightColors;
+import { admin } from "./theme";
+
+/**
+ * Цвета админки берём из своей палитры, а не из токенов приложения: у витрины
+ * сети и у рабочего инструмента разные задачи. Размеры, скругления и шрифтовая
+ * шкала общие — они нейтральны.
+ */
+export const c = {
+  ...admin,
+  brand: admin.accent,
+  brandPressed: admin.accentPressed,
+  brandSubtle: admin.accentSubtle,
+  textOnBrand: admin.textOnAccent,
+  backgroundAlt: admin.background,
+  onDanger: "#FFFFFF",
+};
 
 export const styles = {
   page: {

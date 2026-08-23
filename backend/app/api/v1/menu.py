@@ -1,12 +1,15 @@
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from app.api.deps import SessionDep, TenantDep
 from app.models.geo import City, Restaurant
-from app.schemas.menu import CityRead, DishRead, MenuRead, RestaurantRead
+from app.schemas.menu import CityRead, DeliveryResolve, DishRead, MenuRead, RestaurantRead
+from app.services import delivery as delivery_service
 from app.services import menu as menu_service
 
 router = APIRouter(tags=["Меню"])
@@ -66,3 +69,44 @@ async def get_menu(
     restaurant_id: Annotated[UUID | None, Query()] = None,
 ) -> MenuRead:
     return await menu_service.get_menu(session, tenant.id, restaurant_id)
+
+
+@router.get("/delivery/resolve", summary="Кто везёт на этот адрес")
+async def resolve_delivery(
+    session: SessionDep,
+    tenant: TenantDep,
+    latitude: Annotated[float, Query(ge=-90, le=90)],
+    longitude: Annotated[float, Query(ge=-180, le=180)],
+    city_id: Annotated[UUID | None, Query()] = None,
+) -> DeliveryResolve:
+    match = await delivery_service.resolve(session, tenant, latitude, longitude, city_id)
+    if match is None:
+        return DeliveryResolve(covered=False)
+
+    zone = match.zone
+    restaurant = match.restaurant
+
+    # Минимум зависит от дня недели, а часы доставки — от ресторана
+    now = datetime.now(UTC).astimezone(ZoneInfo(tenant.timezone))
+    weekend = now.weekday() >= 4
+    minimum = zone.min_order_kopecks
+    if weekend and zone.min_order_weekend_kopecks is not None:
+        minimum = zone.min_order_weekend_kopecks
+
+    opens = restaurant.delivery_opens_at
+    closes = restaurant.delivery_closes_at
+    open_now = True if opens is None or closes is None else opens <= now.time() <= closes
+
+    return DeliveryResolve(
+        covered=not restaurant.is_paused,
+        restaurant=RestaurantRead.model_validate(restaurant),
+        zone_name=zone.name,
+        delivery_price_kopecks=zone.delivery_price_kopecks,
+        min_order_kopecks=minimum,
+        free_delivery_from_kopecks=zone.free_delivery_from_kopecks,
+        delivery_minutes=zone.delivery_minutes,
+        delivery_opens_at=opens,
+        delivery_closes_at=closes,
+        delivery_open_now=open_now,
+        paused_reason=restaurant.pause_reason if restaurant.is_paused else None,
+    )

@@ -16,6 +16,15 @@ export interface TenantStores {
   androidPackage: string;
   scheme: string;
   appStoreId?: string;
+
+  /** Ниже этой версии приложение не пускает к экранам: API уже несовместим. */
+  minSupportedVersion?: string;
+  /** Свежая версия в магазинах: о ней просто сообщаем. */
+  latestVersion?: string;
+
+  appStoreUrl?: string;
+  googlePlayUrl?: string;
+  ruStoreUrl?: string;
 }
 
 export interface TenantFeatures {
@@ -30,6 +39,8 @@ export interface TenantFeatures {
 export interface TenantLoyaltyTier {
   code: string;
   title: string;
+  /** Перевод названия на русский: «Amico» гостю ни о чём не говорит, «Друг» — говорит. */
+  note: string;
   cashbackPercent: number;
   thresholdRub: number;
 }
@@ -40,7 +51,14 @@ export interface TenantLoyalty {
   pointsExpireAfterDays: number;
   welcomeBonus: number;
   birthdayBonus: number;
+  /** Можно ли гасить баллами стоимость доставки. */
+  pointsCoverDelivery: boolean;
   tiers: TenantLoyaltyTier[];
+}
+
+export interface TenantOrdering {
+  /** Сколько стоит один комплект приборов, в копейках. */
+  cutleryPriceKopecks: number;
 }
 
 export interface TenantConfig {
@@ -50,6 +68,7 @@ export interface TenantConfig {
   stores: TenantStores;
   features: TenantFeatures;
   loyalty: TenantLoyalty;
+  ordering: TenantOrdering;
   supportPhone: string;
   supportEmail: string;
   websiteUrl: string;

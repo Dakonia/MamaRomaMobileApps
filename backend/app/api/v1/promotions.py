@@ -6,8 +6,9 @@ from fastapi import APIRouter, Query
 from sqlalchemy import or_, select
 
 from app.api.deps import SessionDep, TenantDep
-from app.models.promotion import Promotion
+from app.models.promotion import Promotion, promotion_restaurants
 from app.schemas.promotion import PromotionRead
+from app.services import promotions as promotion_service
 
 router = APIRouter(tags=["Акции"])
 
@@ -17,6 +18,7 @@ async def promotions(
     session: SessionDep,
     tenant: TenantDep,
     restaurant_id: Annotated[UUID | None, Query()] = None,
+    in_menu: Annotated[bool | None, Query()] = None,
 ) -> list[PromotionRead]:
     now = datetime.now(UTC)
 
@@ -27,11 +29,19 @@ async def promotions(
         or_(Promotion.ends_at.is_(None), Promotion.ends_at > now),
     )
 
-    # Акция без ресторана действует везде, с рестораном — только в нём
+    # Карусель в меню просит только акции доставки, вкладка «Акции» — все
+    if in_menu is not None:
+        query = query.where(Promotion.show_in_menu.is_(in_menu))
+
+    # Акция без ресторанов действует везде, со списком — только в них
     if restaurant_id is not None:
-        query = query.where(
-            or_(Promotion.restaurant_id.is_(None), Promotion.restaurant_id == restaurant_id)
+        mine = select(promotion_restaurants.c.promotion_id).where(
+            promotion_restaurants.c.restaurant_id == restaurant_id
         )
+        anywhere = ~select(promotion_restaurants.c.promotion_id).where(
+            promotion_restaurants.c.promotion_id == Promotion.id
+        ).exists()
+        query = query.where(or_(anywhere, Promotion.id.in_(mine)))
 
     rows = await session.scalars(query.order_by(Promotion.sort_order, Promotion.created_at.desc()))
-    return [PromotionRead.model_validate(row) for row in rows]
+    return [promotion_service.to_read(row) for row in rows]
