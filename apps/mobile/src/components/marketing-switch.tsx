@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { api } from '@/api/client';
 import { track } from '@/lib/analytics';
+import { pushAllowed } from '@/lib/push';
+import { usePushAsk } from '@/store/push-ask';
 import { useSession } from '@/store/session';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -18,7 +21,17 @@ export function MarketingSwitch() {
   const theme = useTheme();
   const session = useSession();
 
-  const on = session.guest?.marketing_opt_in ?? true;
+  // Согласие гостя — это одно, а разрешение телефона — другое. Акции доходят,
+  // только когда включено и то и другое, поэтому проверяем оба
+  const wanted = usePushAsk((state) => state.wanted);
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    void pushAllowed().then(setAllowed);
+  }, []);
+
+  const agreed = session.guest?.marketing_opt_in ?? true;
+  const live = agreed && wanted && allowed;
 
   const save = useMutation({
     mutationFn: (next: boolean) => api.updateMe({ marketing_opt_in: next }),
@@ -56,15 +69,24 @@ export function MarketingSwitch() {
           Акции и новости
         </Text>
         <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-          Новинки меню и специальные предложения
+          {agreed && !live
+            ? 'Уведомления выключены — акции не придут'
+            : 'Новинки меню и специальные предложения'}
         </Text>
       </View>
 
       <Switch
-        value={on}
+        value={live}
         disabled={save.isPending}
         onValueChange={(next) => {
           track('marketing_toggled', { on: next });
+
+          // Уведомления выключены целиком — сначала надо вернуть их
+          if (next && !allowed) {
+            void Linking.openSettings();
+            return;
+          }
+
           save.mutate(next);
         }}
         trackColor={{ false: theme.colors.border, true: theme.colors.brand }}

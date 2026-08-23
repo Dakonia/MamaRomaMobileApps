@@ -450,9 +450,7 @@ export default function ProfileScreen() {
             entering={FadeInDown.duration(340).delay(220)}
             style={{ gap: theme.spacing.md }}
           >
-            {title('Приложение')}
-            <PushSwitch />
-            <MarketingSwitch />
+            {title('Оформление')}
             <AppearanceSwitch />
           </Animated.View>
         ) : null}
@@ -461,6 +459,17 @@ export default function ProfileScreen() {
           {title('Связаться с нами')}
           {group(contacts)}
         </Animated.View>
+
+        {authorized ? (
+          <Animated.View
+            entering={FadeInDown.duration(340).delay(280)}
+            style={{ gap: theme.spacing.md }}
+          >
+            {title('Уведомления')}
+            <PushSwitch />
+            <MarketingSwitch />
+          </Animated.View>
+        ) : null}
 
         <Animated.View entering={FadeInDown.duration(340).delay(300)} style={{ gap: theme.spacing.md }}>
           {title('Документы')}
