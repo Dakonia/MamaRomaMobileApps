@@ -6,6 +6,7 @@ import { enablePush } from '@/lib/push';
 import { queryClient } from '@/lib/query-client';
 import { useAppearance } from '@/store/appearance';
 import { useCart } from '@/store/cart';
+import { usePushAsk } from '@/store/push-ask';
 import { useSession } from '@/store/session';
 
 /** Дольше этого гостя не держим: сеть может тупить, а меню грузится и на экране. */
@@ -36,6 +37,7 @@ function currentRestaurant(): string | undefined {
 const JOBS: (() => Promise<unknown>)[] = [
   () => useSession.getState().restore(),
   () => useAppearance.getState().restore(),
+  () => usePushAsk.getState().restore(),
   () => queryClient.prefetchQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() }),
   () =>
     queryClient.prefetchQuery({

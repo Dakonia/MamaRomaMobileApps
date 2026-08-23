@@ -15,6 +15,14 @@ from app.models.geo import City, Restaurant, RestaurantPhoto
 from app.models.guest import Device, Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishExtra, DishPrice, MenuCategory, StopListEntry
+from app.models.notification import (
+    Automation,
+    AutomationDelivery,
+    Campaign,
+    CampaignDelivery,
+    NotificationHours,
+    NotificationRule,
+)
 from app.models.order import Order, OrderItem
 from app.models.promo_code import PromoCode
 from app.models.promotion import Promotion
@@ -23,6 +31,10 @@ from app.models.staff import StaffUser
 from app.models.sync import SyncChange, SyncRun
 
 __all__ = [
+    "Automation",
+    "AutomationDelivery",
+    "Campaign",
+    "CampaignDelivery",
     "City",
     "Device",
     "DevicePlatform",
@@ -36,6 +48,8 @@ __all__ = [
     "LoyaltyOperation",
     "LoyaltyTransaction",
     "MenuCategory",
+    "NotificationHours",
+    "NotificationRule",
     "Order",
     "OrderItem",
     "OrderStatus",

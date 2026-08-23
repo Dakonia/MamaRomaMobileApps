@@ -74,6 +74,30 @@ class DevicePlatform(StrEnum):
     ANDROID = "android"
 
 
+class NotificationKind(StrEnum):
+    """Заказы приходят всегда, рекламные — по согласию и в рабочие часы."""
+
+    ORDER = "order"
+    MARKETING = "marketing"
+
+
+class CampaignStatus(StrEnum):
+    DRAFT = "draft"
+    SCHEDULED = "scheduled"
+    SENDING = "sending"
+    SENT = "sent"
+    CANCELLED = "cancelled"
+
+
+class TriggerKind(StrEnum):
+    """Поводы написать, которые наступают сами."""
+
+    BIRTHDAY = "birthday"
+    INACTIVE = "inactive"
+    ABANDONED_CART = "abandoned_cart"
+    POINTS_EXPIRING = "points_expiring"
+
+
 def enum_column(enum_cls: type[StrEnum]) -> SAEnum:
     """Перечисление хранится строкой с CHECK, а не нативным типом Postgres.
 

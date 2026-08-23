@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -437,3 +438,99 @@ class DishExtraAdminRead(BaseModel):
     dishes_count: int = 0
     # Разделы, где добавка предлагается ко всем блюдам
     category_ids: list[UUID] = []
+
+
+# --- Уведомления ---------------------------------------------------------
+
+
+class RuleRead(BaseModel):
+    """Шаг заказа: пишем ли гостю и какими словами."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID | None = None
+    restaurant_id: UUID | None = None
+    event: str
+    is_enabled: bool
+    title: str
+    body: str
+
+
+class RuleWrite(BaseModel):
+    restaurant_id: UUID | None = None
+    event: str = Field(min_length=3, max_length=40)
+    is_enabled: bool = True
+    title: str = Field(min_length=2, max_length=120)
+    body: str = Field(min_length=2, max_length=240)
+
+
+class HoursRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    quiet_from: time
+    quiet_to: time
+    weekly_limit: int
+
+
+class HoursWrite(BaseModel):
+    quiet_from: time
+    quiet_to: time
+    weekly_limit: int = Field(default=2, ge=0, le=14)
+
+
+class CampaignRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    title: str
+    body: str
+    image_url: str | None
+    kind: str
+    status: str
+    target: dict[str, str]
+    audience: dict[str, Any]
+    scheduled_at: datetime | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    planned_count: int
+    sent_count: int
+    opened_count: int
+    error: str | None
+
+
+class CampaignWrite(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    title: str = Field(min_length=2, max_length=120)
+    body: str = Field(min_length=2, max_length=240)
+    image_url: str | None = Field(default=None, max_length=500)
+    target: dict[str, str] = Field(default_factory=dict)
+    audience: dict[str, Any] = Field(default_factory=dict)
+    scheduled_at: datetime | None = None
+
+
+class AudienceQuery(BaseModel):
+    audience: dict[str, Any] = Field(default_factory=dict)
+
+
+class AutomationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    trigger: str
+    is_enabled: bool
+    title: str
+    body: str
+    target: dict[str, str]
+    params: dict[str, int]
+    last_run_at: datetime | None
+    sent_count: int
+
+
+class AutomationWrite(BaseModel):
+    trigger: str = Field(min_length=3, max_length=40)
+    is_enabled: bool = False
+    title: str = Field(min_length=2, max_length=120)
+    body: str = Field(min_length=2, max_length=240)
+    target: dict[str, str] = Field(default_factory=dict)
+    params: dict[str, int] = Field(default_factory=dict)

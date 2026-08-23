@@ -46,6 +46,7 @@ import { formatPrice } from '@/lib/format';
 import { keyboardScroll } from '@/lib/keyboard';
 import { tenant } from '@/lib/tenant';
 import { cartCount, cartSubtotal, useCart } from '@/store/cart';
+import { usePushAsk } from '@/store/push-ask';
 import { track } from '@/lib/analytics';
 import { useSession } from '@/store/session';
 import { useTheme } from '@/theme/theme-provider';
@@ -409,6 +410,7 @@ export default function CartScreen() {
         promo: order.promo_code ?? null,
       });
 
+      usePushAsk.getState().revive();
       cart.clear();
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       void session.restore();

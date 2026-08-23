@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, insert, or_, select
 from app.api.deps import SessionDep, StaffDep, TenantDep
 from app.core.db import SessionLocal
 from app.core.security import create_token, normalize_phone, verify_password
-from app.models.enums import OrderStatus, ReservationStatus
+from app.models.enums import OrderStatus, ReservationStatus, TriggerKind
 from app.models.geo import City, DeliveryZone, Restaurant
 from app.models.guest import Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
@@ -21,6 +21,12 @@ from app.models.menu import (
     category_extra_links,
     dish_extra_links,
 )
+from app.models.notification import (
+    Automation,
+    Campaign,
+    NotificationHours,
+    NotificationRule,
+)
 from app.models.order import Order, OrderItem
 from app.models.promo_code import PromoCode
 from app.models.promotion import Promotion
@@ -28,6 +34,11 @@ from app.models.reservation import Reservation
 from app.models.staff import StaffUser
 from app.models.sync import SyncChange, SyncRun
 from app.schemas.admin import (
+    AudienceQuery,
+    AutomationRead,
+    AutomationWrite,
+    CampaignRead,
+    CampaignWrite,
     CategoryAdminRead,
     CategoryPatch,
     CategoryWrite,
@@ -45,6 +56,8 @@ from app.schemas.admin import (
     GuestPointsRead,
     GuestReservationRead,
     GuestWrite,
+    HoursRead,
+    HoursWrite,
     OrderStatusWrite,
     PromoCodePatch,
     PromoCodeRead,
@@ -55,6 +68,8 @@ from app.schemas.admin import (
     RestaurantDishRead,
     RestaurantPatch,
     RestaurantWrite,
+    RuleRead,
+    RuleWrite,
     StaffLogin,
     StaffRead,
     StaffSession,
@@ -72,6 +87,7 @@ from app.schemas.promotion import (
 )
 from app.schemas.reservation import ReservationRead
 from app.schemas.sync import SyncApply, SyncChangeRead, SyncRunRead
+from app.services import campaign as campaign_service
 from app.services import guest as guest_service
 from app.services import loyalty as loyalty_service
 from app.services import media as media_service
@@ -1540,3 +1556,195 @@ async def delete_extra(
 
     await session.delete(extra)
     await session.commit()
+
+
+# --- Уведомления -------------------------------------------------------------
+
+
+@router.get("/notifications/rules", summary="Правила уведомлений по шагам заказа")
+async def notification_rules(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[RuleRead]:
+    """Что сохранено в базе плюс заготовки для шагов, которых там ещё нет."""
+    saved = list(
+        await session.scalars(
+            select(NotificationRule).where(NotificationRule.tenant_id == tenant.id)
+        )
+    )
+    known = {(row.restaurant_id, row.event) for row in saved}
+    result = [RuleRead.model_validate(row) for row in saved]
+
+    for event, (enabled, title, body) in push_service.DEFAULT_RULES.items():
+        if (None, event.value) in known:
+            continue
+        result.append(
+            RuleRead(event=event.value, is_enabled=enabled, title=title, body=body)
+        )
+
+    # Порядок шагов заказа, а не алфавитный: менеджер читает их сверху вниз
+    order = [event.value for event in push_service.DEFAULT_RULES]
+    result.sort(key=lambda row: order.index(row.event) if row.event in order else len(order))
+    return result
+
+
+@router.put("/notifications/rules", summary="Изменить правило шага")
+async def save_notification_rule(
+    payload: RuleWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> RuleRead:
+    rule = await session.scalar(
+        select(NotificationRule).where(
+            NotificationRule.tenant_id == tenant.id,
+            NotificationRule.event == payload.event,
+            NotificationRule.restaurant_id.is_(payload.restaurant_id)
+            if payload.restaurant_id is None
+            else NotificationRule.restaurant_id == payload.restaurant_id,
+        )
+    )
+
+    if rule is None:
+        rule = NotificationRule(
+            tenant_id=tenant.id, event=payload.event, restaurant_id=payload.restaurant_id
+        )
+        session.add(rule)
+
+    rule.is_enabled = payload.is_enabled
+    rule.title = payload.title
+    rule.body = payload.body
+
+    await session.commit()
+    await session.refresh(rule)
+    return RuleRead.model_validate(rule)
+
+
+@router.get("/notifications/hours", summary="Тихие часы и частота рассылок")
+async def notification_hours(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> HoursRead:
+    hours = await session.scalar(
+        select(NotificationHours).where(
+            NotificationHours.tenant_id == tenant.id, NotificationHours.restaurant_id.is_(None)
+        )
+    )
+    if hours is None:
+        return HoursRead(quiet_from=time(22, 0), quiet_to=time(10, 0), weekly_limit=2)
+
+    return HoursRead.model_validate(hours)
+
+
+@router.put("/notifications/hours", summary="Изменить тихие часы")
+async def save_notification_hours(
+    payload: HoursWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> HoursRead:
+    hours = await session.scalar(
+        select(NotificationHours).where(
+            NotificationHours.tenant_id == tenant.id, NotificationHours.restaurant_id.is_(None)
+        )
+    )
+    if hours is None:
+        hours = NotificationHours(tenant_id=tenant.id)
+        session.add(hours)
+
+    hours.quiet_from = payload.quiet_from
+    hours.quiet_to = payload.quiet_to
+    hours.weekly_limit = payload.weekly_limit
+
+    await session.commit()
+    await session.refresh(hours)
+    return HoursRead.model_validate(hours)
+
+
+@router.get("/campaigns", summary="Рассылки")
+async def campaigns(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[CampaignRead]:
+    rows = await session.scalars(
+        select(Campaign).where(Campaign.tenant_id == tenant.id).order_by(Campaign.created_at.desc())
+    )
+    return [CampaignRead.model_validate(row) for row in rows]
+
+
+@router.post("/campaigns", status_code=status.HTTP_201_CREATED, summary="Создать рассылку")
+async def create_campaign(
+    payload: CampaignWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> CampaignRead:
+    campaign = Campaign(tenant_id=tenant.id, **payload.model_dump())
+    session.add(campaign)
+    await session.commit()
+    await session.refresh(campaign)
+    return CampaignRead.model_validate(campaign)
+
+
+@router.patch("/campaigns/{campaign_id}", summary="Изменить рассылку")
+async def update_campaign(
+    campaign_id: UUID,
+    payload: CampaignWrite,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> CampaignRead:
+    campaign = await session.scalar(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    )
+    if campaign is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Рассылка не найдена")
+
+    for field, value in payload.model_dump().items():
+        setattr(campaign, field, value)
+
+    await session.commit()
+    await session.refresh(campaign)
+    return CampaignRead.model_validate(campaign)
+
+
+@router.post("/campaigns/audience", summary="Сколько гостей попадёт в рассылку")
+async def campaign_audience(
+    payload: AudienceQuery, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> dict[str, int]:
+    return {"count": await campaign_service.preview_size(session, tenant, payload.audience)}
+
+
+@router.post("/campaigns/{campaign_id}/send", summary="Отправить рассылку сейчас")
+async def send_campaign_now(
+    campaign_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> CampaignRead:
+    campaign = await session.scalar(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    )
+    if campaign is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Рассылка не найдена")
+
+    await campaign_service.send_campaign(session, tenant, campaign)
+    await session.refresh(campaign)
+    return CampaignRead.model_validate(campaign)
+
+
+@router.get("/automations", summary="Сценарии")
+async def automations(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> list[AutomationRead]:
+    rows = await session.scalars(
+        select(Automation).where(Automation.tenant_id == tenant.id).order_by(Automation.trigger)
+    )
+    return [AutomationRead.model_validate(row) for row in rows]
+
+
+@router.put("/automations", summary="Изменить сценарий")
+async def save_automation(
+    payload: AutomationWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> AutomationRead:
+    rule = await session.scalar(
+        select(Automation).where(
+            Automation.tenant_id == tenant.id, Automation.trigger == payload.trigger
+        )
+    )
+    if rule is None:
+        rule = Automation(tenant_id=tenant.id, trigger=TriggerKind(payload.trigger))
+        session.add(rule)
+
+    rule.is_enabled = payload.is_enabled
+    rule.title = payload.title
+    rule.body = payload.body
+    rule.target = payload.target
+    rule.params = payload.params
+
+    await session.commit()
+    await session.refresh(rule)
+    return AutomationRead.model_validate(rule)

@@ -27,6 +27,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BootSplash } from '@/components/boot-splash';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OfflineScreen } from '@/components/offline-screen';
+import { PushInvite } from '@/components/push-invite';
 import { UpdateReady } from '@/components/update-ready';
 import { UpdateGate } from '@/components/update-gate';
 import { startAnalytics, trackError, trackScreen } from '@/lib/analytics';
@@ -71,9 +72,51 @@ export default function RootLayout() {
 
   // Нажали на уведомление — открываем сам заказ, а не главный экран
   useEffect(() => {
-    const open = (data: Record<string, unknown> | undefined) => {
-      if (data?.screen === 'order' && typeof data.orderId === 'string') {
-        router.push(`/order/${data.orderId}`);
+    /**
+     * Куда ведёт уведомление. Экран приходит меткой в самом сообщении, поэтому
+     * новые сценарии добавляются в админке, а не переписыванием приложения.
+     */
+    const open = (raw: Record<string, unknown> | undefined) => {
+      const screen = typeof raw?.screen === 'string' ? raw.screen : null;
+      const id = typeof raw?.id === 'string' ? raw.id : null;
+
+      if (screen === 'order' && typeof raw?.orderId === 'string') {
+        router.push(`/order/${raw.orderId}`);
+        return;
+      }
+
+      if (screen === 'promo' && id) {
+        router.push(`/promo/${id}`);
+        return;
+      }
+
+      if (screen === 'dish' && id) {
+        router.push(`/dish/${id}`);
+        return;
+      }
+
+      if (screen === 'promos') {
+        router.push('/(tabs)/promos');
+        return;
+      }
+
+      if (screen === 'menu') {
+        router.push('/(tabs)');
+        return;
+      }
+
+      if (screen === 'cart') {
+        router.push('/(tabs)/cart');
+        return;
+      }
+
+      if (screen === 'booking') {
+        router.push('/(tabs)/booking');
+        return;
+      }
+
+      if (screen === 'loyalty' || screen === 'profile') {
+        router.push('/(tabs)/profile');
       }
     };
 
@@ -176,6 +219,7 @@ export default function RootLayout() {
               <Stack.Screen name="address-map" options={{ presentation: 'modal' }} />
             </Stack>
 
+            <PushInvite />
             <UpdateReady />
             <OfflineScreen />
 
