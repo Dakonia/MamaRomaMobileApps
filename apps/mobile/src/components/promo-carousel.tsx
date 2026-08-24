@@ -9,9 +9,13 @@ import { useTheme } from '@/theme/theme-provider';
 type Props = {
   promotions: Promotion[];
   onOpen: (id: string) => void;
+  /** Ширина места под полку: по умолчанию весь экран. */
+  boxWidth?: number;
+  /** Отступ от краёв этого места. */
+  gutter?: number;
 };
 
-export function PromoCarousel({ promotions, onOpen }: Props) {
+export function PromoCarousel({ promotions, onOpen, boxWidth, gutter }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
 
@@ -20,7 +24,9 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
   }
 
   // Край следующей карточки виден — так понятно, что полку можно листать
-  const cardWidth = width - theme.layout.screenPadding * 2 - theme.spacing.xxl;
+  const box = boxWidth ?? width;
+  const side = gutter ?? theme.layout.screenPadding;
+  const cardWidth = box - side * 2 - theme.spacing.xxl;
   const step = cardWidth + theme.spacing.md;
 
   const list = useRef<ScrollView>(null);
@@ -60,7 +66,7 @@ export function PromoCarousel({ promotions, onOpen }: Props) {
         paused.current = false;
       }}
       contentContainerStyle={{
-        paddingHorizontal: theme.layout.screenPadding,
+        paddingHorizontal: side,
         gap: theme.spacing.md,
         paddingVertical: theme.spacing.sm,
       }}

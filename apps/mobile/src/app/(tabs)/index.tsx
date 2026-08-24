@@ -9,8 +9,8 @@ import Animated, {
   FadeIn,
   useAnimatedScrollHandler,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -43,6 +43,9 @@ import { useTheme } from '@/theme/theme-provider';
 // иначе каждый кадр дёргает JS и меню подтормаживает
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList<Row>);
 
+/** Свой раздел под хиты: настоящей категории с таким кодом в меню нет. */
+const POPULAR = 'popular';
+
 // Конфигурация видимости должна быть стабильной ссылкой: список не терпит подмены на лету
 const VIEWABILITY = { itemVisiblePercentThreshold: 40 };
 
@@ -50,7 +53,6 @@ type Row =
   | { kind: 'order'; key: string }
   | { kind: 'notice'; key: string }
   | { kind: 'promos'; key: string }
-  | { kind: 'popular'; key: string }
   | { kind: 'title'; key: string; categoryId: string; title: string }
   | { kind: 'pair'; key: string; categoryId: string; left: Dish; right: Dish | null };
 
@@ -71,12 +73,18 @@ export default function MenuScreen() {
   // списка и его верхнюю границу на экране
   const titleNodes = useRef<Record<string, View | null>>({});
   const scrollOffset = useSharedValue(0);
-  const listTop = useRef(0);
-  // Шапка сжимается при прокрутке: переключатель и адрес уезжают,
-  // остаются поиск и категории
-  const collapse = useSharedValue(0);
+  /**
+   * Шапка сжимается при прокрутке: переключатель и адрес уезжают, остаются
+   * поиск и категории. Уезжают именно сдвигом — высоту никто не меняет, иначе
+   * список пересобирается на каждом кадре и прокрутка дёргается
+   */
   const topHeight = useSharedValue(0);
-  const listWrapper = useRef<View>(null);
+  const [heroHeight, setHeroHeight] = useState(0);
+  const [topSize, setTopSize] = useState(0);
+
+  const collapse = useDerivedValue(() =>
+    topHeight.value === 0 ? 0 : Math.min(1, scrollOffset.value / topHeight.value),
+  );
   const [query, setQuery] = useState('');
   // Блюдо, которое гость держит пальцем: показываем крупно, не уходя с меню
   const [peek, setPeek] = useState<Dish | null>(null);
@@ -128,21 +136,17 @@ export default function MenuScreen() {
    * разный, иначе шапка хлопает у самой границы.
    */
   const onScroll = useAnimatedScrollHandler((event) => {
-    const offset = event.contentOffset.y;
-    scrollOffset.value = offset;
-
-    if (collapse.value < 0.5 && offset > 150) {
-      collapse.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) });
-    } else if (collapse.value > 0.5 && offset < 60) {
-      collapse.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.quad) });
-    }
+    scrollOffset.value = event.contentOffset.y;
   });
 
-  const topBlock = useAnimatedStyle(() => ({
-    opacity: 1 - collapse.value,
-    transform: [{ translateY: -10 * collapse.value }],
-    height: topHeight.value === 0 ? undefined : topHeight.value * (1 - collapse.value),
+  // Вся шапка едет вверх ровно на высоту уезжающего блока — поиск и категории
+  // останавливаются под строкой состояния и дальше стоят
+  const heroSlide = useAnimatedStyle(() => ({
+    transform: [{ translateY: -topHeight.value * collapse.value }],
   }));
+
+  // Уезжающий блок гаснет по дороге, чтобы не мелькать под строкой состояния
+  const topBlock = useAnimatedStyle(() => ({ opacity: 1 - collapse.value }));
 
   // Меню грузим всегда: пока адрес не выбран, показываем общее по сети —
   // иначе гость видит один скелетон и не понимает, что делать
@@ -268,10 +272,17 @@ export default function MenuScreen() {
     queryFn: () => api.popular(cart.restaurantId ?? undefined),
   });
 
-  const categories: CategoryChip[] = useMemo(
-    () => (menu.data?.categories ?? []).map((item) => ({ id: item.id, title: item.name })),
-    [menu.data],
-  );
+  /**
+   * Хиты — такая же категория меню, только собранная нами и поставленная
+   * первой. Отдельной полкой их принимали за что-то своё, хотя это те же блюда
+   */
+  const categories: CategoryChip[] = useMemo(() => {
+    const own = (menu.data?.categories ?? []).map((item) => ({ id: item.id, title: item.name }));
+
+    return (popular.data ?? []).length > 0
+      ? [{ id: POPULAR, title: 'Часто заказывают' }, ...own]
+      : own;
+  }, [menu.data, popular.data]);
 
   // Потянуть вниз: заново читаем меню, акции, хиты и статус заказа
   const refresher = useRefresher(async () => {
@@ -330,8 +341,26 @@ export default function MenuScreen() {
     if (cart.restaurantId === null) {
       result.push({ kind: 'notice', key: 'notice' });
     }
-    if ((popular.data ?? []).length > 0) {
-      result.push({ kind: 'popular', key: 'popular' });
+    // Часто заказывают — первая категория, до пиццы
+    const hits = popular.data ?? [];
+
+    if (hits.length > 0) {
+      result.push({
+        kind: 'title',
+        key: `t-${POPULAR}`,
+        categoryId: POPULAR,
+        title: 'Часто заказывают',
+      });
+
+      for (let index = 0; index < hits.length; index += 2) {
+        result.push({
+          kind: 'pair',
+          key: `p-${POPULAR}-${index}`,
+          categoryId: POPULAR,
+          left: hits[index],
+          right: hits[index + 1] ?? null,
+        });
+      }
     }
 
     for (const category of menu.data?.categories ?? []) {
@@ -400,7 +429,9 @@ export default function MenuScreen() {
         resolve(null);
         return;
       }
-      node.measureInWindow((_x, y) => resolve(y - listTop.current));
+      // Заголовок должен встать под неуезжающей частью шапки, а она плавает
+      // поверх списка — поэтому вычитаем её высоту, а не верх списка
+      node.measureInWindow((_x, y) => resolve(y - Math.max(0, heroHeight - topSize)));
     });
 
   const onViewable = useRef(
@@ -507,45 +538,31 @@ export default function MenuScreen() {
     }
 
     if (item.kind === 'promos') {
+      const frame = width - theme.layout.screenPadding * 2;
+
       return (
         <Animated.View
           entering={FadeIn.duration(theme.motion.duration.base)}
-          /* Тёмная лента поперёк белого каталога: полку акций нельзя спутать
-             с блюдами ни цветом, ни формой — раньше её принимали за еду */
-          style={{
-            backgroundColor: theme.colors.hero,
-            paddingTop: theme.spacing.base,
-            paddingBottom: theme.spacing.md,
-            gap: theme.spacing.md,
-          }}
+          style={{ paddingTop: theme.spacing.xl, paddingBottom: theme.spacing.md }}
         >
+          {/* Полку акций держит рамка, а не заливка: цветной блок спорил с
+              каталогом, а обводка просто отделяет её от блюд */}
           <View
-            style={[
-              styles.rowBetween,
-              { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
-            ]}
+            style={{
+              marginHorizontal: theme.layout.screenPadding,
+              borderWidth: 1.5,
+              borderColor: theme.colors.brand,
+              borderRadius: theme.radius.xl,
+              paddingTop: theme.spacing.md,
+              paddingBottom: theme.spacing.sm,
+            }}
           >
-            <View
-              style={[
-                styles.rowBetween,
-                {
-                  gap: theme.spacing.xs,
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xxs,
-                  borderRadius: theme.radius.sm,
-                  backgroundColor: theme.colors.brand,
-                },
-              ]}
-            >
-              <Ionicons name="pricetag" size={11} color={theme.colors.textOnBrand} />
-              <Text style={[theme.typography.overline, { color: theme.colors.textOnBrand }]}>
-                Акции
-              </Text>
-            </View>
-
-            <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.onHero }]}>
-              Скидки на доставку
-            </Text>
+            <PromoCarousel
+              promotions={promos.data ?? []}
+              onOpen={(promoId) => router.push(`/promo/${promoId}`)}
+              boxWidth={frame}
+              gutter={theme.spacing.md}
+            />
 
             <Pressable
               accessibilityRole="button"
@@ -554,110 +571,37 @@ export default function MenuScreen() {
               onPress={() => router.push('/(tabs)/promos')}
               style={[
                 styles.rowBetween,
-                {
-                  gap: theme.spacing.xxs,
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xxs,
-                  borderRadius: theme.radius.pill,
-                  backgroundColor: theme.colors.heroRaised,
-                },
+                styles.center,
+                { gap: theme.spacing.xxs, minHeight: theme.spacing.xxl },
               ]}
             >
-              <Text style={[theme.typography.caption, { color: theme.colors.onHero }]}>все</Text>
-              <Ionicons name="chevron-forward" size={12} color={theme.colors.onHero} />
+              <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>
+                Все акции
+              </Text>
+              <Ionicons name="chevron-forward" size={13} color={theme.colors.brand} />
             </Pressable>
           </View>
 
-          <PromoCarousel
-            promotions={promos.data ?? []}
-            onOpen={(promoId) => router.push(`/promo/${promoId}`)}
-          />
-        </Animated.View>
-      );
-    }
-
-    if (item.kind === 'popular') {
-      return (
-        /* Тёплая полка с местами в рейтинге: блюда те же, но это не каталог,
-           а витрина «что берут чаще всего» — и номера говорят это без слов */
-        <View
-          style={{
-            gap: theme.spacing.md,
-            paddingTop: theme.spacing.base,
-            paddingBottom: theme.spacing.sm,
-            backgroundColor: theme.colors.warningSubtle,
-          }}
-        >
+          {/* Подпись сидит на самой рамке — как ярлык на коробке */}
           <View
             style={[
               styles.rowBetween,
-              { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
+              styles.legend,
+              {
+                top: theme.spacing.xl - 8,
+                left: theme.layout.screenPadding + theme.spacing.base,
+                gap: theme.spacing.xs,
+                paddingHorizontal: theme.spacing.sm,
+                backgroundColor: theme.colors.backgroundAlt,
+              },
             ]}
           >
-            <View
-              style={[
-                styles.rowBetween,
-                {
-                  gap: theme.spacing.xs,
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xxs,
-                  borderRadius: theme.radius.sm,
-                  backgroundColor: theme.colors.highlight,
-                },
-              ]}
-            >
-              <Ionicons name="flame" size={11} color={theme.colors.onHighlight} />
-              <Text style={[theme.typography.overline, { color: theme.colors.onHighlight }]}>
-                Хиты
-              </Text>
-            </View>
-
-            <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.textPrimary }]}>
-              Чаще всего заказывают
+            <Ionicons name="pricetag" size={12} color={theme.colors.brand} />
+            <Text style={[theme.typography.overline, { color: theme.colors.brand }]}>
+              Акции на доставку
             </Text>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              paddingHorizontal: theme.layout.screenPadding,
-              gap: theme.spacing.md,
-              paddingBottom: theme.spacing.sm,
-            }}
-          >
-            {(popular.data ?? []).map((dish, place) => (
-              <View key={`pop-${dish.id}`}>
-                <DishCard
-                  dish={dish}
-                  width={cardWidth}
-                  quantity={quantityOf(dish.id)}
-                  onOpen={() => router.push(`/dish/${dish.id}`)}
-                  onPeek={() => setPeek(dish)}
-                  onAdd={() => cart.add(dish)}
-                  onChangeQuantity={(quantity) => cart.setQuantity(dish.id, quantity)}
-                />
-
-                {/* Место в рейтинге вместо плашки «Хит»: она была на каждой
-                    карточке и ничего не добавляла */}
-                <View
-                  style={[
-                    styles.place,
-                    styles.center,
-                    {
-                      backgroundColor: theme.colors.highlight,
-                      borderColor: theme.colors.warningSubtle,
-                    },
-                  ]}
-                >
-                  <Text style={[theme.typography.overline, { color: theme.colors.onHighlight }]}>
-                    {place + 1}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
+        </Animated.View>
       );
     }
 
@@ -737,12 +681,17 @@ export default function MenuScreen() {
   };
 
   const body = () => {
+    // Под шапкой: она плавает поверх, места в разметке не занимает
+    const under = (node: React.ReactNode) => (
+      <View style={[styles.grow, { paddingTop: heroHeight }]}>{node}</View>
+    );
+
     if (menu.isPending || restaurants.isPending) {
-      return <MenuSkeleton />;
+      return under(<MenuSkeleton />);
     }
 
     if (menu.isError || restaurants.isError) {
-      return (
+      return under(
         <EmptyState
           icon="cloud-offline-outline"
           title="Меню не загрузилось"
@@ -752,23 +701,24 @@ export default function MenuScreen() {
             void menu.refetch();
             void restaurants.refetch();
           }}
-        />
+        />,
       );
     }
 
     if (rows.length === 0) {
-      return (
+      return under(
         <EmptyState
           icon="restaurant-outline"
           title="Меню пустое"
           description="Блюда появятся, как только их заведут в админке."
-        />
+        />,
       );
     }
 
     return (
       <AnimatedFlashList
         refreshControl={refresher}
+        progressViewOffset={heroHeight}
         ref={listRef}
         {...keyboardScroll}
         onScroll={onScroll}
@@ -780,6 +730,9 @@ export default function MenuScreen() {
         onViewableItemsChanged={onViewable}
         viewabilityConfig={VIEWABILITY}
         contentContainerStyle={{
+          // Список лежит под шапкой во весь экран: отступ сверху постоянный,
+          // поэтому съезжающая шапка ничего не пересобирает
+          paddingTop: heroHeight,
           // Полоса вкладок занимает своё место в разметке и сама отступает от
           // системной полосы — добавлять её высоту сюда значит оставить пустоту
           paddingBottom: theme.spacing.xl,
@@ -816,9 +769,18 @@ export default function MenuScreen() {
         onCancel={() => setMoveReport(null)}
       />
 
-      <View
+      <Animated.View
+        key={cart.mode}
+        entering={FadeIn.duration(260)}
+        style={styles.grow}
+      >
+        {body()}
+      </Animated.View>
+
+      <Animated.View
         style={[
           styles.hero,
+          heroSlide,
           {
             backgroundColor: theme.colors.hero,
             paddingTop: insets.top + theme.spacing.sm,
@@ -826,6 +788,10 @@ export default function MenuScreen() {
             borderBottomRightRadius: theme.radius.xxl,
           },
         ]}
+        onLayout={(event) => {
+          const size = event.nativeEvent.layout.height;
+          if (size > 0) setHeroHeight((known) => (known === 0 ? size : known));
+        }}
       >
         <HeroPhoto />
 
@@ -837,7 +803,9 @@ export default function MenuScreen() {
             { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.md },
           ]}
           onLayout={(event) => {
-            if (topHeight.value === 0) topHeight.value = event.nativeEvent.layout.height;
+            const size = event.nativeEvent.layout.height;
+            if (topHeight.value === 0) topHeight.value = size;
+            if (size > 0) setTopSize((known) => (known === 0 ? size : known));
           }}
         >
           {/* Переключатель и корзина в одном ряду, адрес — во всю ширину под ними:
@@ -921,20 +889,6 @@ export default function MenuScreen() {
             onHero
           />
         ) : null}
-      </View>
-
-      <Animated.View
-        key={cart.mode}
-        entering={FadeIn.duration(260)}
-        style={styles.grow}
-        onLayout={() => {
-          listWrapper.current?.measureInWindow((_x, y) => {
-            listTop.current = y;
-          });
-        }}
-        ref={listWrapper}
-      >
-        {body()}
       </Animated.View>
 
       <DishPeek
@@ -952,7 +906,7 @@ export default function MenuScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  hero: { overflow: 'hidden' },
+  hero: { position: 'absolute', left: 0, right: 0, top: 0, zIndex: 2, overflow: 'hidden' },
   heroTop: { flexDirection: 'row', alignItems: 'center' },
   clip: { overflow: 'hidden' },
   rowBetween: { flexDirection: 'row', alignItems: 'center' },
@@ -962,13 +916,5 @@ const styles = StyleSheet.create({
   pair: { flexDirection: 'row' },
   filler: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
-  place: {
-    position: 'absolute',
-    left: -6,
-    top: -6,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 2,
-  },
+  legend: { position: 'absolute' },
 });
