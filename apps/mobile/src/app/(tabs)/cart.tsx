@@ -129,9 +129,12 @@ export default function CartScreen() {
   const session = useSession();
   const queryClient = useQueryClient();
 
-  const [payment, setPayment] = useState<PaymentMethod>(
-    tenant.features.onlinePayment ? 'online_sbp' : 'cash_on_delivery',
-  );
+  /**
+   * Способ оплаты не выбран заранее намеренно: гость сам спускается к нему, а
+   * заодно видит промокод, баллы и приборы — раньше кнопка была активна сразу,
+   * и до этих пунктов почти никто не доходил
+   */
+  const [payment, setPayment] = useState<PaymentMethod | null>(null);
   const [comment, setComment] = useState('');
   const [usePoints, setUsePoints] = useState(false);
   const [persons, setPersons] = useState(0);
@@ -144,13 +147,18 @@ export default function CartScreen() {
   const [extraPortions, setExtraPortions] = useState(1);
   const [flight, setFlight] = useState<FlightStart | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const scroller = useRef<ScrollView>(null);
+  const paymentY = useRef(0);
 
   const subtotal = cartSubtotal(cart.items);
   const count = cartCount(cart.items);
   const authorized = session.status === 'authorized';
   const delivery = cart.mode === 'delivery';
 
-  const back = () => router.navigate('/(tabs)');
+  const toMenu = () => router.navigate('/(tabs)');
+
+  // Закрыть корзину — вернуться туда, откуда в неё зашли, а не всегда в меню
+  const back = () => (router.canGoBack() ? router.back() : toMenu());
 
 
   // Куда летит миниатюра и как отзывается сумма заказа
@@ -167,13 +175,27 @@ export default function CartScreen() {
       setTarget({ x: x + width / 2 - 24, y: y + height / 2 - 24 }),
     );
 
-  // Свайп вправо возвращает в меню: корзина — вкладка, системного жеста тут нет
+  /**
+   * Свайп вправо закрывает корзину: это вкладка, системного жеста назад тут нет.
+   * Экран едет за пальцем — иначе непонятно, что жест вообще есть
+   */
+  const slide = useSharedValue(0);
+
   const swipeBack = Gesture.Pan()
-    .activeOffsetX(24)
-    .failOffsetY([-20, 20])
+    .activeOffsetX(20)
+    .failOffsetY([-24, 24])
+    .onUpdate((event) => {
+      slide.value = Math.max(0, event.translationX);
+    })
     .onEnd((event) => {
-      if (event.translationX > 80 && event.velocityX > 0) runOnJS(back)();
+      if (event.translationX > 90 || (event.translationX > 40 && event.velocityX > 600)) {
+        runOnJS(back)();
+      }
+
+      slide.value = withSpring(0, { damping: 22, stiffness: 220 });
     });
+
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slide.value }] }));
 
   const addresses = useQuery({
     queryKey: ['addresses'],
@@ -380,7 +402,7 @@ export default function CartScreen() {
       return api.createOrder({
         restaurant_id: cart.restaurantId ?? '',
         type: cart.mode,
-        payment_method: payment,
+        payment_method: payment ?? 'cash_on_delivery',
         address_text: delivery ? (address?.full_text ?? null) : null,
         address_latitude: delivery ? (address?.latitude ?? null) : null,
         address_longitude: delivery ? (address?.longitude ?? null) : null,
@@ -492,7 +514,7 @@ export default function CartScreen() {
           title="Корзина пуста"
           description="Загляните в меню — там есть что выбрать."
           actionLabel="В меню"
-          onAction={back}
+          onAction={toMenu}
         />
 
         {last ? (
@@ -569,12 +591,15 @@ export default function CartScreen() {
 
   return (
     <GestureDetector gesture={swipeBack}>
-      <View style={[styles.root, { backgroundColor: theme.colors.backgroundAlt }]}>
+      <Animated.View
+        style={[styles.root, slideStyle, { backgroundColor: theme.colors.backgroundAlt }]}
+      >
         <PizzaBackdrop strength={0.45} />
 
         {header}
 
         <ScrollView
+          ref={scroller}
           contentContainerStyle={{
             padding: theme.layout.screenPadding,
             gap: theme.spacing.xl,
@@ -1103,17 +1128,20 @@ export default function CartScreen() {
               )
             : null}
 
-          {block(
-            'Оплата',
-            'wallet-outline',
-            <PaymentPicker
-              value={payment}
-              onChange={setPayment}
-              allowOnline={tenant.features.onlinePayment}
-              changeFrom={changeFrom}
-              onChangeFrom={setChangeFrom}
-            />,
-          )}
+          {/* Запоминаем, где начинается оплата: подсказка над кнопкой ведёт сюда */}
+          <View onLayout={(event) => (paymentY.current = event.nativeEvent.layout.y)}>
+            {block(
+              'Оплата',
+              'wallet-outline',
+              <PaymentPicker
+                value={payment}
+                onChange={setPayment}
+                allowOnline={tenant.features.onlinePayment}
+                changeFrom={changeFrom}
+                onChangeFrom={setChangeFrom}
+              />,
+            )}
+          </View>
 
           <CommentField value={comment} onChange={setComment} />
 
@@ -1250,6 +1278,35 @@ export default function CartScreen() {
             </View>
           ) : null}
 
+          {/* Пока оплата не выбрана, кнопка ждёт — и подсказка ведёт к ней вниз */}
+          {authorized && payment === null ? (
+            <PressableScale
+              depth={0.99}
+              accessibilityLabel="Перейти к выбору оплаты"
+              onPress={() =>
+                scroller.current?.scrollTo({ y: Math.max(0, paymentY.current - 12), animated: true })
+              }
+              style={[
+                styles.line,
+                {
+                  gap: theme.spacing.sm,
+                  paddingHorizontal: theme.spacing.base,
+                  paddingVertical: theme.spacing.sm,
+                  borderRadius: theme.radius.lg,
+                  backgroundColor: theme.colors.brandSubtle,
+                },
+              ]}
+            >
+              <Ionicons name="arrow-down-circle" size={18} color={theme.colors.brand} />
+              <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.brand }]}>
+                Осталось выбрать оплату
+              </Text>
+              <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>
+                показать
+              </Text>
+            </PressableScale>
+          ) : null}
+
           <View style={[styles.line, { gap: theme.spacing.base }]}>
             <View style={{ gap: 2 }}>
               <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
@@ -1271,7 +1328,7 @@ export default function CartScreen() {
                       : 'Оформить заказ'
                 }
                 loading={createOrder.isPending}
-                disabled={authorized && (blocker !== null || needsAddress)}
+                disabled={authorized && (blocker !== null || needsAddress || payment === null)}
                 onPress={() => {
                   setFailure(null);
                   if (!authorized) {
@@ -1339,7 +1396,7 @@ export default function CartScreen() {
           }}
           onCancel={() => setClearing(false)}
         />
-      </View>
+      </Animated.View>
     </GestureDetector>
   );
 }

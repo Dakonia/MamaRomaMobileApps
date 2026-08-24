@@ -2,6 +2,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   runOnJS,
@@ -77,6 +78,8 @@ type Props = {
  */
 export function BootSplash({ progress, ready, onDone }: Props) {
   const { width, height } = useWindowDimensions();
+  // На Android внизу живут кнопки навигации — печь не должна на них наезжать
+  const insets = useSafeAreaInsets();
 
   const enter = useSharedValue(0);
   const drift = useSharedValue(0);
@@ -137,7 +140,7 @@ export function BootSplash({ progress, ready, onDone }: Props) {
         style={StyleSheet.absoluteFill}
       />
 
-      <Animated.View style={[styles.bottom, bar]}>
+      <Animated.View style={[styles.bottom, bar, { bottom: insets.bottom + 28 }]}>
         <OvenLoader progress={progress} />
       </Animated.View>
     </Animated.View>
@@ -148,5 +151,5 @@ const styles = StyleSheet.create({
   root: StyleSheet.absoluteFillObject,
   fire: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   glow: { position: 'absolute' },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 34, alignItems: 'center' },
+  bottom: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });

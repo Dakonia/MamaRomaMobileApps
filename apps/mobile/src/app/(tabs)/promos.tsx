@@ -190,7 +190,6 @@ export default function PromosScreen() {
       found.push({
         key: 'events',
         title: 'Мероприятия',
-        note: 'Вечеринки, дегустации и сезонные меню',
         layout: 'tiles',
         promotions: events,
       });

@@ -3,11 +3,10 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
-  runOnJS,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
@@ -71,7 +70,7 @@ export default function MenuScreen() {
   // поэтому доводим вручную: держим ссылки на заголовки, текущее смещение
   // списка и его верхнюю границу на экране
   const titleNodes = useRef<Record<string, View | null>>({});
-  const scrollOffset = useRef(0);
+  const scrollOffset = useSharedValue(0);
   const listTop = useRef(0);
   // Шапка сжимается при прокрутке: переключатель и адрес уезжают,
   // остаются поиск и категории
@@ -121,14 +120,6 @@ export default function MenuScreen() {
   // Разрешение не спрашиваем: если оно уже есть, подставим ближайший ресторан
   const here = useCoords();
 
-  // Смещение нужно переходу к категории — держим его в обычной переменной
-  const rememberOffset = useCallback(
-    (offset: number) => {
-      scrollOffset.current = offset;
-    },
-    [scrollOffset],
-  );
-
   /**
    * Шапка складывается один раз за проход, а не тянется следом за пальцем.
    * Высота — свойство разметки: пересчитывать её на каждый кадр значит
@@ -138,14 +129,13 @@ export default function MenuScreen() {
    */
   const onScroll = useAnimatedScrollHandler((event) => {
     const offset = event.contentOffset.y;
+    scrollOffset.value = offset;
 
-    if (collapse.value < 0.5 && offset > 90) {
-      collapse.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
-    } else if (collapse.value > 0.5 && offset < 40) {
-      collapse.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) });
+    if (collapse.value < 0.5 && offset > 150) {
+      collapse.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) });
+    } else if (collapse.value > 0.5 && offset < 60) {
+      collapse.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.quad) });
     }
-
-    runOnJS(rememberOffset)(offset);
   });
 
   const topBlock = useAnimatedStyle(() => ({
@@ -397,7 +387,7 @@ export default function MenuScreen() {
       if (shift === null || Math.abs(shift) < 2) break;
 
       await list.scrollToOffset({
-        offset: Math.max(0, scrollOffset.current + shift),
+        offset: Math.max(0, scrollOffset.value + shift),
         animated: pass === 0,
       });
     }
@@ -520,14 +510,15 @@ export default function MenuScreen() {
       return (
         <Animated.View
           entering={FadeIn.duration(theme.motion.duration.base)}
-          // Своя подложка и заголовок: иначе полка акций сливается с блюдами.
-          // Поле списка стало кремовым, поэтому полка теперь светлее его
+          /* Полка акций стоит на своём цвете и подписана словом «акции»:
+             раньше её принимали за блюда и жали на карточки как на еду */
           style={{
-            backgroundColor: theme.colors.surface,
+            backgroundColor: theme.colors.brandSubtle,
             paddingTop: theme.spacing.base,
             paddingBottom: theme.spacing.sm,
+            borderTopWidth: StyleSheet.hairlineWidth,
             borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: theme.colors.divider,
+            borderColor: theme.colors.divider,
             gap: theme.spacing.xs,
           }}
         >
@@ -537,10 +528,26 @@ export default function MenuScreen() {
               { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
             ]}
           >
-            <Ionicons name="pricetag" size={15} color={theme.colors.brand} />
-            <Text style={[theme.typography.overline, styles.grow, { color: theme.colors.brand }]}>
-              Выгодно заказать
-            </Text>
+            <Ionicons name="pricetag" size={16} color={theme.colors.brand} />
+
+            <View style={styles.grow}>
+              <Text style={[theme.typography.bodyMedium, { color: theme.colors.brand }]}>
+                Акции на доставку
+              </Text>
+              <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
+                Скидки и подарки к заказу, а не блюда
+              </Text>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={theme.hitSlop}
+              onPress={() => router.push('/(tabs)/promos')}
+              style={[styles.rowBetween, { gap: theme.spacing.xxs }]}
+            >
+              <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>все</Text>
+              <Ionicons name="chevron-forward" size={13} color={theme.colors.brand} />
+            </Pressable>
           </View>
 
           <PromoCarousel
@@ -553,15 +560,36 @@ export default function MenuScreen() {
 
     if (item.kind === 'popular') {
       return (
-        <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.sm }}>
-          <Text
+        /* Полка хитов — тоже блюда, но не часть каталога: своя подложка и
+           подпись, иначе её путают с сеткой меню ниже */
+        <View
+          style={{
+            gap: theme.spacing.sm,
+            paddingTop: theme.spacing.base,
+            paddingBottom: theme.spacing.sm,
+            backgroundColor: theme.colors.surfaceSunken,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderColor: theme.colors.divider,
+          }}
+        >
+          <View
             style={[
-              theme.typography.h2,
-              { color: theme.colors.textPrimary, paddingHorizontal: theme.layout.screenPadding },
+              styles.rowBetween,
+              { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
             ]}
           >
-            Часто заказывают
-          </Text>
+            <Ionicons name="flame" size={16} color={theme.colors.accent} />
+
+            <View style={styles.grow}>
+              <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
+                Часто заказывают
+              </Text>
+              <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
+                Блюда, которые чаще всего берут в зале и на доставку
+              </Text>
+            </View>
+          </View>
 
           <ScrollView
             horizontal
@@ -708,12 +736,6 @@ export default function MenuScreen() {
         renderItem={renderRow}
         onViewableItemsChanged={onViewable}
         viewabilityConfig={VIEWABILITY}
-        onRefresh={() => {
-          void menu.refetch();
-          void promos.refetch();
-          void popular.refetch();
-        }}
-        refreshing={menu.isRefetching}
         contentContainerStyle={{
           paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.lg,
         }}

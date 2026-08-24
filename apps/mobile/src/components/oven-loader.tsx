@@ -130,23 +130,8 @@ export function OvenLoader({ progress }: { progress: number }) {
     ],
   }));
 
-  const hearth = useAnimatedStyle(() => ({ opacity: 0.25 + shown.value * 0.6 }));
-
   return (
     <View style={{ width: WIDTH, height: HEIGHT }}>
-      {/* Под печи: на нём стоят столбы и горит огонь */}
-      <Animated.View
-        style={[
-          styles.hearth,
-          hearth,
-          {
-            left: CENTER_X - SPAN_X - BRICK_W / 2,
-            top: HEIGHT - 3,
-            width: SPAN_X * 2 + BRICK_W,
-          },
-        ]}
-      />
-
       <Animated.View style={[styles.fire, fire, { left: CENTER_X - 14, top: HEIGHT - 42 }]}>
         <Ionicons name="flame" size={28} color={EMBER} />
       </Animated.View>
@@ -174,6 +159,5 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   fill: { alignSelf: 'stretch', borderRadius: 2, backgroundColor: CREAM },
-  hearth: { position: 'absolute', height: 2, borderRadius: 1, backgroundColor: CREAM },
   fire: { position: 'absolute' },
 });

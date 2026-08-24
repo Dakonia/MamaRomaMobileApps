@@ -64,6 +64,19 @@ const JOBS: (() => Promise<unknown>)[] = [
 ];
 
 /**
+ * Что греем в фоне, уже после заставки. Вкладка «Акции» лежит в одном касании
+ * от меню, но её список приходит отдельным запросом — без прогрева первый заход
+ * встречал гостя скелетонами на всю страницу.
+ */
+const WARM: (() => Promise<unknown>)[] = [
+  () =>
+    queryClient.prefetchQuery({
+      queryKey: ['promotions', 'all'],
+      queryFn: () => api.promotions(),
+    }),
+];
+
+/**
  * Готовность приложения к первому экрану: доля выполненных дел и признак
  * «можно показывать». Заставка рисует по этому настоящую загрузку, а не
  * притворную.
@@ -85,6 +98,9 @@ export function useBoot(): { progress: number; ready: boolean } {
         .catch(() => undefined)
         .finally(() => setDone((value) => value + 1));
     }
+
+    // Фоновый прогрев не входит в прогресс: заставка его не ждёт
+    for (const job of WARM) void Promise.resolve(job()).catch(() => undefined);
 
     const patience = setTimeout(() => setTimedOut(true), PATIENCE_MS);
     const minimum = setTimeout(() => setShown(true), MIN_SHOW_MS);

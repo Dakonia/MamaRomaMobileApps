@@ -487,7 +487,7 @@ export function PersonsRow({
   );
 }
 
-/** Выбор способа оплаты и сдача для наличных. */
+/** Выбор способа оплаты и сдача для наличных. Пока не выбрано — value равен null. */
 export function PaymentPicker({
   value,
   onChange,
@@ -495,7 +495,7 @@ export function PaymentPicker({
   changeFrom,
   onChangeFrom,
 }: {
-  value: PaymentMethod;
+  value: PaymentMethod | null;
   onChange: (value: PaymentMethod) => void;
   allowOnline: boolean;
   changeFrom: string;
