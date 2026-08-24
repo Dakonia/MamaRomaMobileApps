@@ -9,6 +9,7 @@ import {
   type PromotionDraft,
   type Restaurant,
 } from "./api";
+import { PromoPush } from "./PromoPush";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
 
 const empty: PromotionDraft = {
@@ -293,9 +294,12 @@ function PromoForm({
 }
 
 export function PromosTab() {
+  // Акция, которую отправляем уведомлением
+  const [pushing, setPushing] = useState<Promotion | null>(null);
   const queryClient = useQueryClient();
   const promos = useQuery({ queryKey: ["promotions"], queryFn: api.promotions });
   const restaurants = useQuery({ queryKey: ["restaurants"], queryFn: api.restaurants });
+  const cities = useQuery({ queryKey: ["cities"], queryFn: api.cities });
 
   const [editing, setEditing] = useState<{ id: string | null; draft: PromotionDraft } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -450,6 +454,10 @@ export function PromosTab() {
                 >
                   Править
                 </Button>
+                {/* Отправить акцию уведомлением: текст берётся из неё самой */}
+                <Button tone="quiet" onClick={() => setPushing(promotion)}>
+                  Уведомить
+                </Button>
                 <Button
                   tone="quiet"
                   onClick={() =>
@@ -469,6 +477,9 @@ export function PromosTab() {
           ))}
         </div>
       )}
+      {pushing ? (
+        <PromoPush promo={pushing} cities={cities.data ?? []} onClose={() => setPushing(null)} />
+      ) : null}
     </Section>
   );
 }
