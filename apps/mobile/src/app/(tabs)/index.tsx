@@ -280,7 +280,7 @@ export default function MenuScreen() {
     const own = (menu.data?.categories ?? []).map((item) => ({ id: item.id, title: item.name }));
 
     return (popular.data ?? []).length > 0
-      ? [{ id: POPULAR, title: 'Часто заказывают' }, ...own]
+      ? [{ id: POPULAR, title: 'Популярное' }, ...own]
       : own;
   }, [menu.data, popular.data]);
 
@@ -292,7 +292,7 @@ export default function MenuScreen() {
       popular.refetch(),
       queryClient.invalidateQueries({ queryKey: ['orders'] }),
     ]);
-  });
+  }, heroHeight);
 
   const rows: Row[] = useMemo(() => {
     const result: Row[] = [];
@@ -341,7 +341,7 @@ export default function MenuScreen() {
     if (cart.restaurantId === null) {
       result.push({ kind: 'notice', key: 'notice' });
     }
-    // Часто заказывают — первая категория, до пиццы
+    // Популярное — первая категория, до пиццы
     const hits = popular.data ?? [];
 
     if (hits.length > 0) {
@@ -349,7 +349,7 @@ export default function MenuScreen() {
         kind: 'title',
         key: `t-${POPULAR}`,
         categoryId: POPULAR,
-        title: 'Часто заказывают',
+        title: 'Популярное',
       });
 
       for (let index = 0; index < hits.length; index += 2) {
@@ -543,7 +543,7 @@ export default function MenuScreen() {
       return (
         <Animated.View
           entering={FadeIn.duration(theme.motion.duration.base)}
-          style={{ paddingTop: theme.spacing.xl, paddingBottom: theme.spacing.md }}
+          style={{ paddingTop: theme.spacing.base, paddingBottom: theme.spacing.sm }}
         >
           {/* Полку акций держит рамка, а не заливка: цветной блок спорил с
               каталогом, а обводка просто отделяет её от блюд */}
@@ -553,8 +553,8 @@ export default function MenuScreen() {
               borderWidth: 1.5,
               borderColor: theme.colors.brand,
               borderRadius: theme.radius.xl,
-              paddingTop: theme.spacing.md,
-              paddingBottom: theme.spacing.sm,
+              paddingTop: theme.spacing.xs,
+              paddingBottom: theme.spacing.xs,
             }}
           >
             <PromoCarousel
@@ -563,32 +563,16 @@ export default function MenuScreen() {
               boxWidth={frame}
               gutter={theme.spacing.md}
             />
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Все акции"
-              hitSlop={theme.hitSlop}
-              onPress={() => router.push('/(tabs)/promos')}
-              style={[
-                styles.rowBetween,
-                styles.center,
-                { gap: theme.spacing.xxs, minHeight: theme.spacing.xxl },
-              ]}
-            >
-              <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>
-                Все акции
-              </Text>
-              <Ionicons name="chevron-forward" size={13} color={theme.colors.brand} />
-            </Pressable>
           </View>
 
-          {/* Подпись сидит на самой рамке — как ярлык на коробке */}
+          {/* Подпись и ссылка сидят на самой рамке — как ярлыки на коробке.
+              Так они ничего не добавляют к высоте полки */}
           <View
             style={[
               styles.rowBetween,
               styles.legend,
               {
-                top: theme.spacing.xl - 8,
+                top: theme.spacing.base - 8,
                 left: theme.layout.screenPadding + theme.spacing.base,
                 gap: theme.spacing.xs,
                 paddingHorizontal: theme.spacing.sm,
@@ -601,6 +585,27 @@ export default function MenuScreen() {
               Акции на доставку
             </Text>
           </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Все акции"
+            hitSlop={theme.hitSlop}
+            onPress={() => router.push('/(tabs)/promos')}
+            style={[
+              styles.rowBetween,
+              styles.legend,
+              {
+                top: theme.spacing.base - 8,
+                right: theme.layout.screenPadding + theme.spacing.base,
+                gap: theme.spacing.xxs,
+                paddingHorizontal: theme.spacing.sm,
+                backgroundColor: theme.colors.backgroundAlt,
+              },
+            ]}
+          >
+            <Text style={[theme.typography.overline, { color: theme.colors.brand }]}>все</Text>
+            <Ionicons name="chevron-forward" size={12} color={theme.colors.brand} />
+          </Pressable>
         </Animated.View>
       );
     }
@@ -718,7 +723,6 @@ export default function MenuScreen() {
     return (
       <AnimatedFlashList
         refreshControl={refresher}
-        progressViewOffset={heroHeight}
         ref={listRef}
         {...keyboardScroll}
         onScroll={onScroll}
@@ -789,8 +793,10 @@ export default function MenuScreen() {
           },
         ]}
         onLayout={(event) => {
+          // Категории приходят вместе с меню, и шапка тогда становится выше:
+          // держим её размер в курсе, иначе она накрывает первый блок списка
           const size = event.nativeEvent.layout.height;
-          if (size > 0) setHeroHeight((known) => (known === 0 ? size : known));
+          if (size > 0) setHeroHeight((known) => (Math.abs(known - size) > 1 ? size : known));
         }}
       >
         <HeroPhoto />
@@ -804,8 +810,8 @@ export default function MenuScreen() {
           ]}
           onLayout={(event) => {
             const size = event.nativeEvent.layout.height;
-            if (topHeight.value === 0) topHeight.value = size;
-            if (size > 0) setTopSize((known) => (known === 0 ? size : known));
+            topHeight.value = size;
+            if (size > 0) setTopSize((known) => (Math.abs(known - size) > 1 ? size : known));
           }}
         >
           {/* Переключатель и корзина в одном ряду, адрес — во всю ширину под ними:
