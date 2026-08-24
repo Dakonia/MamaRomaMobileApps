@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import {
@@ -164,6 +164,7 @@ export function OrderRating({ order, onClose }: Props) {
   const [tags, setTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [done, setDone] = useState(false);
+  const queryClient = useQueryClient();
 
   const send = useMutation({
     mutationFn: () =>
@@ -175,6 +176,8 @@ export function OrderRating({ order, onClose }: Props) {
     onSuccess: () => {
       track('order_rated', { rating, tags: tags.length, comment: comment.length > 0 });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Список заказов теперь знает об оценке — второй раз не спросим
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
       setDone(true);
       setTimeout(onClose, 1900);
     },
