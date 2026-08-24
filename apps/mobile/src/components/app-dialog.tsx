@@ -35,7 +35,14 @@ export function AppDialog({
   const theme = useTheme();
 
   return (
-    <Modal transparent visible={visible} animationType="none" onRequestClose={onCancel}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="none"
+      onRequestClose={onCancel}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <Animated.View
         entering={FadeIn.duration(160)}
         exiting={FadeOut.duration(140)}

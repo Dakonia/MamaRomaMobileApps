@@ -116,7 +116,14 @@ export function ExtrasSheet({ visible, extras, picked, onToggle, onClose }: Prop
     .reduce((sum, extra) => sum + extra.price_kopecks, 0);
 
   return (
-    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="none"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <Animated.View
         entering={FadeIn.duration(160)}
         exiting={FadeOut.duration(140)}

@@ -96,7 +96,14 @@ export function BookingDone({ reservation, phone, onClose }: Props) {
   const clock = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <Animated.View
         entering={FadeIn.duration(240)}
         exiting={FadeOut.duration(180)}

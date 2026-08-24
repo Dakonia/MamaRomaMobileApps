@@ -52,7 +52,14 @@ export function DishPeek({ dish, onClose, onOpen }: Props) {
   };
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(140)} style={styles.root}>
         <BlurView intensity={38} tint={theme.isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Закрыть" />
