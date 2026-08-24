@@ -94,6 +94,50 @@ function Brick({
   );
 }
 
+/** Языки пламени: ширина устья, разный рост и свой ритм у каждого. */
+const TONGUES = [
+  { size: 16, duration: 520, delay: 180 },
+  { size: 25, duration: 700, delay: 0 },
+  { size: 36, duration: 600, delay: 320 },
+  { size: 25, duration: 760, delay: 120 },
+  { size: 16, duration: 560, delay: 420 },
+];
+
+/** Один язык: тянется вверх и оседает, не сходясь в такт с соседями. */
+function Tongue({ index }: { index: number }) {
+  const { size, duration, delay } = TONGUES[index];
+  const live = useSharedValue(0);
+
+  useEffect(() => {
+    live.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration, easing: Easing.inOut(Easing.quad) }),
+          withTiming(0, { duration: duration * 1.3, easing: Easing.inOut(Easing.quad) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, [delay, duration, live]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: 0.72 + live.value * 0.28,
+    transform: [
+      { translateY: -live.value * 4 },
+      { scaleY: 0.86 + live.value * 0.3 },
+      { scaleX: 1.04 - live.value * 0.1 },
+    ],
+  }));
+
+  return (
+    <Animated.View style={style}>
+      <Ionicons name="flame" size={size} color={EMBER} />
+    </Animated.View>
+  );
+}
+
 /** Дымок над огнём: тонкая полоска поднимается, ведёт в сторону и тает. */
 function Smoke({ index }: { index: number }) {
   const rise = useSharedValue(0);
@@ -153,11 +197,12 @@ export function OvenLoader({ progress }: { progress: number }) {
     );
   }, [flame]);
 
+  // Всё пламя целиком разгорается по мере готовности данных
   const fire = useAnimatedStyle(() => ({
     opacity: 0.4 + shown.value * 0.6,
     transform: [
-      { scale: (0.6 + shown.value * 0.4) * (0.94 + flame.value * 0.12) },
-      { translateY: -flame.value * 2 },
+      { scale: (0.62 + shown.value * 0.38) * (0.97 + flame.value * 0.06) },
+      { translateY: -flame.value * 1.5 },
     ],
   }));
 
@@ -170,8 +215,11 @@ export function OvenLoader({ progress }: { progress: number }) {
         ))}
       </View>
 
-      <Animated.View style={[styles.fire, fire, { left: CENTER_X - 21, top: HEIGHT - 48 }]}>
-        <Ionicons name="flame" size={42} color={EMBER} />
+      {/* Пламя во всю ширину устья, но ниже свода: на кирпичи не заходит */}
+      <Animated.View style={[styles.fire, fire, { top: HEIGHT - 42 }]}>
+        {TONGUES.map((_, index) => (
+          <Tongue key={index} index={index} />
+        ))}
       </Animated.View>
 
       {BRICKS.map((brick, index) => (
@@ -197,7 +245,16 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   fill: { alignSelf: 'stretch', borderRadius: 2, backgroundColor: CREAM },
-  fire: { position: 'absolute' },
+  fire: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    // Языки стоят на одной линии и слегка находят друг на друга
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginLeft: -3,
+  },
   smokes: { position: 'absolute' },
   smoke: { position: 'absolute', width: 3, height: 16, borderRadius: 2 },
 });
