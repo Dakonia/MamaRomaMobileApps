@@ -12,7 +12,6 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, type ApiError, type Reservation, type Slot } from '@/api/client';
 import { BookingDone } from '@/components/booking-done';
@@ -181,7 +180,6 @@ function SlotChip({
 
 export default function BookingScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const cart = useCart();
   const session = useSession();
   const queryClient = useQueryClient();
@@ -275,7 +273,9 @@ export default function BookingScreen() {
       <ScrollView
         refreshControl={refresher}
         contentContainerStyle={{
-          paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.xl,
+          // Полоса вкладок занимает своё место в разметке и сама отступает от
+          // системной полосы — добавлять её высоту сюда значит оставить пустоту
+          paddingBottom: theme.spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
         {...keyboardScroll}

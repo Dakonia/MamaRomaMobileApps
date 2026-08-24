@@ -249,8 +249,9 @@ export default function ProfileScreen() {
         contentContainerStyle={{
           padding: theme.layout.screenPadding,
           gap: theme.spacing.xl,
-          // Ровно столько, чтобы строка версии не пряталась под вкладками
-          paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.base,
+          // Полоса вкладок занимает своё место в разметке и сама отступает от
+          // системной полосы — добавлять её высоту сюда значит оставить пустоту
+          paddingBottom: theme.spacing.xl,
         }}
         showsVerticalScrollIndicator={false}
       >

@@ -20,7 +20,6 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, mediaUrl, type Promotion } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
@@ -126,7 +125,6 @@ function SoonBadge({ label }: { label: string }) {
 
 export default function PromosScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const cart = useCart();
   const [tab, setTab] = useState<string | null>(null);
@@ -478,7 +476,9 @@ export default function PromosScreen() {
         contentContainerStyle={{
           paddingHorizontal: theme.layout.screenPadding,
           paddingTop: theme.spacing.md,
-          paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.xxxl,
+          // Полоса вкладок занимает своё место в разметке и сама отступает от
+          // системной полосы — добавлять её высоту сюда значит оставить пустоту
+          paddingBottom: theme.spacing.xl,
           gap: theme.spacing.lg,
         }}
         showsVerticalScrollIndicator={false}

@@ -2,8 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+/**
+ * Список берём из gesture-handler, а не из react-native: обычный ScrollView на
+ * Android забирает касание себе, и свайп по экрану до жеста не доходил
+ */
+import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -147,7 +151,7 @@ export default function CartScreen() {
   const [extraPortions, setExtraPortions] = useState(1);
   const [flight, setFlight] = useState<FlightStart | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const paymentY = useRef(0);
 
   const subtotal = cartSubtotal(cart.items);
@@ -182,8 +186,8 @@ export default function CartScreen() {
   const slide = useSharedValue(0);
 
   const swipeBack = Gesture.Pan()
-    .activeOffsetX(20)
-    .failOffsetY([-24, 24])
+    .activeOffsetX(18)
+    .failOffsetY([-40, 40])
     .onUpdate((event) => {
       slide.value = Math.max(0, event.translationX);
     })

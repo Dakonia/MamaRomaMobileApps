@@ -510,16 +510,13 @@ export default function MenuScreen() {
       return (
         <Animated.View
           entering={FadeIn.duration(theme.motion.duration.base)}
-          /* Полка акций стоит на своём цвете и подписана словом «акции»:
-             раньше её принимали за блюда и жали на карточки как на еду */
+          /* Тёмная лента поперёк белого каталога: полку акций нельзя спутать
+             с блюдами ни цветом, ни формой — раньше её принимали за еду */
           style={{
-            backgroundColor: theme.colors.brandSubtle,
+            backgroundColor: theme.colors.hero,
             paddingTop: theme.spacing.base,
-            paddingBottom: theme.spacing.sm,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderColor: theme.colors.divider,
-            gap: theme.spacing.xs,
+            paddingBottom: theme.spacing.md,
+            gap: theme.spacing.md,
           }}
         >
           <View
@@ -528,25 +525,46 @@ export default function MenuScreen() {
               { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
             ]}
           >
-            <Ionicons name="pricetag" size={16} color={theme.colors.brand} />
-
-            <View style={styles.grow}>
-              <Text style={[theme.typography.bodyMedium, { color: theme.colors.brand }]}>
-                Акции на доставку
-              </Text>
-              <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-                Скидки и подарки к заказу, а не блюда
+            <View
+              style={[
+                styles.rowBetween,
+                {
+                  gap: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xxs,
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: theme.colors.brand,
+                },
+              ]}
+            >
+              <Ionicons name="pricetag" size={11} color={theme.colors.textOnBrand} />
+              <Text style={[theme.typography.overline, { color: theme.colors.textOnBrand }]}>
+                Акции
               </Text>
             </View>
 
+            <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.onHero }]}>
+              Скидки на доставку
+            </Text>
+
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Все акции"
               hitSlop={theme.hitSlop}
               onPress={() => router.push('/(tabs)/promos')}
-              style={[styles.rowBetween, { gap: theme.spacing.xxs }]}
+              style={[
+                styles.rowBetween,
+                {
+                  gap: theme.spacing.xxs,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xxs,
+                  borderRadius: theme.radius.pill,
+                  backgroundColor: theme.colors.heroRaised,
+                },
+              ]}
             >
-              <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>все</Text>
-              <Ionicons name="chevron-forward" size={13} color={theme.colors.brand} />
+              <Text style={[theme.typography.caption, { color: theme.colors.onHero }]}>все</Text>
+              <Ionicons name="chevron-forward" size={12} color={theme.colors.onHero} />
             </Pressable>
           </View>
 
@@ -560,17 +578,14 @@ export default function MenuScreen() {
 
     if (item.kind === 'popular') {
       return (
-        /* Полка хитов — тоже блюда, но не часть каталога: своя подложка и
-           подпись, иначе её путают с сеткой меню ниже */
+        /* Тёплая полка с местами в рейтинге: блюда те же, но это не каталог,
+           а витрина «что берут чаще всего» — и номера говорят это без слов */
         <View
           style={{
-            gap: theme.spacing.sm,
+            gap: theme.spacing.md,
             paddingTop: theme.spacing.base,
             paddingBottom: theme.spacing.sm,
-            backgroundColor: theme.colors.surfaceSunken,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderColor: theme.colors.divider,
+            backgroundColor: theme.colors.warningSubtle,
           }}
         >
           <View
@@ -579,16 +594,27 @@ export default function MenuScreen() {
               { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm },
             ]}
           >
-            <Ionicons name="flame" size={16} color={theme.colors.accent} />
-
-            <View style={styles.grow}>
-              <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
-                Часто заказывают
-              </Text>
-              <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-                Блюда, которые чаще всего берут в зале и на доставку
+            <View
+              style={[
+                styles.rowBetween,
+                {
+                  gap: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xxs,
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: theme.colors.highlight,
+                },
+              ]}
+            >
+              <Ionicons name="flame" size={11} color={theme.colors.onHighlight} />
+              <Text style={[theme.typography.overline, { color: theme.colors.onHighlight }]}>
+                Хиты
               </Text>
             </View>
+
+            <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.textPrimary }]}>
+              Чаще всего заказывают
+            </Text>
           </View>
 
           <ScrollView
@@ -600,18 +626,35 @@ export default function MenuScreen() {
               paddingBottom: theme.spacing.sm,
             }}
           >
-            {(popular.data ?? []).map((dish) => (
-              <DishCard
-                key={`pop-${dish.id}`}
-                dish={dish}
-                width={cardWidth}
-                highlight
-                quantity={quantityOf(dish.id)}
-                onOpen={() => router.push(`/dish/${dish.id}`)}
-                onPeek={() => setPeek(dish)}
-                onAdd={() => cart.add(dish)}
-                onChangeQuantity={(quantity) => cart.setQuantity(dish.id, quantity)}
-              />
+            {(popular.data ?? []).map((dish, place) => (
+              <View key={`pop-${dish.id}`}>
+                <DishCard
+                  dish={dish}
+                  width={cardWidth}
+                  quantity={quantityOf(dish.id)}
+                  onOpen={() => router.push(`/dish/${dish.id}`)}
+                  onPeek={() => setPeek(dish)}
+                  onAdd={() => cart.add(dish)}
+                  onChangeQuantity={(quantity) => cart.setQuantity(dish.id, quantity)}
+                />
+
+                {/* Место в рейтинге вместо плашки «Хит»: она была на каждой
+                    карточке и ничего не добавляла */}
+                <View
+                  style={[
+                    styles.place,
+                    styles.center,
+                    {
+                      backgroundColor: theme.colors.highlight,
+                      borderColor: theme.colors.warningSubtle,
+                    },
+                  ]}
+                >
+                  <Text style={[theme.typography.overline, { color: theme.colors.onHighlight }]}>
+                    {place + 1}
+                  </Text>
+                </View>
+              </View>
             ))}
           </ScrollView>
         </View>
@@ -737,7 +780,9 @@ export default function MenuScreen() {
         onViewableItemsChanged={onViewable}
         viewabilityConfig={VIEWABILITY}
         contentContainerStyle={{
-          paddingBottom: theme.layout.tabBarHeight + insets.bottom + theme.spacing.lg,
+          // Полоса вкладок занимает своё место в разметке и сама отступает от
+          // системной полосы — добавлять её высоту сюда значит оставить пустоту
+          paddingBottom: theme.spacing.xl,
         }}
       />
     );
@@ -916,4 +961,14 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   pair: { flexDirection: 'row' },
   filler: { flex: 1 },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  place: {
+    position: 'absolute',
+    left: -6,
+    top: -6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+  },
 });
