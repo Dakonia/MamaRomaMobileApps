@@ -5,6 +5,7 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withTiming,
@@ -27,7 +28,8 @@ const CENTER_X = SPAN_X + BRICK_W / 2 + 2;
 const CENTER_Y = SPAN_Y + BRICK_H / 2 + 2;
 
 const WIDTH = CENTER_X * 2;
-const HEIGHT = CENTER_Y + BRICK_H + 6;
+// Под огонь оставляем место: он стоит на уровне основания столбов
+const HEIGHT = CENTER_Y + BRICK_H + 14;
 
 type Brick = { x: number; y: number; angle: number };
 
@@ -92,9 +94,38 @@ function Brick({
   );
 }
 
+/** Дымок над огнём: тонкая полоска поднимается, ведёт в сторону и тает. */
+function Smoke({ index }: { index: number }) {
+  const rise = useSharedValue(0);
+
+  useEffect(() => {
+    rise.value = withDelay(
+      index * 700,
+      withRepeat(withTiming(1, { duration: 2800, easing: Easing.out(Easing.quad) }), -1, false),
+    );
+  }, [index, rise]);
+
+  const style = useAnimatedStyle(() => ({
+    // Появляется быстро, тает медленно — как настоящая струйка
+    opacity: rise.value < 0.18 ? rise.value * 1.9 : 0.34 * (1 - rise.value),
+    transform: [
+      { translateY: -rise.value * 52 },
+      { translateX: Math.sin(rise.value * 3.4 + index * 1.7) * 7 },
+      { scaleY: 0.5 + rise.value * 1.1 },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.smoke, style, { left: index * 7 - 7, backgroundColor: CREAM }]}
+    />
+  );
+}
+
 /**
  * Загрузка в виде устья дровяной печи: кирпичи наполняются белым по мере
- * готовности данных, внутри разгорается огонь.
+ * готовности данных, внутри разгорается огонь и тянется дымок.
  */
 export function OvenLoader({ progress }: { progress: number }) {
   const flame = useSharedValue(0);
@@ -125,15 +156,22 @@ export function OvenLoader({ progress }: { progress: number }) {
   const fire = useAnimatedStyle(() => ({
     opacity: 0.4 + shown.value * 0.6,
     transform: [
-      { scale: (0.55 + shown.value * 0.45) * (0.94 + flame.value * 0.12) },
+      { scale: (0.6 + shown.value * 0.4) * (0.94 + flame.value * 0.12) },
       { translateY: -flame.value * 2 },
     ],
   }));
 
   return (
     <View style={{ width: WIDTH, height: HEIGHT }}>
-      <Animated.View style={[styles.fire, fire, { left: CENTER_X - 14, top: HEIGHT - 42 }]}>
-        <Ionicons name="flame" size={28} color={EMBER} />
+      {/* Дым идёт над огнём и уходит в свод */}
+      <View style={[styles.smokes, { left: CENTER_X, top: HEIGHT - 54 }]}>
+        {[0, 1, 2].map((index) => (
+          <Smoke key={index} index={index} />
+        ))}
+      </View>
+
+      <Animated.View style={[styles.fire, fire, { left: CENTER_X - 21, top: HEIGHT - 48 }]}>
+        <Ionicons name="flame" size={42} color={EMBER} />
       </Animated.View>
 
       {BRICKS.map((brick, index) => (
@@ -160,4 +198,6 @@ const styles = StyleSheet.create({
   },
   fill: { alignSelf: 'stretch', borderRadius: 2, backgroundColor: CREAM },
   fire: { position: 'absolute' },
+  smokes: { position: 'absolute' },
+  smoke: { position: 'absolute', width: 3, height: 16, borderRadius: 2 },
 });

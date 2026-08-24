@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl } from 'react-native';
 
+import { useRefreshing } from '@/store/refreshing';
 import { useTheme } from '@/theme/theme-provider';
 
 /**
@@ -17,15 +18,26 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
     void reload().finally(() => setRefreshing(false));
   }, [reload]);
 
+  // Пока идёт обновление, поверх приложения крутится пицца
+  useEffect(() => {
+    const { start, stop } = useRefreshing.getState();
+
+    if (refreshing) start(offset);
+    else stop();
+
+    return stop;
+  }, [refreshing, offset]);
+
   return (
     <RefreshControl
       refreshing={refreshing}
       onRefresh={onRefresh}
-      tintColor={theme.colors.brand}
-      colors={[theme.colors.brand]}
-      progressBackgroundColor={theme.colors.surface}
-      // На экранах с плавающей шапкой спиннер иначе крутится за ней
-      progressViewOffset={offset}
+      // Системный кружок гасим: вместо него крутится своя пицца
+      tintColor="transparent"
+      colors={['transparent']}
+      progressBackgroundColor="transparent"
+      style={{ backgroundColor: 'transparent' }}
+      progressViewOffset={offset + theme.spacing.md}
     />
   );
 }

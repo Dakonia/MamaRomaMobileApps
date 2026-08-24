@@ -506,8 +506,12 @@ export default function CartScreen() {
   if (cart.items.length === 0) {
     const last = history.data?.[0];
 
+    // Пустая корзина закрывается тем же свайпом: иначе жест то есть, то нет
     return (
-      <View style={[styles.root, { backgroundColor: theme.colors.backgroundAlt }]}>
+      <GestureDetector gesture={swipeBack}>
+      <Animated.View
+        style={[styles.root, slideStyle, { backgroundColor: theme.colors.backgroundAlt }]}
+      >
         <PizzaBackdrop strength={0.45} />
 
         {header}
@@ -532,7 +536,8 @@ export default function CartScreen() {
             <RepeatOrder order={last} />
           </View>
         ) : null}
-      </View>
+      </Animated.View>
+      </GestureDetector>
     );
   }
 

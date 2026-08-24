@@ -27,6 +27,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BootSplash } from '@/components/boot-splash';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OfflineScreen } from '@/components/offline-screen';
+import { PizzaSpinner } from '@/components/pizza-spinner';
 import { PushInvite } from '@/components/push-invite';
 import { RatingGate } from '@/components/rating-gate';
 import { UpdateReady } from '@/components/update-ready';
@@ -235,6 +236,7 @@ export default function RootLayout() {
             {/* Пока идёт заставка, поверх неё ничего не показываем */}
             {booting ? null : <PushInvite />}
             {booting ? null : <RatingGate />}
+            <PizzaSpinner />
             <UpdateReady />
             <OfflineScreen />
 
