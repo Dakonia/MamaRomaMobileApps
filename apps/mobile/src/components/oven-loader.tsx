@@ -94,13 +94,15 @@ function Brick({
   );
 }
 
-/** Струйки дыма: их пять, они гуще и выше огня — печь заметно топится. */
+/**
+ * Струйки дыма над огнём. Тонкие и короткие: место между пламенем и сводом
+ * маленькое, а заходить на кирпичи дыму нельзя — они показывают загрузку.
+ */
 const SMOKE = [
-  { x: -13, width: 4, duration: 3000, delay: 0 },
-  { x: -6, width: 5, duration: 2600, delay: 620 },
-  { x: 1, width: 6, duration: 3200, delay: 260 },
-  { x: 8, width: 5, duration: 2800, delay: 900 },
-  { x: 15, width: 4, duration: 3400, delay: 1400 },
+  { x: -9, width: 2, duration: 2600, delay: 0 },
+  { x: -3, width: 3, duration: 2200, delay: 520 },
+  { x: 3, width: 3, duration: 2800, delay: 260 },
+  { x: 9, width: 2, duration: 2400, delay: 900 },
 ];
 
 /** Одна струйка: поднимается, расходится в стороны и тает под сводом. */
@@ -116,14 +118,12 @@ function Smoke({ index }: { index: number }) {
   }, [delay, duration, rise]);
 
   const style = useAnimatedStyle(() => ({
-    // Появляется быстро, тает медленно — как настоящая струйка
-    opacity: rise.value < 0.16 ? rise.value * 3 : 0.5 * (1 - rise.value),
+    // Гаснет задолго до свода: до кирпичей не доходит ничего
+    opacity: rise.value < 0.2 ? rise.value * 1.6 : Math.max(0, 0.32 * (1 - rise.value * 1.5)),
     transform: [
-      { translateY: -rise.value * 74 },
-      // Чем выше, тем сильнее уводит в сторону и тем шире клуб
-      { translateX: Math.sin(rise.value * 3.1 + index * 1.6) * (6 + rise.value * 10) },
-      { scaleY: 0.5 + rise.value * 1.6 },
-      { scaleX: 1 + rise.value * 1.4 },
+      { translateY: -rise.value * 26 },
+      { translateX: Math.sin(rise.value * 3.1 + index * 1.6) * (3 + rise.value * 4) },
+      { scaleY: 0.6 + rise.value * 0.7 },
     ],
   }));
 
@@ -177,7 +177,7 @@ export function OvenLoader({ progress }: { progress: number }) {
   return (
     <View style={{ width: WIDTH, height: HEIGHT }}>
       {/* Дым идёт над огнём и уходит в свод */}
-      <View style={[styles.smokes, { left: CENTER_X, top: HEIGHT - 58 }]}>
+      <View style={[styles.smokes, { left: CENTER_X, top: HEIGHT - 50 }]}>
         {SMOKE.map((_, index) => (
           <Smoke key={index} index={index} />
         ))}
@@ -213,5 +213,5 @@ const styles = StyleSheet.create({
   fill: { alignSelf: 'stretch', borderRadius: 2, backgroundColor: CREAM },
   fire: { position: 'absolute' },
   smokes: { position: 'absolute' },
-  smoke: { position: 'absolute', height: 20, borderRadius: 3 },
+  smoke: { position: 'absolute', height: 13, borderRadius: 2 },
 });
