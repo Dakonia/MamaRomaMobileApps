@@ -14,6 +14,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.enums import NotificationKind, OrderStatus
 from app.models.geo import Restaurant
 from app.models.guest import Device
@@ -69,6 +70,7 @@ async def send(
     body: str,
     data: dict[str, Any] | None = None,
     kind: NotificationKind = NotificationKind.ORDER,
+    image: str | None = None,
 ) -> int:
     """Отправляет одно сообщение на все устройства гостя. Возвращает, сколько ушло."""
     if not tokens:
@@ -94,6 +96,8 @@ async def send(
                     # Заказ важнее акции: статус должен приходить сразу
                     "priority": "high",
                     "channelId": channel,
+                    # Картинка в уведомлении: Android покажет её рядом с текстом
+                    **({"richContent": {"image": image}} if image else {}),
                 }
                 for token in chunk
             ]
@@ -115,6 +119,18 @@ async def send(
 
     await _deactivate(session, tenant_id, dead)
     return delivered
+
+
+def public_url(path: str | None) -> str | None:
+    """Относительная ссылка на картинку → полная. Телефон грузит её сам."""
+    if not path:
+        return None
+    if path.startswith("http"):
+        return path
+    if not settings.public_base_url:
+        return None
+
+    return f"{settings.public_base_url.rstrip('/')}{path}"
 
 
 async def rule_for(

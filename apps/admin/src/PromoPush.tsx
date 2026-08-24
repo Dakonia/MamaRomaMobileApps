@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api, ApiError, type City, type Promotion, type Reach } from "./api";
+import { api, ApiError, mediaUrl, type City, type Promotion, type Reach } from "./api";
 import { Button, c, radius, spacing, styles, typography } from "./ui";
 
 /** Из акции получается готовое уведомление: заголовок и первая фраза описания. */
@@ -123,25 +123,28 @@ export function PromoPush({ promo, cities, onClose }: Props) {
           </select>
         </label>
 
-        {/* Так уведомление увидят на телефоне */}
+        {/* Так уведомление увидят на телефоне: картинка акции идёт справа */}
         <div style={preview}>
-          <div
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: 10,
-              background: c.accentSubtle,
-              display: "grid",
-              placeItems: "center",
-            }}
-          >
-            🍕
-          </div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 14 }}>{title || "Заголовок"}</div>
             <div style={{ fontSize: 13, color: c.textSecondary }}>{body || "Текст"}</div>
           </div>
+
+          {promo.image_url ? (
+            <img
+              src={mediaUrl(promo.image_url) ?? undefined}
+              alt=""
+              style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover" }}
+            />
+          ) : null}
         </div>
+
+        {promo.image_url ? (
+          <div style={{ fontSize: 12, color: c.textTertiary }}>
+            Картинку акции покажем в уведомлении на Android. На iPhone она видна, если потянуть
+            уведомление вниз
+          </div>
+        ) : null}
 
         {note ? (
           <div style={{ ...warn, display: "flex", alignItems: "center", gap: spacing.md }}>

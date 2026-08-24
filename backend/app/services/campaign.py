@@ -187,6 +187,7 @@ async def send_campaign(
             body=campaign.body,
             data={**campaign.target, "campaignId": str(campaign.id)},
             kind=campaign.kind,
+            image=push_service.public_url(campaign.image_url),
         )
 
         session.add(
