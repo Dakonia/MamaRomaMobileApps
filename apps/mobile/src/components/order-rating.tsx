@@ -20,12 +20,10 @@ import Animated, {
   SlideInDown,
   interpolate,
   runOnJS,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
-  withRepeat,
-  withSequence,
+  withDelay,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -39,40 +37,51 @@ import { TextField } from '@/components/text-field';
 import { track } from '@/lib/analytics';
 import { useTheme } from '@/theme/theme-provider';
 
-type Mood = { icon: keyof typeof Ionicons.glyphMap; word: string; tone: 'danger' | 'warning' | 'good' };
+type Tone = 'bad' | 'mixed' | 'good';
 
-/** Лицо оценки: слово и цвет меняются вместе со звёздами. */
-const MOOD: Record<number, Mood> = {
-  1: { icon: 'sad-outline', word: 'Совсем не то', tone: 'danger' },
-  2: { icon: 'sad-outline', word: 'Не понравилось', tone: 'danger' },
-  3: { icon: 'ellipsis-horizontal', word: 'Нормально', tone: 'warning' },
-  4: { icon: 'happy-outline', word: 'Хорошо', tone: 'good' },
-  5: { icon: 'heart', word: 'Всё отлично!', tone: 'good' },
+const toneOf = (rating: number): Tone => (rating >= 4 ? 'good' : rating === 3 ? 'mixed' : 'bad');
+
+/** Лицо оценки: выражение и слово меняются вместе со звёздами. */
+const MOOD: Record<number, { icon: keyof typeof Ionicons.glyphMap; word: string }> = {
+  1: { icon: 'sad-outline', word: 'Совсем не то' },
+  2: { icon: 'sad-outline', word: 'Не понравилось' },
+  3: { icon: 'ellipsis-horizontal', word: 'Нормально' },
+  4: { icon: 'happy-outline', word: 'Хорошо' },
+  5: { icon: 'heart', word: 'Всё отлично!' },
+};
+
+const HEADING: Record<Tone, string> = {
+  bad: 'Что пошло не так?',
+  mixed: 'Что улучшить?',
+  good: 'Что понравилось?',
 };
 
 type Tag = { text: string; icon: keyof typeof Ionicons.glyphMap };
 
 /**
- * Отметки пишем целой мыслью, а не одним словом: «Курьер» не говорит ничего,
- * а «Вежливый курьер» и «Курьер нагрубил» — говорят.
+ * Отметки: свой набор на каждое настроение оценки и по четыре штуки, чтобы
+ * блок не разрастался. Пишем целой мыслью — «Курьер» не говорит ничего,
+ * а «Вежливый курьер» и «Курьер нагрубил» говорят.
  */
-const TAGS: Record<'delivery' | 'pickup', { good: Tag[]; bad: Tag[] }> = {
+const TAGS: Record<'delivery' | 'pickup', Record<Tone, Tag[]>> = {
   delivery: {
     bad: [
       { text: 'Долго везли', icon: 'time-outline' },
       { text: 'Привезли холодным', icon: 'snow-outline' },
       { text: 'Ошиблись в заказе', icon: 'swap-horizontal-outline' },
-      { text: 'Помятая упаковка', icon: 'cube-outline' },
       { text: 'Курьер нагрубил', icon: 'person-outline' },
-      { text: 'Невкусно', icon: 'restaurant-outline' },
+    ],
+    mixed: [
+      { text: 'Могли быстрее', icon: 'time-outline' },
+      { text: 'Не очень горячее', icon: 'thermometer-outline' },
+      { text: 'Мелкая ошибка', icon: 'swap-horizontal-outline' },
+      { text: 'Помятая упаковка', icon: 'cube-outline' },
     ],
     good: [
       { text: 'Привезли быстро', icon: 'flash-outline' },
       { text: 'Всё горячее', icon: 'flame-outline' },
       { text: 'Очень вкусно', icon: 'restaurant-outline' },
       { text: 'Вежливый курьер', icon: 'person-outline' },
-      { text: 'Аккуратная упаковка', icon: 'cube-outline' },
-      { text: 'Щедрые порции', icon: 'pizza-outline' },
     ],
   },
   // На самовывозе нет курьера — про него и не спрашиваем
@@ -81,37 +90,34 @@ const TAGS: Record<'delivery' | 'pickup', { good: Tag[]; bad: Tag[] }> = {
       { text: 'Долго ждал', icon: 'time-outline' },
       { text: 'Отдали холодным', icon: 'snow-outline' },
       { text: 'Ошиблись в заказе', icon: 'swap-horizontal-outline' },
-      { text: 'Помятая упаковка', icon: 'cube-outline' },
       { text: 'Невежливо встретили', icon: 'person-outline' },
-      { text: 'Невкусно', icon: 'restaurant-outline' },
+    ],
+    mixed: [
+      { text: 'Пришлось ждать', icon: 'time-outline' },
+      { text: 'Не очень горячее', icon: 'thermometer-outline' },
+      { text: 'Мелкая ошибка', icon: 'swap-horizontal-outline' },
+      { text: 'Помятая упаковка', icon: 'cube-outline' },
     ],
     good: [
       { text: 'Отдали быстро', icon: 'flash-outline' },
       { text: 'Всё горячее', icon: 'flame-outline' },
       { text: 'Очень вкусно', icon: 'restaurant-outline' },
       { text: 'Приветливый персонал', icon: 'person-outline' },
-      { text: 'Аккуратная упаковка', icon: 'cube-outline' },
-      { text: 'Щедрые порции', icon: 'pizza-outline' },
     ],
   },
 };
 
-/** Звезда наливается золотом и подпрыгивает — по очереди, волной слева направо. */
+/** Звезда наливается по очереди — волной слева направо, без свечений и теней. */
 function Star({ index, rating, onPick }: { index: number; rating: number; onPick: () => void }) {
   const theme = useTheme();
   const lit = index <= rating;
 
   const fill = useDerivedValue(() =>
-    withSpring(lit ? 1 : 0, { damping: 11, stiffness: 220 }),
+    withDelay(lit ? index * 45 : 0, withSpring(lit ? 1 : 0, { damping: 10, stiffness: 240 })),
   );
 
-  const shell = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.92 + fill.value * 0.18 }, { translateY: -fill.value * 4 }],
-  }));
-
-  const glow = useAnimatedStyle(() => ({
-    opacity: fill.value * 0.5,
-    transform: [{ scale: 0.6 + fill.value * 0.9 }],
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: 0.9 + fill.value * 0.2 }, { translateY: -fill.value * 4 }],
   }));
 
   return (
@@ -123,17 +129,8 @@ function Star({ index, rating, onPick }: { index: number; rating: number; onPick
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onPick();
       }}
-      style={styles.center}
     >
-      {/* Свечение под звездой: золото, а не тень — плоская иконка оживает */}
-      <Animated.View
-        style={[
-          styles.glow,
-          glow,
-          { backgroundColor: theme.colors.warning, borderRadius: theme.radius.pill },
-        ]}
-      />
-      <Animated.View style={shell}>
+      <Animated.View style={style}>
         <Ionicons
           name={lit ? 'star' : 'star-outline'}
           size={40}
@@ -154,17 +151,17 @@ type Props = {
  *
  * Спрашиваем один раз и только после доставки. Публичного рейтинга у сети нет —
  * отзыв читает только персонал, поэтому гостю незачем взвешивать слова. Отказ
- * тоже ответ: смахнул шторку вниз — вопрос снят.
+ * тоже ответ: потянул шторку за язычок вниз — вопрос снят.
  */
 export function OrderRating({ order, onClose }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [rating, setRating] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [done, setDone] = useState(false);
-  const queryClient = useQueryClient();
 
   const send = useMutation({
     mutationFn: () =>
@@ -179,58 +176,54 @@ export function OrderRating({ order, onClose }: Props) {
       // Список заказов теперь знает об оценке — второй раз не спросим
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       setDone(true);
-      setTimeout(onClose, 1900);
+      setTimeout(onClose, 2400);
     },
     // Не дошло — не мучаем гостя повтором: оценка не стоит его нервов
     onError: onClose,
   });
 
-  const positive = rating >= 4;
-  const list = TAGS[order.type === 'delivery' ? 'delivery' : 'pickup'];
-  const choices = positive ? list.good : list.bad;
+  const tone = toneOf(rating);
+  const choices = TAGS[order.type === 'delivery' ? 'delivery' : 'pickup'][tone];
 
   // Список подменился — прежние отметки к нему уже не относятся
   useEffect(() => {
     setTags([]);
-  }, [positive]);
+  }, [tone]);
 
   const mood = MOOD[rating];
   const moodColor =
-    mood === undefined
+    rating === 0
       ? theme.colors.textTertiary
-      : mood.tone === 'danger'
+      : tone === 'bad'
         ? theme.colors.danger
-        : mood.tone === 'warning'
+        : tone === 'mixed'
           ? theme.colors.warning
           : theme.colors.accent;
 
-  // Шторку можно просто смахнуть вниз — это то же «Не сейчас»
+  /**
+   * Шторку тянут за язычок, а не за всё полотно: ниже живёт прокрутка, и два
+   * жеста на одной площади всё время спорили друг с другом
+   */
   const pull = useSharedValue(0);
   const leaving = useSharedValue(false);
-  const scroll = useSharedValue(0);
-
-  const onScroll = useAnimatedScrollHandler((event) => {
-    scroll.value = event.contentOffset.y;
-  });
 
   const swipe = Gesture.Pan()
-    .activeOffsetY([-12, 12])
     .onUpdate((event) => {
-      // Тянем только с самого верха: ниже жест мешал бы прокрутке
-      if (leaving.value || event.translationY <= 0 || scroll.value > 4) return;
-      pull.value = event.translationY;
+      if (leaving.value) return;
+      // Вверх шторка не едет — только вниз, с сопротивлением у самого верха
+      pull.value = event.translationY > 0 ? event.translationY : event.translationY / 6;
     })
     .onEnd((event) => {
       if (leaving.value) return;
 
-      if (pull.value > 120 || event.velocityY > 900) {
+      if (pull.value > 110 || event.velocityY > 800) {
         leaving.value = true;
-        pull.value = withTiming(600, { duration: 220, easing: Easing.in(Easing.cubic) });
+        pull.value = withTiming(700, { duration: 240, easing: Easing.in(Easing.cubic) });
         runOnJS(onClose)();
         return;
       }
 
-      pull.value = withSpring(0, { damping: 18, stiffness: 200 });
+      pull.value = withSpring(0, { damping: 20, stiffness: 220 });
     });
 
   const sheet = useAnimatedStyle(() => ({ transform: [{ translateY: pull.value }] }));
@@ -240,27 +233,8 @@ export function OrderRating({ order, onClose }: Props) {
     opacity: interpolate(pull.value, [0, 320], [1, 0], 'clamp'),
   }));
 
-  // Ореол вокруг лица оценки дышит, пока гость не выбрал
-  const halo = useSharedValue(0);
-
-  useEffect(() => {
-    halo.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-      false,
-    );
-  }, [halo]);
-
-  const haloStyle = useAnimatedStyle(() => ({
-    opacity: 0.14 + halo.value * 0.16,
-    transform: [{ scale: 1 + halo.value * 0.12 }],
-  }));
-
   const faceScale = useDerivedValue(() =>
-    withSpring(rating > 0 ? 1 : 0.94, { damping: 12, stiffness: 200 }),
+    withSpring(rating > 0 ? 1 : 0.92, { damping: 11, stiffness: 220 }),
   );
 
   const face = useAnimatedStyle(() => ({ transform: [{ scale: faceScale.value }] }));
@@ -282,7 +256,6 @@ export function OrderRating({ order, onClose }: Props) {
         <Pressable style={styles.grow} onPress={onClose} accessibilityLabel="Закрыть" />
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <GestureDetector gesture={swipe}>
           <Animated.View
             entering={SlideInDown.duration(360)}
             style={[
@@ -297,20 +270,20 @@ export function OrderRating({ order, onClose }: Props) {
             ]}
           >
             {/* Язычок: за него шторку тянут вниз, и это видно без подписи */}
-            <View style={[styles.center, { paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.sm }]}>
-              <View
-                style={{
-                  width: theme.spacing.xxl,
-                  height: 4,
-                  borderRadius: theme.radius.pill,
-                  backgroundColor: theme.colors.border,
-                }}
-              />
-            </View>
+            <GestureDetector gesture={swipe}>
+              <View style={[styles.center, styles.handle]}>
+                <View
+                  style={{
+                    width: 44,
+                    height: 5,
+                    borderRadius: theme.radius.pill,
+                    backgroundColor: theme.colors.border,
+                  }}
+                />
+              </View>
+            </GestureDetector>
 
             <Animated.ScrollView
-              onScroll={onScroll}
-              scrollEventThrottle={16}
               bounces={false}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -320,193 +293,208 @@ export function OrderRating({ order, onClose }: Props) {
                 gap: theme.spacing.base,
               }}
             >
-            {done ? (
-              <View style={[styles.center, { paddingVertical: theme.spacing.xl, gap: theme.spacing.md }]}>
-                {positive ? (
-                  <Confetti colors={[theme.colors.warning, theme.colors.accent, theme.colors.brand]} />
-                ) : null}
-
-                <SuccessCheck color={moodColor} ringColor={theme.colors.accentSubtle} />
-
-                <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>
-                  Спасибо!
-                </Text>
-                <Text
-                  style={[theme.typography.body, styles.centered, { color: theme.colors.textSecondary }]}
+              {done ? (
+                <View
+                  style={[styles.center, { paddingVertical: theme.spacing.xl, gap: theme.spacing.md }]}
                 >
-                  {positive
-                    ? 'Передадим ресторану — им будет приятно'
-                    : 'Разберёмся, что пошло не так'}
-                </Text>
-              </View>
-            ) : (
-              <>
-                <View style={[styles.center, { gap: theme.spacing.sm }]}>
-                  {/* Лицо оценки: цвет и выражение меняются вместе со звёздами */}
-                  <View style={styles.mark}>
-                    <Animated.View
-                      style={[
-                        StyleSheet.absoluteFill,
-                        haloStyle,
-                        { borderRadius: theme.radius.pill, backgroundColor: moodColor },
-                      ]}
-                    />
+                  <SuccessCheck color={moodColor} ringColor={theme.colors.accentSubtle} />
+
+                  <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>
+                    Спасибо!
+                  </Text>
+                  <Text
+                    style={[
+                      theme.typography.body,
+                      styles.centered,
+                      { color: theme.colors.textSecondary },
+                    ]}
+                  >
+                    {tone === 'good'
+                      ? 'Передадим ресторану — им будет приятно'
+                      : 'Разберёмся, что пошло не так'}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <View style={[styles.center, { gap: theme.spacing.sm }]}>
+                    {/* Лицо оценки: цвет и выражение меняются вместе со звёздами */}
                     <Animated.View
                       style={[
                         face,
                         styles.center,
                         styles.mark,
-                        { borderRadius: theme.radius.pill },
+                        {
+                          borderRadius: theme.radius.pill,
+                          borderWidth: 1.5,
+                          borderColor: moodColor,
+                          backgroundColor: theme.colors.surfaceSunken,
+                        },
                       ]}
                     >
-                      <Ionicons
-                        name={mood?.icon ?? 'star-outline'}
-                        size={34}
-                        color={moodColor}
-                      />
+                      <Animated.View key={rating} entering={FadeIn.duration(220)}>
+                        <Ionicons name={mood?.icon ?? 'star-outline'} size={30} color={moodColor} />
+                      </Animated.View>
                     </Animated.View>
-                  </View>
 
-                  <Text style={[theme.typography.h2, styles.centered, { color: theme.colors.textPrimary }]}>
-                    Как всё прошло?
-                  </Text>
-                  <Text
-                    style={[
-                      theme.typography.caption,
-                      styles.centered,
-                      { color: theme.colors.textTertiary },
-                    ]}
-                  >
-                    Заказ № {order.number} · {order.restaurant_name}
-                  </Text>
-                </View>
-
-                <View style={[styles.stars, { gap: theme.spacing.xs }]}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star key={star} index={star} rating={rating} onPick={() => setRating(star)} />
-                  ))}
-                </View>
-
-                {/* Слово вместо цифры: меняется вместе с оценкой */}
-                <View style={[styles.center, { height: theme.spacing.xl }]}>
-                  {mood ? (
-                    <Animated.View
-                      key={mood.word}
-                      entering={FadeInDown.duration(220).easing(Easing.out(Easing.quad))}
-                      style={{
-                        paddingHorizontal: theme.spacing.base,
-                        paddingVertical: theme.spacing.xxs,
-                        borderRadius: theme.radius.pill,
-                        backgroundColor: theme.colors.surfaceSunken,
-                      }}
+                    <Text
+                      style={[theme.typography.h2, styles.centered, { color: theme.colors.textPrimary }]}
                     >
-                      <Text style={[theme.typography.bodyMedium, { color: moodColor }]}>
-                        {mood.word}
-                      </Text>
-                    </Animated.View>
-                  ) : null}
-                </View>
-
-                {rating > 0 ? (
-                  <Animated.View style={[extra, { gap: theme.spacing.base }]}>
+                      Как всё прошло?
+                    </Text>
                     <Text
                       style={[
-                        theme.typography.bodyMedium,
+                        theme.typography.caption,
                         styles.centered,
-                        { color: theme.colors.textSecondary },
+                        { color: theme.colors.textTertiary },
                       ]}
                     >
-                      {positive ? 'Что понравилось?' : 'Что пошло не так?'}
+                      Заказ № {order.number} · {order.restaurant_name}
                     </Text>
+                  </View>
 
-                    <View style={[styles.wrap, { gap: theme.spacing.sm }]}>
-                      {choices.map((tag, index) => {
-                        const picked = tags.includes(tag.text);
+                  <View style={[styles.stars, { gap: theme.spacing.sm }]}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star key={star} index={star} rating={rating} onPick={() => setRating(star)} />
+                    ))}
+                  </View>
 
-                        return (
-                          <Animated.View
-                            key={tag.text}
-                            entering={FadeInDown.duration(240)
-                              .delay(index * 40)
-                              .easing(Easing.out(Easing.quad))}
-                          >
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityState={{ selected: picked }}
-                              onPress={() => {
-                                void Haptics.selectionAsync();
-                                setTags((current) =>
-                                  picked
-                                    ? current.filter((item) => item !== tag.text)
-                                    : [...current, tag.text],
-                                );
-                              }}
-                              style={[
-                                styles.chip,
-                                {
-                                  paddingLeft: theme.spacing.md,
-                                  paddingRight: theme.spacing.base,
-                                  paddingVertical: theme.spacing.sm,
-                                  gap: theme.spacing.xs,
-                                  borderRadius: theme.radius.pill,
-                                  borderWidth: 1.5,
-                                  borderColor: picked ? moodColor : theme.colors.border,
-                                  backgroundColor: picked
-                                    ? theme.colors.surfaceSunken
-                                    : theme.colors.surface,
-                                },
-                              ]}
+                  {/* Слово вместо цифры: меняется вместе с оценкой */}
+                  <View style={[styles.center, styles.word]}>
+                    {mood ? (
+                      <Animated.View
+                        key={mood.word}
+                        entering={FadeInDown.duration(220).easing(Easing.out(Easing.quad))}
+                        style={{
+                          paddingHorizontal: theme.spacing.base,
+                          paddingVertical: theme.spacing.xxs,
+                          borderRadius: theme.radius.pill,
+                          backgroundColor: theme.colors.surfaceSunken,
+                        }}
+                      >
+                        <Text style={[theme.typography.bodyMedium, { color: moodColor }]}>
+                          {mood.word}
+                        </Text>
+                      </Animated.View>
+                    ) : null}
+                  </View>
+
+                  {rating > 0 ? (
+                    <Animated.View style={[extra, { gap: theme.spacing.base }]}>
+                      <Text
+                        style={[
+                          theme.typography.bodyMedium,
+                          styles.centered,
+                          { color: theme.colors.textSecondary },
+                        ]}
+                      >
+                        {HEADING[tone]}
+                      </Text>
+
+                      <View style={[styles.wrap, { gap: theme.spacing.sm }]}>
+                        {choices.map((tag, index) => {
+                          const picked = tags.includes(tag.text);
+
+                          return (
+                            <Animated.View
+                              key={tag.text}
+                              entering={FadeInDown.duration(240)
+                                .delay(index * 45)
+                                .easing(Easing.out(Easing.quad))}
                             >
-                              <Ionicons
-                                name={picked ? 'checkmark-circle' : tag.icon}
-                                size={17}
-                                color={picked ? moodColor : theme.colors.textTertiary}
-                              />
-                              <Text
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityState={{ selected: picked }}
+                                onPress={() => {
+                                  void Haptics.selectionAsync();
+                                  setTags((current) =>
+                                    picked
+                                      ? current.filter((item) => item !== tag.text)
+                                      : [...current, tag.text],
+                                  );
+                                }}
                                 style={[
-                                  theme.typography.bodyMedium,
-                                  { color: picked ? theme.colors.textPrimary : theme.colors.textSecondary },
+                                  styles.chip,
+                                  {
+                                    paddingLeft: theme.spacing.md,
+                                    paddingRight: theme.spacing.base,
+                                    paddingVertical: theme.spacing.sm,
+                                    gap: theme.spacing.xs,
+                                    borderRadius: theme.radius.pill,
+                                    borderWidth: 1.5,
+                                    borderColor: picked ? moodColor : theme.colors.border,
+                                    backgroundColor: picked
+                                      ? theme.colors.surfaceSunken
+                                      : theme.colors.surface,
+                                  },
                                 ]}
                               >
-                                {tag.text}
-                              </Text>
-                            </Pressable>
-                          </Animated.View>
-                        );
-                      })}
-                    </View>
+                                <Ionicons
+                                  name={picked ? 'checkmark-circle' : tag.icon}
+                                  size={17}
+                                  color={picked ? moodColor : theme.colors.textTertiary}
+                                />
+                                <Text
+                                  style={[
+                                    theme.typography.bodyMedium,
+                                    {
+                                      color: picked
+                                        ? theme.colors.textPrimary
+                                        : theme.colors.textSecondary,
+                                    },
+                                  ]}
+                                >
+                                  {tag.text}
+                                </Text>
+                              </Pressable>
+                            </Animated.View>
+                          );
+                        })}
+                      </View>
 
-                    <TextField
-                      label="Комментарий"
-                      value={comment}
-                      onChangeText={setComment}
-                      placeholder={positive ? 'Что запомнилось' : 'Что стоит исправить'}
-                      multiline
-                    />
+                      <TextField
+                        label="Комментарий"
+                        value={comment}
+                        onChangeText={setComment}
+                        placeholder={tone === 'good' ? 'Что запомнилось' : 'Что стоит исправить'}
+                        multiline
+                      />
 
-                    <PrimaryButton
-                      label="Отправить"
-                      loading={send.isPending}
-                      onPress={() => send.mutate()}
-                    />
-                  </Animated.View>
-                ) : null}
+                      <PrimaryButton
+                        label="Отправить"
+                        loading={send.isPending}
+                        onPress={() => send.mutate()}
+                      />
+                    </Animated.View>
+                  ) : null}
 
-                <Pressable
-                  accessibilityRole="button"
-                  hitSlop={theme.hitSlop}
-                  onPress={onClose}
-                  style={[styles.center, { minHeight: theme.layout.minTouchTarget }]}
-                >
-                  <Text style={[theme.typography.bodyMedium, { color: theme.colors.textTertiary }]}>
-                    Не сейчас
-                  </Text>
-                </Pressable>
-              </>
-            )}
+                  <Pressable
+                    accessibilityRole="button"
+                    hitSlop={theme.hitSlop}
+                    onPress={onClose}
+                    style={[styles.center, { minHeight: theme.layout.minTouchTarget }]}
+                  >
+                    <Text style={[theme.typography.bodyMedium, { color: theme.colors.textTertiary }]}>
+                      Не сейчас
+                    </Text>
+                  </Pressable>
+                </>
+              )}
             </Animated.ScrollView>
+
+            {done && tone === 'good' ? (
+              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                <Confetti
+                  count={30}
+                  colors={[
+                    theme.colors.warning,
+                    theme.colors.accent,
+                    theme.colors.brand,
+                    theme.colors.warningSubtle,
+                  ]}
+                />
+              </View>
+            ) : null}
           </Animated.View>
-        </GestureDetector>
         </KeyboardAvoidingView>
       </Animated.View>
     </Modal>
@@ -517,10 +505,12 @@ const styles = StyleSheet.create({
   scrim: { flex: 1, justifyContent: 'flex-end' },
   grow: { flex: 1 },
   sheet: { overflow: 'hidden' },
+  // Площадь под язычок: за неё тянут, поэтому она заметно больше самой полоски
+  handle: { height: 32, paddingTop: 10 },
   center: { alignItems: 'center', justifyContent: 'center' },
   centered: { textAlign: 'center' },
-  mark: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center' },
-  glow: { position: 'absolute', width: 40, height: 40 },
+  mark: { width: 68, height: 68 },
+  word: { height: 32 },
   stars: { flexDirection: 'row', justifyContent: 'center' },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
   chip: { flexDirection: 'row', alignItems: 'center' },
