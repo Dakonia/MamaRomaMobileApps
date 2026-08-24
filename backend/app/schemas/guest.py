@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -111,3 +111,22 @@ class DeviceWrite(BaseModel):
     push_token: str = Field(min_length=10, max_length=200)
     platform: DevicePlatform
     app_version: str | None = Field(default=None, max_length=20)
+
+
+class CartPing(BaseModel):
+    """След корзины: сколько блюд и на какую сумму. Состав не передаём."""
+
+    positions: int = Field(ge=0, le=200)
+    total_kopecks: int = Field(ge=0)
+
+
+class MessageRead(BaseModel):
+    """Сообщение для ленты в приложении: та же рассылка, только внутри."""
+
+    id: UUID
+    title: str
+    body: str
+    image_url: str | None
+    target: dict[str, str]
+    sent_at: datetime | None
+    is_read: bool

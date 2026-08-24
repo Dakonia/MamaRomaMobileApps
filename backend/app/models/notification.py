@@ -149,3 +149,22 @@ class AutomationDelivery(UUIDMixin, TenantMixin, TimestampMixin, Base):
     )
     guest_id: Mapped[UUID] = mapped_column(ForeignKey("guests.id", ondelete="CASCADE"), index=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CartSnapshot(UUIDMixin, TenantMixin, TimestampMixin, Base):
+    """След корзины гостя: сколько блюд и на какую сумму лежит прямо сейчас.
+
+    Состав не храним — для напоминания хватает суммы, а лишние данные о вкусах
+    гостя нам ни к чему. Запись живёт одна на гостя и переписывается.
+    """
+
+    __tablename__ = "cart_snapshots"
+    __table_args__ = (UniqueConstraint("tenant_id", "guest_id", name="uq_cart_snapshots_guest"),)
+
+    guest_id: Mapped[UUID] = mapped_column(ForeignKey("guests.id", ondelete="CASCADE"), index=True)
+
+    positions: Mapped[int] = mapped_column(default=0)
+    total_kopecks: Mapped[int] = mapped_column(default=0)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Когда напомнили в прошлый раз: чтобы не писать про одну корзину дважды
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

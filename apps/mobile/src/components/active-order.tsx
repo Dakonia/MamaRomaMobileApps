@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { api, type Order } from '@/api/client';
+import { hideLiveOrder, showLiveOrder } from '@/lib/live-order';
 import { PressableScale } from '@/components/pressable-scale';
 import { useSession } from '@/store/session';
 import type { Theme } from '@/theme';
@@ -118,6 +119,12 @@ export function ActiveOrder({ compact }: { compact?: boolean }) {
   });
 
   const order = (orders.data ?? []).find((row) => !DONE.includes(row.status));
+
+  // Живое табло в шторке телефона: обновляется вместе со статусом
+  useEffect(() => {
+    if (order) void showLiveOrder(order);
+    else void hideLiveOrder();
+  }, [order?.id, order?.status]);
 
   if (order === undefined) return null;
 

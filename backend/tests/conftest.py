@@ -113,3 +113,21 @@ async def client(session: AsyncSession, guest: Guest) -> AsyncGenerator[AsyncCli
         yield http
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def no_push(monkeypatch):
+    """Ни один тест не отправляет настоящих уведомлений.
+
+    Иначе прогон разбудит телефоны, чьи токены лежат в базе разработки.
+    """
+    sent: list[dict[str, object]] = []
+
+    async def fake_send(session, tenant_id, tokens, title, body, data=None, **rest):
+        sent.append({"tokens": list(tokens), "title": title, "body": body})
+        return len(tokens)
+
+    monkeypatch.setattr("app.services.push.send", fake_send)
+    monkeypatch.setattr("app.services.campaign.push_service.send", fake_send)
+
+    return sent

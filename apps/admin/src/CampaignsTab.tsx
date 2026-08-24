@@ -487,6 +487,19 @@ export function CampaignsTab() {
                       >
                         Открыть
                       </Button>
+                      <Button tone="quiet" onClick={() => void api.copyCampaign(row.id).then(load)}>
+                        Копия
+                      </Button>
+                      <Button
+                        tone="danger"
+                        onClick={() => {
+                          if (confirm(`Удалить рассылку «${row.name}»?`)) {
+                            void api.deleteCampaign(row.id).then(load);
+                          }
+                        }}
+                      >
+                        Удалить
+                      </Button>
                       <Button
                         onClick={() =>
                           void api.sendCampaign(row.id).then((sent) => {

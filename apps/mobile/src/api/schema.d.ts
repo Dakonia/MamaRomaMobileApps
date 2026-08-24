@@ -150,6 +150,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * След корзины
+         * @description Приложение сообщает, что в корзине что-то лежит.
+         *
+         *     Нужно ровно для одного: напомнить, если гость собрал корзину и ушёл.
+         *     Пустая корзина стирает след — напоминать станет не о чем.
+         */
+        put: operations["remember_cart_api_v1_cart_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Лента сообщений гостя
+         * @description Те же рассылки, что уходили уведомлениями, но внутри приложения.
+         *
+         *     Половина гостей уведомления не разрешает — лента даёт им те же новости,
+         *     когда они сами открывают приложение.
+         */
+        get: operations["messages_api_v1_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/messages/{campaign_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отметить сообщение прочитанным */
+        post: operations["read_message_api_v1_messages__campaign_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/addresses": {
         parameters: {
             query?: never;
@@ -1094,11 +1157,32 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Удалить рассылку */
+        delete: operations["delete_campaign_api_v1_admin_campaigns__campaign_id__delete"];
         options?: never;
         head?: never;
         /** Изменить рассылку */
         patch: operations["update_campaign_api_v1_admin_campaigns__campaign_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/campaigns/{campaign_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Копия рассылки
+         * @description Копия — черновик: удобно повторить прошлую рассылку с новым текстом.
+         */
+        post: operations["copy_campaign_api_v1_admin_campaigns__campaign_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/campaigns/audience": {
@@ -1110,7 +1194,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Сколько гостей попадёт в рассылку */
+        /**
+         * Сколько гостей попадёт в рассылку
+         * @description Не только число, но и разбор: почему остальные не получат.
+         */
         post: operations["campaign_audience_api_v1_admin_campaigns_audience_post"];
         delete?: never;
         options?: never;
@@ -1438,6 +1525,16 @@ export interface components {
             };
             /** Scheduled At */
             scheduled_at?: string | null;
+        };
+        /**
+         * CartPing
+         * @description След корзины: сколько блюд и на какую сумму. Состав не передаём.
+         */
+        CartPing: {
+            /** Positions */
+            positions: number;
+            /** Total Kopecks */
+            total_kopecks: number;
         };
         /** CategoryAdminRead */
         CategoryAdminRead: {
@@ -2318,6 +2415,31 @@ export interface components {
             restaurant_id: string | null;
             /** Categories */
             categories: components["schemas"]["MenuCategoryRead"][];
+        };
+        /**
+         * MessageRead
+         * @description Сообщение для ленты в приложении: та же рассылка, только внутри.
+         */
+        MessageRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Image Url */
+            image_url: string | null;
+            /** Target */
+            target: {
+                [key: string]: string;
+            };
+            /** Sent At */
+            sent_at: string | null;
+            /** Is Read */
+            is_read: boolean;
         };
         /** OrderCreate */
         OrderCreate: {
@@ -3797,6 +3919,101 @@ export interface operations {
             };
             path: {
                 push_token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remember_cart_api_v1_cart_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CartPing"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    messages_api_v1_messages_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_message_api_v1_messages__campaign_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                campaign_id: string;
             };
             cookie?: never;
         };
@@ -6483,6 +6700,37 @@ export interface operations {
             };
         };
     };
+    delete_campaign_api_v1_admin_campaigns__campaign_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_campaign_api_v1_admin_campaigns__campaign_id__patch: {
         parameters: {
             query?: never;
@@ -6502,6 +6750,39 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_campaign_api_v1_admin_campaigns__campaign_id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6559,7 +6840,9 @@ export interface operations {
     };
     send_campaign_now_api_v1_admin_campaigns__campaign_id__send_post: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: {
                 "X-Tenant-Id"?: string | null;
             };

@@ -34,6 +34,7 @@ import { startAnalytics, trackError, trackScreen } from '@/lib/analytics';
 import * as Notifications from 'expo-notifications';
 
 import { useBoot } from '@/lib/boot';
+import { useCartEcho } from '@/lib/use-cart-echo';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { useAppearance } from '@/store/appearance';
 import { useSession } from '@/store/session';
@@ -63,6 +64,8 @@ export default function RootLayout() {
   // Заставка играет один раз за запуск и уходит, когда данные уже в памяти
   const [booting, setBooting] = useState(true);
   const boot = useBoot();
+  // Сервер должен знать, что корзина не пуста, — иначе о ней некому напомнить
+  useCartEcho();
   const pathname = usePathname();
 
   // Экран, на котором сейчас гость: из этого собирается воронка
@@ -92,6 +95,11 @@ export default function RootLayout() {
 
       if (screen === 'dish' && id) {
         router.push(`/dish/${id}`);
+        return;
+      }
+
+      if (screen === 'messages') {
+        router.push('/messages');
         return;
       }
 
@@ -213,6 +221,10 @@ export default function RootLayout() {
               />
               <Stack.Screen
                 name="reservations"
+                options={{ animation: 'slide_from_right', gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="messages"
                 options={{ animation: 'slide_from_right', gestureEnabled: true }}
               />
               <Stack.Screen name="address-form" options={{ presentation: 'modal' }} />

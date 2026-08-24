@@ -17,12 +17,13 @@ from app.core.tenants import Tenant
 from app.models.enums import CampaignStatus, NotificationKind, OrderStatus, TriggerKind
 from app.models.geo import Restaurant
 from app.models.guest import Device, Guest
-from app.models.loyalty import LoyaltyAccount
+from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.notification import (
     Automation,
     AutomationDelivery,
     Campaign,
     CampaignDelivery,
+    CartSnapshot,
 )
 from app.models.order import Order
 from app.models.reservation import Reservation
@@ -247,6 +248,77 @@ async def _inactive_guests(session: AsyncSession, tenant: Tenant, days: int) -> 
     )
 
 
+async def _abandoned_carts(session: AsyncSession, tenant: Tenant, hours: int) -> list[Guest]:
+    """Собрал корзину, не оформил и молчит дольше положенного.
+
+    След корзины стирается при оформлении заказа, поэтому в выборку попадают
+    только те, кто действительно ушёл ни с чем.
+    """
+    edge = datetime.now(UTC) - timedelta(hours=hours)
+
+    rows = (
+        await session.scalars(
+            select(CartSnapshot).where(
+                CartSnapshot.tenant_id == tenant.id,
+                CartSnapshot.changed_at <= edge,
+                CartSnapshot.reminded_at.is_(None),
+            )
+        )
+    ).all()
+
+    if not rows:
+        return []
+
+    # Отмечаем сразу: про одну и ту же корзину пишем один раз
+    now = datetime.now(UTC)
+    for row in rows:
+        row.reminded_at = now
+    await session.commit()
+
+    return list(
+        await session.scalars(
+            select(Guest).where(
+                Guest.tenant_id == tenant.id,
+                Guest.deleted_at.is_(None),
+                Guest.id.in_([row.guest_id for row in rows]),
+            )
+        )
+    )
+
+
+async def _points_expiring(session: AsyncSession, tenant: Tenant, days_before: int) -> list[Guest]:
+    """У кого на днях сгорают баллы, которых хватает хотя бы на что-то.
+
+    Мелочь вроде десяти баллов поводом для сообщения не считаем: гость только
+    расстроится, что ради неё его побеспокоили.
+    """
+    edge = datetime.now(UTC) + timedelta(days=days_before)
+    least = 100
+
+    burning = (
+        select(LoyaltyAccount.guest_id)
+        .join(LoyaltyTransaction, LoyaltyTransaction.account_id == LoyaltyAccount.id)
+        .where(
+            LoyaltyAccount.tenant_id == tenant.id,
+            LoyaltyAccount.points_balance >= least,
+            LoyaltyTransaction.points > 0,
+            LoyaltyTransaction.expires_at.is_not(None),
+            LoyaltyTransaction.expires_at <= edge,
+            LoyaltyTransaction.expires_at > datetime.now(UTC),
+        )
+    )
+
+    return list(
+        await session.scalars(
+            select(Guest).where(
+                Guest.tenant_id == tenant.id,
+                Guest.deleted_at.is_(None),
+                Guest.id.in_(burning),
+            )
+        )
+    )
+
+
 async def run_automation(session: AsyncSession, tenant: Tenant, rule: Automation) -> int:
     """Один прогон сценария: кому подошло — тем пишем, но не чаще раза в месяц."""
     if not rule.is_enabled:
@@ -262,8 +334,11 @@ async def run_automation(session: AsyncSession, tenant: Tenant, rule: Automation
         guests = await _birthday_guests(session, tenant, int(params.get("days_before", 0)))
     elif rule.trigger is TriggerKind.INACTIVE:
         guests = await _inactive_guests(session, tenant, int(params.get("days", 30)))
+    elif rule.trigger is TriggerKind.ABANDONED_CART:
+        guests = await _abandoned_carts(session, tenant, int(params.get("hours", 2)))
+    elif rule.trigger is TriggerKind.POINTS_EXPIRING:
+        guests = await _points_expiring(session, tenant, int(params.get("days_before", 7)))
     else:
-        # Забытая корзина и сгорающие баллы придут следующим шагом
         guests = []
 
     # Одному гостю по одному сценарию — не чаще чем раз в тридцать дней

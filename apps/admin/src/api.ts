@@ -540,6 +540,12 @@ export const api = {
       body: JSON.stringify({ audience }),
     }),
 
+  deleteCampaign: (id: string) =>
+    request<void>(`/admin/campaigns/${id}`, { method: "DELETE" }),
+
+  copyCampaign: (id: string) =>
+    request<Campaign>(`/admin/campaigns/${id}/copy`, { method: "POST" }),
+
   sendCampaign: (id: string, force = false) =>
     request<Campaign>(`/admin/campaigns/${id}/send?force=${force}`, { method: "POST" }),
 

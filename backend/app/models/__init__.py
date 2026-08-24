@@ -20,6 +20,7 @@ from app.models.notification import (
     AutomationDelivery,
     Campaign,
     CampaignDelivery,
+    CartSnapshot,
     NotificationHours,
     NotificationRule,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "AutomationDelivery",
     "Campaign",
     "CampaignDelivery",
+    "CartSnapshot",
     "City",
     "Device",
     "DevicePlatform",

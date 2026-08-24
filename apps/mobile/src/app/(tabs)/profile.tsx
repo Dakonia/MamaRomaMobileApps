@@ -25,6 +25,7 @@ import { ActiveOrder } from '@/components/active-order';
 import { OrderHistoryCard } from '@/components/order-history-card';
 import { PressableScale } from '@/components/pressable-scale';
 import { MarketingSwitch } from '@/components/marketing-switch';
+import { MessagesStrip } from '@/components/messages-strip';
 import { PushSwitch } from '@/components/push-switch';
 import { ReservationStrip } from '@/components/reservation-strip';
 import { PrimaryButton } from '@/components/primary-button';
@@ -274,6 +275,8 @@ export default function ProfileScreen() {
             <ActiveOrder compact />
 
             <ReservationStrip />
+
+            <MessagesStrip />
 
             {session.guest.name ? null : (
               <Animated.View entering={FadeIn}>

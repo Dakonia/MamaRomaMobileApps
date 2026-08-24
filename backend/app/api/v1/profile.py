@@ -10,6 +10,7 @@ from app.models.enums import OrderStatus
 from app.models.geo import City, Restaurant
 from app.models.guest import Device
 from app.models.menu import Dish
+from app.models.notification import Campaign, CampaignDelivery, CartSnapshot
 from app.models.order import Order, OrderItem
 from app.schemas.auth import GuestRead
 from app.schemas.guest import (
@@ -17,10 +18,12 @@ from app.schemas.guest import (
     AddressRead,
     AddressSuggestion,
     AddressUpdate,
+    CartPing,
     DeviceWrite,
     FavouriteDish,
     GuestSummary,
     GuestUpdate,
+    MessageRead,
 )
 from app.services import address_book
 from app.services import delivery as delivery_service
@@ -94,6 +97,104 @@ async def forget_device(
         )
         .values(is_active=False)
     )
+    await session.commit()
+
+
+@router.put("/cart", status_code=status.HTTP_204_NO_CONTENT, summary="След корзины")
+async def remember_cart(
+    payload: CartPing, session: SessionDep, tenant: TenantDep, guest: GuestDep
+) -> None:
+    """Приложение сообщает, что в корзине что-то лежит.
+
+    Нужно ровно для одного: напомнить, если гость собрал корзину и ушёл.
+    Пустая корзина стирает след — напоминать станет не о чем.
+    """
+    snapshot = await session.scalar(
+        select(CartSnapshot).where(
+            CartSnapshot.tenant_id == tenant.id, CartSnapshot.guest_id == guest.id
+        )
+    )
+
+    if payload.positions == 0:
+        if snapshot is not None:
+            await session.delete(snapshot)
+            await session.commit()
+        return
+
+    if snapshot is None:
+        snapshot = CartSnapshot(tenant_id=tenant.id, guest_id=guest.id)
+        session.add(snapshot)
+
+    snapshot.positions = payload.positions
+    snapshot.total_kopecks = payload.total_kopecks
+    snapshot.changed_at = datetime.now(UTC)
+    # Корзина изменилась — считаем её новой и напомним о ней ещё раз
+    snapshot.reminded_at = None
+
+    await session.commit()
+
+
+@router.get("/messages", summary="Лента сообщений гостя")
+async def messages(
+    session: SessionDep, tenant: TenantDep, guest: GuestDep
+) -> list[MessageRead]:
+    """Те же рассылки, что уходили уведомлениями, но внутри приложения.
+
+    Половина гостей уведомления не разрешает — лента даёт им те же новости,
+    когда они сами открывают приложение.
+    """
+    rows = (
+        await session.execute(
+            select(Campaign, CampaignDelivery)
+            .join(CampaignDelivery, CampaignDelivery.campaign_id == Campaign.id)
+            .where(
+                CampaignDelivery.tenant_id == tenant.id,
+                CampaignDelivery.guest_id == guest.id,
+            )
+            .order_by(CampaignDelivery.sent_at.desc())
+            .limit(40)
+        )
+    ).all()
+
+    return [
+        MessageRead(
+            id=campaign.id,
+            title=campaign.title,
+            body=campaign.body,
+            image_url=campaign.image_url,
+            target=campaign.target or {},
+            sent_at=delivery.sent_at,
+            is_read=delivery.opened_at is not None,
+        )
+        for campaign, delivery in rows
+    ]
+
+
+@router.post(
+    "/messages/{campaign_id}/read",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Отметить сообщение прочитанным",
+)
+async def read_message(
+    campaign_id: UUID, session: SessionDep, tenant: TenantDep, guest: GuestDep
+) -> None:
+    delivery = await session.scalar(
+        select(CampaignDelivery).where(
+            CampaignDelivery.tenant_id == tenant.id,
+            CampaignDelivery.campaign_id == campaign_id,
+            CampaignDelivery.guest_id == guest.id,
+        )
+    )
+    if delivery is None or delivery.opened_at is not None:
+        return
+
+    delivery.opened_at = datetime.now(UTC)
+
+    # Счётчик открытий рассылки: по нему видно, какие темы цепляют
+    campaign = await session.get(Campaign, campaign_id)
+    if campaign is not None:
+        campaign.opened_count += 1
+
     await session.commit()
 
 

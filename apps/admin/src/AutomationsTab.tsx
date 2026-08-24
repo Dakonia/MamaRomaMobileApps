@@ -87,7 +87,6 @@ function AutomationCard({
   };
 
   const value = draft.params?.[kind.param.key] ?? kind.param.fallback;
-  const ready = kind.trigger === "birthday" || kind.trigger === "inactive";
 
   return (
     <div
@@ -98,7 +97,6 @@ function AutomationCard({
         flexDirection: "column",
         gap: spacing.md,
         borderLeft: `3px solid ${draft.is_enabled ? c.accent : c.border}`,
-        opacity: ready ? 1 : 0.6,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: spacing.md }}>
@@ -106,19 +104,12 @@ function AutomationCard({
           <input
             type="checkbox"
             checked={draft.is_enabled}
-            disabled={!ready}
             onChange={(event) => setDraft({ ...draft, is_enabled: event.target.checked })}
           />
           <span style={{ fontWeight: 600 }}>{kind.label}</span>
         </label>
 
         <span style={{ flex: 1 }} />
-
-        {ready ? null : (
-          <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-            скоро
-          </span>
-        )}
 
         {saved?.sent_count ? (
           <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
@@ -193,7 +184,7 @@ function AutomationCard({
         </span>
         <span style={{ flex: 1 }} />
         {failure ? <span style={{ color: c.danger }}>{failure}</span> : null}
-        <Button onClick={() => void save()} disabled={busy || !ready}>
+        <Button onClick={() => void save()} disabled={busy}>
           {busy ? "…" : "Сохранить"}
         </Button>
       </div>

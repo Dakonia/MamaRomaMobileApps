@@ -1712,6 +1712,57 @@ async def update_campaign(
     return CampaignRead.model_validate(campaign)
 
 
+@router.delete(
+    "/campaigns/{campaign_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить рассылку",
+)
+async def delete_campaign(
+    campaign_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    campaign = await session.scalar(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    )
+    if campaign is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Рассылка не найдена")
+
+    await session.delete(campaign)
+    await session.commit()
+
+
+@router.post(
+    "/campaigns/{campaign_id}/copy",
+    status_code=status.HTTP_201_CREATED,
+    summary="Копия рассылки",
+)
+async def copy_campaign(
+    campaign_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> CampaignRead:
+    """Копия — черновик: удобно повторить прошлую рассылку с новым текстом."""
+    source = await session.scalar(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    )
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Рассылка не найдена")
+
+    copy = Campaign(
+        tenant_id=tenant.id,
+        name=f"{source.name} — копия",
+        title=source.title,
+        body=source.body,
+        image_url=source.image_url,
+        kind=source.kind,
+        target=dict(source.target or {}),
+        audience=dict(source.audience or {}),
+        planned_count=source.planned_count,
+    )
+    session.add(copy)
+    await session.commit()
+    await session.refresh(copy)
+
+    return CampaignRead.model_validate(copy)
+
+
 @router.post("/campaigns/audience", summary="Сколько гостей попадёт в рассылку")
 async def campaign_audience(
     payload: AudienceQuery, session: SessionDep, tenant: TenantDep, staff: StaffDep

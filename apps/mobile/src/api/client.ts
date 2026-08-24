@@ -30,6 +30,7 @@ export type GuestUpdate = components['schemas']['GuestUpdate'];
 export type Promotion = components['schemas']['PromotionRead'];
 export type DeliveryResolve = components['schemas']['DeliveryResolve'];
 export type GuestSummary = components['schemas']['GuestSummary'];
+export type Message = components['schemas']['MessageRead'];
 export type FavouriteDish = components['schemas']['FavouriteDish'];
 
 export type AddressSuggestion = components['schemas']['AddressSuggestion'];
@@ -279,6 +280,24 @@ export const api = {
 
   deleteAddress: async (id: string) => {
     await request<unknown>(`/api/v1/addresses/${id}`, { method: 'DELETE' });
+  },
+
+  /** Лента сообщений: те же рассылки, но внутри приложения. */
+  messages: () => request<Message[]>('/api/v1/messages'),
+
+  readMessage: async (id: string) => {
+    await request<unknown>(`/api/v1/messages/${id}/read`, { method: 'POST' });
+  },
+
+  /**
+   * След корзины на сервере: нужен, чтобы напомнить о ней, если гость ушёл.
+   * Состав не передаём — только сколько блюд и на какую сумму.
+   */
+  rememberCart: async (positions: number, totalKopecks: number) => {
+    await request<unknown>('/api/v1/cart', {
+      method: 'PUT',
+      body: JSON.stringify({ positions, total_kopecks: totalKopecks }),
+    });
   },
 
   /** Устройство для пушей: токен обновляется при каждом запуске. */
