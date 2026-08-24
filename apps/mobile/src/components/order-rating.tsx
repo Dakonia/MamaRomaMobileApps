@@ -29,7 +29,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { api, type Order } from '@/api/client';
+import { ApiError, api, type Order } from '@/api/client';
 import { Confetti } from '@/components/confetti';
 import { PrimaryButton } from '@/components/primary-button';
 import { SuccessCheck } from '@/components/success-check';
@@ -178,8 +178,10 @@ export function OrderRating({ order, onClose }: Props) {
       setDone(true);
       setTimeout(onClose, 2400);
     },
-    // Не дошло — не мучаем гостя повтором: оценка не стоит его нервов
-    onError: onClose,
+    // Заказ уже оценён с другого устройства — вопрос снят, спорить не о чем
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) onClose();
+    },
   });
 
   const tone = toneOf(rating);
@@ -247,7 +249,14 @@ export function OrderRating({ order, onClose }: Props) {
   }));
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <Animated.View
         entering={FadeIn.duration(220)}
         exiting={FadeOut.duration(180)}
@@ -464,6 +473,19 @@ export function OrderRating({ order, onClose }: Props) {
                         loading={send.isPending}
                         onPress={() => send.mutate()}
                       />
+
+                      {/* Не дошло — говорим об этом, а не закрываемся молча */}
+                      {send.isError ? (
+                        <Text
+                          style={[
+                            theme.typography.caption,
+                            styles.centered,
+                            { color: theme.colors.danger },
+                          ]}
+                        >
+                          Не получилось отправить. Проверьте связь и попробуйте ещё раз
+                        </Text>
+                      ) : null}
                     </Animated.View>
                   ) : null}
 
@@ -480,22 +502,23 @@ export function OrderRating({ order, onClose }: Props) {
                 </>
               )}
             </Animated.ScrollView>
-
-            {done && tone === 'good' ? (
-              <View style={StyleSheet.absoluteFill} pointerEvents="none">
-                <Confetti
-                  count={30}
-                  colors={[
-                    theme.colors.warning,
-                    theme.colors.accent,
-                    theme.colors.brand,
-                    theme.colors.warningSubtle,
-                  ]}
-                />
-              </View>
-            ) : null}
           </Animated.View>
         </KeyboardAvoidingView>
+
+        {/* Залп на весь экран: внутри шторки его срезало бы её же скруглениями */}
+        {done && tone === 'good' ? (
+          <View style={styles.burst} pointerEvents="none">
+            <Confetti
+              count={34}
+              colors={[
+                theme.colors.warning,
+                theme.colors.accent,
+                theme.colors.brand,
+                theme.colors.warningSubtle,
+              ]}
+            />
+          </View>
+        ) : null}
       </Animated.View>
     </Modal>
   );
@@ -505,6 +528,9 @@ const styles = StyleSheet.create({
   scrim: { flex: 1, justifyContent: 'flex-end' },
   grow: { flex: 1 },
   sheet: { overflow: 'hidden' },
+  // Залп начинается над шторкой и осыпается на неё: бумажки летят там, где
+  // гость смотрит, а не в пустоте у верхнего края экрана
+  burst: { position: 'absolute', left: 0, right: 0, top: '42%', bottom: 0 },
   // Площадь под язычок: за неё тянут, поэтому она заметно больше самой полоски
   handle: { height: 32, paddingTop: 10 },
   center: { alignItems: 'center', justifyContent: 'center' },
