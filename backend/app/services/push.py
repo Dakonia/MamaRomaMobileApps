@@ -33,7 +33,11 @@ DEFAULT_RULES: dict[OrderStatus, tuple[bool, str, str]] = {
     OrderStatus.COOKING: (False, "Готовим", "Повар уже занялся вашим заказом"),
     OrderStatus.READY: (True, "Заказ готов", "Уже собран и ждёт"),
     OrderStatus.DELIVERING: (True, "Курьер в пути", "Скоро будем у вас"),
-    OrderStatus.COMPLETED: (True, "Приятного аппетита", "Спасибо, что выбрали нас"),
+    OrderStatus.COMPLETED: (
+        True,
+        "Приятного аппетита!",
+        "Оцените заказ — это одно касание",
+    ),
     OrderStatus.CANCELLED: (True, "Заказ отменён", "Загляните в приложение — расскажем почему"),
 }
 

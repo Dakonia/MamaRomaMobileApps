@@ -28,6 +28,7 @@ import { BootSplash } from '@/components/boot-splash';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OfflineScreen } from '@/components/offline-screen';
 import { PushInvite } from '@/components/push-invite';
+import { RatingGate } from '@/components/rating-gate';
 import { UpdateReady } from '@/components/update-ready';
 import { UpdateGate } from '@/components/update-gate';
 import { startAnalytics, trackError, trackScreen } from '@/lib/analytics';
@@ -233,6 +234,7 @@ export default function RootLayout() {
 
             {/* Пока идёт заставка, поверх неё ничего не показываем */}
             {booting ? null : <PushInvite />}
+            {booting ? null : <RatingGate />}
             <UpdateReady />
             <OfflineScreen />
 
