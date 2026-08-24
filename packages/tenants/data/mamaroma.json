@@ -9,7 +9,7 @@
     "onPrimary": "#FFFFFF",
     "accent": "#1B7F5A",
     "splashBackground": "#1A120C",
-    "androidAdaptiveBackground": "#FFF6F3"
+    "androidAdaptiveBackground": "#9C0A29"
   },
   "stores": {
     "bundleIdentifier": "ru.mamaroma.app",

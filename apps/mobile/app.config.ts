@@ -72,8 +72,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "expo-notifications",
       {
-        // Значок в статусной строке Android рисуется одним цветом — берём знак сети
-        icon: "./assets/images/android-icon-monochrome.png",
+        /**
+         * Значок в статусной строке Android рисуется белым силуэтом 24 точки.
+         * Монохромная иконка для него не годится: у неё заложены поля адаптивной
+         * иконки, и знак ужимался вдвое. Поэтому файл отдельный — знак в нём
+         * занимает почти весь холст
+         */
+        icon: "./assets/images/notification-icon.png",
         color: branding.primary,
       },
     ],
