@@ -739,11 +739,12 @@ async def checkout_limits(
     )
 
 
-def to_read(order: Order) -> OrderRead:
+def to_read(order: Order, feedback_left: bool = False) -> OrderRead:
     return OrderRead(
         id=order.id,
         number=order.number,
         status=order.status,
+        feedback_left=feedback_left,
         type=order.type,
         restaurant_id=order.restaurant_id,
         restaurant_name=order.restaurant.name,

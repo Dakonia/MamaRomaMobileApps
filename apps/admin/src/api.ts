@@ -154,6 +154,25 @@ export type PromotionDraft = {
 
 export type Restaurant = { id: string; name: string };
 
+export type Feedback = {
+  id: string;
+  order_id: string;
+  order_number: string;
+  restaurant_name: string;
+  guest_name: string | null;
+  guest_phone: string;
+  rating: number;
+  tags: string[];
+  comment: string | null;
+  created_at: string;
+};
+
+export type FeedbackSummary = {
+  average: number;
+  total: number;
+  by_rating: Record<string, number>;
+};
+
 export type DishExtra = {
   id: string;
   name: string;
@@ -548,6 +567,19 @@ export const api = {
 
   sendCampaign: (id: string, force = false) =>
     request<Campaign>(`/admin/campaigns/${id}/send?force=${force}`, { method: "POST" }),
+
+  feedback: (params: { restaurant_id?: string; max_rating?: number }) => {
+    const query = new URLSearchParams();
+    if (params.restaurant_id) query.set("restaurant_id", params.restaurant_id);
+    if (params.max_rating) query.set("max_rating", String(params.max_rating));
+
+    return request<Feedback[]>(`/admin/feedback?${query.toString()}`);
+  },
+
+  feedbackSummary: (restaurantId?: string) =>
+    request<FeedbackSummary>(
+      restaurantId ? `/admin/feedback/summary?restaurant_id=${restaurantId}` : "/admin/feedback/summary",
+    ),
 
   automations: () => request<Automation[]>("/admin/automations"),
 

@@ -282,6 +282,13 @@ export const api = {
     await request<unknown>(`/api/v1/addresses/${id}`, { method: 'DELETE' });
   },
 
+  /** Оценка доставленного заказа: ставится один раз, видит её только сеть. */
+  rateOrder: (orderId: string, payload: { rating: number; tags: string[]; comment: string | null }) =>
+    request<unknown>(`/api/v1/orders/${orderId}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   /** Лента сообщений: те же рассылки, но внутри приложения. */
   messages: () => request<Message[]>('/api/v1/messages'),
 

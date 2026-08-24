@@ -11,6 +11,7 @@ from app.models.enums import (
     ReservationStatus,
     StaffRole,
 )
+from app.models.feedback import OrderFeedback
 from app.models.geo import City, Restaurant, RestaurantPhoto
 from app.models.guest import Device, Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
@@ -53,6 +54,7 @@ __all__ = [
     "NotificationHours",
     "NotificationRule",
     "Order",
+    "OrderFeedback",
     "OrderItem",
     "OrderStatus",
     "OrderType",

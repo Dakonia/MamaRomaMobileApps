@@ -9,6 +9,7 @@ from app.api.deps import SessionDep, StaffDep, TenantDep
 from app.core.db import SessionLocal
 from app.core.security import create_token, normalize_phone, verify_password
 from app.models.enums import CampaignStatus, OrderStatus, ReservationStatus, TriggerKind
+from app.models.feedback import OrderFeedback
 from app.models.geo import City, DeliveryZone, Restaurant
 from app.models.guest import Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
@@ -49,6 +50,8 @@ from app.schemas.admin import (
     DishPatch,
     DishWrite,
     ExtraCategoriesWrite,
+    FeedbackRow,
+    FeedbackSummary,
     GuestAdminRead,
     GuestCardRead,
     GuestOrderRead,
@@ -1822,3 +1825,68 @@ async def save_automation(
     await session.commit()
     await session.refresh(rule)
     return AutomationRead.model_validate(rule)
+
+
+# --- Отзывы ------------------------------------------------------------------
+
+
+@router.get("/feedback", summary="Отзывы о заказах")
+async def feedback(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID | None, Query()] = None,
+    max_rating: Annotated[int | None, Query(ge=1, le=5)] = None,
+) -> list[FeedbackRow]:
+    """Свежие сверху: жалобу оператор должен увидеть первой."""
+    query = (
+        select(OrderFeedback, Order, Restaurant, Guest)
+        .join(Order, Order.id == OrderFeedback.order_id)
+        .join(Restaurant, Restaurant.id == OrderFeedback.restaurant_id)
+        .join(Guest, Guest.id == OrderFeedback.guest_id)
+        .where(OrderFeedback.tenant_id == tenant.id)
+        .order_by(OrderFeedback.created_at.desc())
+        .limit(200)
+    )
+
+    if restaurant_id is not None:
+        query = query.where(OrderFeedback.restaurant_id == restaurant_id)
+    if max_rating is not None:
+        query = query.where(OrderFeedback.rating <= max_rating)
+
+    return [
+        FeedbackRow(
+            id=row.id,
+            order_id=order.id,
+            order_number=order.number,
+            restaurant_name=restaurant.name,
+            guest_name=guest.name,
+            guest_phone=guest.phone,
+            rating=row.rating,
+            tags=row.tags or [],
+            comment=row.comment,
+            created_at=row.created_at,
+        )
+        for row, order, restaurant, guest in (await session.execute(query)).all()
+    ]
+
+
+@router.get("/feedback/summary", summary="Сводка по оценкам")
+async def feedback_summary(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID | None, Query()] = None,
+) -> FeedbackSummary:
+    query = select(OrderFeedback.rating).where(OrderFeedback.tenant_id == tenant.id)
+    if restaurant_id is not None:
+        query = query.where(OrderFeedback.restaurant_id == restaurant_id)
+
+    ratings = list(await session.scalars(query))
+    counts = {str(star): ratings.count(star) for star in range(1, 6)}
+
+    return FeedbackSummary(
+        average=round(sum(ratings) / len(ratings), 2) if ratings else 0.0,
+        total=len(ratings),
+        by_rating=counts,
+    )

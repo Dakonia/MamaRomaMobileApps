@@ -471,6 +471,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orders/{order_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Оценить доставленный заказ
+         * @description Оценка ставится один раз и видна только администратору сети.
+         */
+        post: operations["leave_feedback_api_v1_orders__order_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reservations/slots": {
         parameters: {
             query?: never;
@@ -1233,6 +1253,43 @@ export interface paths {
         get: operations["automations_api_v1_admin_automations_get"];
         /** Изменить сценарий */
         put: operations["save_automation_api_v1_admin_automations_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Отзывы о заказах
+         * @description Свежие сверху: жалобу оператор должен увидеть первой.
+         */
+        get: operations["feedback_api_v1_admin_feedback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/feedback/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Сводка по оценкам */
+        get: operations["feedback_summary_api_v1_admin_feedback_summary_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2124,6 +2181,91 @@ export interface components {
             /** Times */
             times: number;
         };
+        /** FeedbackRead */
+        FeedbackRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Rating */
+            rating: number;
+            /** Tags */
+            tags: string[];
+            /** Comment */
+            comment: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * FeedbackRow
+         * @description Отзыв для админки: с номером заказа, рестораном и гостем.
+         */
+        FeedbackRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Order Number */
+            order_number: string;
+            /** Restaurant Name */
+            restaurant_name: string;
+            /** Guest Name */
+            guest_name: string | null;
+            /** Guest Phone */
+            guest_phone: string;
+            /** Rating */
+            rating: number;
+            /** Tags */
+            tags: string[];
+            /** Comment */
+            comment: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * FeedbackSummary
+         * @description Сводка: средняя оценка и сколько каких звёзд.
+         */
+        FeedbackSummary: {
+            /** Average */
+            average: number;
+            /** Total */
+            total: number;
+            /** By Rating */
+            by_rating: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * FeedbackWrite
+         * @description Оценка заказа: звёзды обязательны, остальное — по желанию гостя.
+         */
+        FeedbackWrite: {
+            /** Rating */
+            rating: number;
+            /** Tags */
+            tags?: string[];
+            /** Comment */
+            comment?: string | null;
+        };
         /**
          * Gender
          * @enum {string}
@@ -2528,6 +2670,11 @@ export interface components {
             /** Number */
             number: string;
             status: components["schemas"]["OrderStatus"];
+            /**
+             * Feedback Left
+             * @default false
+             */
+            feedback_left: boolean;
             type: components["schemas"]["OrderType"];
             /**
              * Restaurant Id
@@ -4625,6 +4772,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leave_feedback_api_v1_orders__order_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackRead"];
                 };
             };
             /** @description Validation Error */
@@ -6926,6 +7110,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutomationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_api_v1_admin_feedback_get: {
+        parameters: {
+            query?: {
+                restaurant_id?: string | null;
+                max_rating?: number | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_summary_api_v1_admin_feedback_summary_get: {
+        parameters: {
+            query?: {
+                restaurant_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSummary"];
                 };
             };
             /** @description Validation Error */

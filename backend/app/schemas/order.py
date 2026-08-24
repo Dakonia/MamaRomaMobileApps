@@ -58,6 +58,8 @@ class OrderRead(BaseModel):
     id: UUID
     number: str
     status: OrderStatus
+    # Заказ уже оценён: спрашивать второй раз невежливо
+    feedback_left: bool = False
     type: OrderType
 
     restaurant_id: UUID
@@ -163,3 +165,22 @@ class CheckoutLimits(BaseModel):
     points_balance: int
     max_points_to_spend: int
     cashback_percent: int
+
+
+class FeedbackWrite(BaseModel):
+    """Оценка заказа: звёзды обязательны, остальное — по желанию гостя."""
+
+    rating: int = Field(ge=1, le=5)
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class FeedbackRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    order_id: UUID
+    rating: int
+    tags: list[str]
+    comment: str | None
+    created_at: datetime

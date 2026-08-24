@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -25,6 +26,7 @@ import { EmptyState } from '@/components/empty-state';
 import { PressableScale } from '@/components/pressable-scale';
 import { PrimaryButton } from '@/components/primary-button';
 import { Skeleton } from '@/components/skeleton';
+import { OrderRating } from '@/components/order-rating';
 import { PushPrompt } from '@/components/push-prompt';
 import { StageMark } from '@/components/stage-mark';
 import { formatPhone, formatPoints, formatPrice, phoneToUri } from '@/lib/format';
@@ -185,6 +187,28 @@ export default function OrderScreen() {
 
   // Потянуть вниз: статус заказа обновляется сам, но гость хочет проверить
   const refresher = useRefresher(() => refetch());
+
+  /**
+   * Оценка после доставки: спрашиваем один раз. Отказ помним на телефоне,
+   * иначе окно всплывало бы при каждом возврате к заказу
+   */
+  const [rating, setRating] = useState(false);
+  const asked = useRef(false);
+
+  useEffect(() => {
+    if (asked.current || data === undefined) return;
+    if (data.status !== 'completed' || data.feedback_left) return;
+
+    asked.current = true;
+
+    void AsyncStorage.getItem(`rated-${data.id}`).then((seen) => {
+      if (seen) return;
+
+      void AsyncStorage.setItem(`rated-${data.id}`, 'asked');
+      // Даём экрану проявиться: окно поверх анимации входа выглядит суетливо
+      setTimeout(() => setRating(true), 900);
+    });
+  }, [data]);
 
   // Праздник — только у свежего заказа, дальше своя анимация этапа
   const fresh = data ? ['created', 'paid'].includes(data.status) : false;
@@ -622,6 +646,16 @@ export default function OrderScreen() {
       >
         <Ionicons name="close" size={20} color={theme.colors.onHero} />
       </Pressable>
+
+      {rating ? (
+        <OrderRating
+          order={data}
+          onClose={() => {
+            setRating(false);
+            void refetch();
+          }}
+        />
+      ) : null}
     </View>
   );
 }

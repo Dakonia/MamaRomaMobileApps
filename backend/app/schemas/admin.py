@@ -534,3 +534,26 @@ class AutomationWrite(BaseModel):
     body: str = Field(min_length=2, max_length=240)
     target: dict[str, str] = Field(default_factory=dict)
     params: dict[str, int] = Field(default_factory=dict)
+
+
+class FeedbackRow(BaseModel):
+    """Отзыв для админки: с номером заказа, рестораном и гостем."""
+
+    id: UUID
+    order_id: UUID
+    order_number: str
+    restaurant_name: str
+    guest_name: str | None
+    guest_phone: str
+    rating: int
+    tags: list[str]
+    comment: str | None
+    created_at: datetime
+
+
+class FeedbackSummary(BaseModel):
+    """Сводка: средняя оценка и сколько каких звёзд."""
+
+    average: float
+    total: int
+    by_rating: dict[str, int]
