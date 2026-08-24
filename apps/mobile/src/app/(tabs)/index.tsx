@@ -82,9 +82,13 @@ export default function MenuScreen() {
   const [heroHeight, setHeroHeight] = useState(0);
   const [topSize, setTopSize] = useState(0);
 
-  const collapse = useDerivedValue(() =>
-    topHeight.value === 0 ? 0 : Math.min(1, scrollOffset.value / topHeight.value),
-  );
+  const collapse = useDerivedValue(() => {
+    if (topHeight.value === 0) return 0;
+
+    // Ниже нуля не опускаемся: при потяжке смещение отрицательное, и без
+    // ограничения шапка ехала вниз — над ней открывалась белая полоса
+    return Math.max(0, Math.min(1, scrollOffset.value / topHeight.value));
+  });
   const [query, setQuery] = useState('');
   // Блюдо, которое гость держит пальцем: показываем крупно, не уходя с меню
   const [peek, setPeek] = useState<Dish | null>(null);
