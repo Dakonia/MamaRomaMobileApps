@@ -1,5 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+# Нативная сборка этому пакету не нужна: он тянется как зависимость правил
+# линтера и в приложение не попадает. Без явного ответа pnpm 11 роняет install,
+# а вместе с ним и сборку на EAS
 allowBuilds:
-  unrs-resolver: set this to true or false
+  unrs-resolver: false
