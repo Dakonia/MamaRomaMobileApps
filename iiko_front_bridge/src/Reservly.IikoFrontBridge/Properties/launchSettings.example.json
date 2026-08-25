@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Reservly.IikoFrontBridge": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\iiko\\iikoRMS\\Front.Net\\Resto.Front.Api.Host.exe",
+      "commandLineArgs": "/a=\"C:\\Projects\\Reservly\\integrations\\iiko_front_bridge\\src\\Reservly.IikoFrontBridge\\bin\\Debug\\net472\\Reservly.IikoFrontBridge.dll\" /c=Reservly.IikoFrontBridge.BridgePlugin /m=19011701 /l=\"C:\\Projects\\Reservly\\logs\\reservly-front-bridge.log\""
+    }
+  }
+}

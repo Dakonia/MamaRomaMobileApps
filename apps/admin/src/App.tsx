@@ -18,6 +18,7 @@ import { ExtrasTab } from "./ExtrasTab";
 import { PromoCodesTab } from "./PromoCodesTab";
 import { NotificationsTab } from "./NotificationsTab";
 import { FeedbackTab } from "./FeedbackTab";
+import { IikoTab } from "./IikoTab";
 import { SyncTab } from "./SyncTab";
 import { ZonesTab } from "./ZonesTab";
 import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
@@ -34,6 +35,7 @@ type Tab =
   | "extras"
   | "promo-codes"
   | "feedback"
+  | "iiko"
   | "sync";
 
 const ORDER_FLOW: Record<string, { label: string; next: { status: string; label: string }[] }> = {
@@ -339,6 +341,7 @@ export default function App() {
     { key: "guests", label: "Гости" },
     { key: "feedback", label: "Отзывы" },
     { key: "notifications", label: "Уведомления" },
+    { key: "iiko", label: "Касса" },
     { key: "sync", label: "Обновление" },
   ];
 
@@ -385,6 +388,7 @@ export default function App() {
         {tab === "promo-codes" ? <PromoCodesTab /> : null}
         {tab === "feedback" ? <FeedbackTab /> : null}
         {tab === "notifications" ? <NotificationsTab /> : null}
+        {tab === "iiko" ? <IikoTab /> : null}
         {tab === "sync" ? <SyncTab /> : null}
       </main>
     </div>

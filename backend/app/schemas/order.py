@@ -19,6 +19,9 @@ class OrderCreate(BaseModel):
     items: list[OrderItemCreate] = Field(min_length=1, max_length=100)
     payment_method: PaymentMethod
 
+    # Ссылка на сохранённый адрес гостя. По ней снимаем полный снимок: строка
+    # нужна гостю, а касса ждёт квартиру, подъезд, этаж и домофон по отдельности
+    address_id: UUID | None = None
     address_text: str | None = Field(default=None, max_length=400)
     address_latitude: float | None = None
     address_longitude: float | None = None

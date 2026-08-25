@@ -69,6 +69,15 @@ class StaffRole(StrEnum):
     MANAGER = "manager"
 
 
+class IikoHandoffStatus(StrEnum):
+    """Состояние передачи заказа на кассу ресторана."""
+
+    PENDING = "pending"
+    SENT = "sent"
+    ACCEPTED = "accepted"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
 class DevicePlatform(StrEnum):
     IOS = "ios"
     ANDROID = "android"

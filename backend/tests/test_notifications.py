@@ -207,7 +207,9 @@ async def test_davno_ne_zakazyval_beret_tolko_byvshih_gostey(
 
 async def test_den_rozhdeniya_nahodit_po_date(session: AsyncSession, tenant, guest):
     """Сценарий ищет по дню и месяцу, год рождения значения не имеет."""
-    target = (datetime.now(UTC) + timedelta(days=3)).date()
+    # День считаем по часам ресторана: ночью московская дата и дата UTC разные,
+    # и тест на часах сервера падал бы каждую ночь
+    target = (datetime.now(ZoneInfo(tenant.timezone)) + timedelta(days=3)).date()
     guest.birthday = target.replace(year=1990)
     await session.commit()
 

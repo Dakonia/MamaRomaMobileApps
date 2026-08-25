@@ -1297,6 +1297,246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/iiko/bridges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Плагины по ресторанам
+         * @description Список всех точек: где плагин заведён, где молчит, сколько сопоставлено.
+         */
+        get: operations["iiko_bridges_api_v1_admin_iiko_bridges_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/bridges/{restaurant_id}/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Выдать или сменить ключ плагина
+         * @description Новый ключ этой точки. Показываем один раз — сохранить его в настройках плагина.
+         */
+        post: operations["iiko_secret_api_v1_admin_iiko_bridges__restaurant_id__secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/bridges/{restaurant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Включить или выключить плагин точки */
+        patch: operations["iiko_toggle_api_v1_admin_iiko_bridges__restaurant_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Номенклатура кассы этой точки */
+        get: operations["iiko_products_api_v1_admin_iiko_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Сопоставление блюд с товарами кассы
+         * @description Все блюда и добавки сети с их сопоставлением в этом ресторане.
+         */
+        get: operations["iiko_links_api_v1_admin_iiko_links_get"];
+        /** Сохранить сопоставление */
+        put: operations["iiko_save_links_api_v1_admin_iiko_links_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/links/auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Сопоставить по названиям
+         * @description Связывает совпадающие названия. Спорное оставляет человеку.
+         */
+        post: operations["iiko_auto_links_api_v1_admin_iiko_links_auto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Очередь заказов на кассу
+         * @description Что уехало на кассу, что застряло и почему.
+         */
+        get: operations["iiko_queue_api_v1_admin_iiko_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/queue/{order_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отдать заказ на кассу заново
+         * @description После починки сопоставления заказ можно отправить ещё раз.
+         */
+        post: operations["iiko_retry_api_v1_admin_iiko_queue__order_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/iiko/orders/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Заказы, ожидающие заведения на кассе */
+        get: operations["pending_orders_api_v1_integrations_iiko_orders_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/iiko/orders/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Чем закончилось заведение заказов */
+        post: operations["ack_orders_api_v1_integrations_iiko_orders_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/iiko/stop-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Что сейчас в стоп-листе ресторана */
+        post: operations["stop_list_api_v1_integrations_iiko_stop_list_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/iiko/menu": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Номенклатура кассы для сопоставления блюд */
+        post: operations["menu_api_v1_integrations_iiko_menu_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/iiko/delivery-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Что происходит с заказами на кухне */
+        post: operations["delivery_status_api_v1_integrations_iiko_delivery_status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1519,6 +1759,57 @@ export interface components {
         Body_upload_api_v1_admin_uploads_post: {
             /** File */
             file: string;
+        };
+        /**
+         * BridgeRow
+         * @description Плагин точки: жив ли он и что о себе рассказал.
+         */
+        BridgeRow: {
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            /** Restaurant Name */
+            restaurant_name: string;
+            /** Is Registered */
+            is_registered: boolean;
+            /** Is Active */
+            is_active: boolean;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Plugin Version */
+            plugin_version: string | null;
+            /** Terminal Name */
+            terminal_name: string | null;
+            /** Linked Dishes */
+            linked_dishes: number;
+            /** Linked Extras */
+            linked_extras: number;
+            /** Products */
+            products: number;
+            /** Pending Orders */
+            pending_orders: number;
+            /** Failed Orders */
+            failed_orders: number;
+        };
+        /**
+         * BridgeSecret
+         * @description Ответ на создание или смену ключа: показываем секрет один раз.
+         */
+        BridgeSecret: {
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            /** Secret */
+            secret: string;
+        };
+        /** BridgeToggle */
+        BridgeToggle: {
+            /** Is Active */
+            is_active: boolean;
         };
         /** CampaignRead */
         CampaignRead: {
@@ -1886,6 +2177,105 @@ export interface components {
             delivery_open_now: boolean;
             /** Paused Reason */
             paused_reason?: string | null;
+        };
+        /** DeliveryStatusIn */
+        DeliveryStatusIn: {
+            /**
+             * Restaurantid
+             * @default
+             */
+            restaurantId: string;
+            /**
+             * Capturedat
+             * @default
+             */
+            capturedAt: string;
+            /** Orders */
+            orders?: components["schemas"]["DeliveryStatusOrderIn"][];
+        };
+        /**
+         * DeliveryStatusOrderIn
+         * @description Состояние одного заказа на кухне.
+         *
+         *     Этап для гостя считается по меткам времени, а не по строке статуса:
+         *     на кассе версии V8 отдельных статусов «готовим» и «готово» нет.
+         */
+        DeliveryStatusOrderIn: {
+            /**
+             * Orderid
+             * @default
+             */
+            orderId: string;
+            /**
+             * Iikoorderid
+             * @default
+             */
+            iikoOrderId: string;
+            /**
+             * Iikoordernumber
+             * @default
+             */
+            iikoOrderNumber: string;
+            /**
+             * Status
+             * @default
+             */
+            status: string;
+            /**
+             * Confirmedat
+             * @default
+             */
+            confirmedAt: string;
+            /**
+             * Printedat
+             * @default
+             */
+            printedAt: string;
+            /**
+             * Cookingfinishedat
+             * @default
+             */
+            cookingFinishedAt: string;
+            /**
+             * Sentat
+             * @default
+             */
+            sentAt: string;
+            /**
+             * Deliveredat
+             * @default
+             */
+            deliveredAt: string;
+            /**
+             * Cancelledat
+             * @default
+             */
+            cancelledAt: string;
+            /**
+             * Predictedcookingcompleteat
+             * @default
+             */
+            predictedCookingCompleteAt: string;
+            /**
+             * Hasproblem
+             * @default false
+             */
+            hasProblem: boolean;
+            /**
+             * Problemcomment
+             * @default
+             */
+            problemComment: string;
+            /**
+             * Cancelcause
+             * @default
+             */
+            cancelCause: string;
+            /**
+             * Couriername
+             * @default
+             */
+            courierName: string;
         };
         /**
          * DevicePlatform
@@ -2474,6 +2864,38 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HandoffRow
+         * @description Заказ в очереди на кассу: чем закончилась попытка.
+         */
+        HandoffRow: {
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Order Number */
+            order_number: string;
+            /** Restaurant Name */
+            restaurant_name: string;
+            /** Status */
+            status: string;
+            /** Attempts */
+            attempts: number;
+            /** Error */
+            error: string | null;
+            /** Missing Products */
+            missing_products: string[];
+            /** Iiko Order Number */
+            iiko_order_number: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Total Kopecks */
+            total_kopecks: number;
+        };
         /** HoursRead */
         HoursRead: {
             /**
@@ -2507,6 +2929,81 @@ export interface components {
              */
             weekly_limit: number;
         };
+        /** IikoProductRow */
+        IikoProductRow: {
+            /** Product Id */
+            product_id: string;
+            /** Name */
+            name: string;
+            /** Code */
+            code: string | null;
+            /** Group Name */
+            group_name: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Has Sizes */
+            has_sizes: boolean;
+        };
+        /** LinkBatch */
+        LinkBatch: {
+            /**
+             * Restaurant Id
+             * Format: uuid
+             */
+            restaurant_id: string;
+            /** Links */
+            links?: components["schemas"]["LinkWrite"][];
+        };
+        /**
+         * LinkRow
+         * @description Строка сопоставления: наше блюдо и товар кассы этого ресторана.
+         */
+        LinkRow: {
+            /** Kind */
+            kind: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Group */
+            group: string | null;
+            /** Product Id */
+            product_id: string | null;
+            /** Product Name */
+            product_name: string | null;
+            /** Size Id */
+            size_id: string | null;
+            /** Modifier Group Id */
+            modifier_group_id: string | null;
+        };
+        /** LinkWrite */
+        LinkWrite: {
+            /** Kind */
+            kind: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Product Id
+             * @default
+             */
+            product_id: string;
+            /**
+             * Size Id
+             * @default
+             */
+            size_id: string;
+            /**
+             * Modifier Group Id
+             * @default
+             */
+            modifier_group_id: string;
+        };
         /** LoyaltyRead */
         LoyaltyRead: {
             /**
@@ -2533,6 +3030,16 @@ export interface components {
              */
             lifetime_spent_kopecks: number;
         };
+        /**
+         * MatchResult
+         * @description Итог автосопоставления по названиям.
+         */
+        MatchResult: {
+            /** Matched */
+            matched: number;
+            /** Skipped */
+            skipped: number;
+        };
         /** MenuCategoryRead */
         MenuCategoryRead: {
             /**
@@ -2550,6 +3057,69 @@ export interface components {
             image_blurhash?: string | null;
             /** Dishes */
             dishes: components["schemas"]["DishRead"][];
+        };
+        /** MenuIn */
+        MenuIn: {
+            /**
+             * Restaurantid
+             * @default
+             */
+            restaurantId: string;
+            /**
+             * Capturedat
+             * @default
+             */
+            capturedAt: string;
+            /** Products */
+            products?: components["schemas"]["MenuProductIn"][];
+        };
+        /** MenuProductIn */
+        MenuProductIn: {
+            /**
+             * Productid
+             * @default
+             */
+            productId: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Code
+             * @default
+             */
+            code: string;
+            /**
+             * Groupname
+             * @default
+             */
+            groupName: string;
+            /**
+             * Grouppath
+             * @default
+             */
+            groupPath: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Measureunit
+             * @default
+             */
+            measureUnit: string;
+            /**
+             * Isactive
+             * @default true
+             */
+            isActive: boolean;
+            /**
+             * Hassizes
+             * @default false
+             */
+            hasSizes: boolean;
         };
         /** MenuRead */
         MenuRead: {
@@ -2583,6 +3153,43 @@ export interface components {
             /** Is Read */
             is_read: boolean;
         };
+        /** OrderAckIn */
+        OrderAckIn: {
+            /**
+             * Restaurantid
+             * @default
+             */
+            restaurantId: string;
+            /** Results */
+            results?: components["schemas"]["OrderAckResult"][];
+        };
+        /** OrderAckResult */
+        OrderAckResult: {
+            /** Orderid */
+            orderId: string;
+            /**
+             * Status
+             * @default
+             */
+            status: string;
+            /**
+             * Iikoorderid
+             * @default
+             */
+            iikoOrderId: string;
+            /**
+             * Iikoordernumber
+             * @default
+             */
+            iikoOrderNumber: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Missingproducts */
+            missingProducts?: string[];
+        };
         /** OrderCreate */
         OrderCreate: {
             /**
@@ -2594,6 +3201,8 @@ export interface components {
             /** Items */
             items: components["schemas"]["OrderItemCreate"][];
             payment_method: components["schemas"]["PaymentMethod"];
+            /** Address Id */
+            address_id?: string | null;
             /** Address Text */
             address_text?: string | null;
             /** Address Latitude */
@@ -2757,6 +3366,13 @@ export interface components {
          * @enum {string}
          */
         PaymentStatus: "not_required" | "pending" | "succeeded" | "cancelled" | "refunded";
+        /** PendingOrdersOut */
+        PendingOrdersOut: {
+            /** Orders */
+            orders?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** ProfileRead */
         ProfileRead: {
             guest: components["schemas"]["GuestRead"];
@@ -3530,6 +4146,69 @@ export interface components {
             token_type: string;
             staff: components["schemas"]["StaffRead"];
         };
+        /** StopListIn */
+        StopListIn: {
+            /**
+             * Restaurantid
+             * @default
+             */
+            restaurantId: string;
+            /**
+             * Capturedat
+             * @default
+             */
+            capturedAt: string;
+            /**
+             * Stoponremainingamount
+             * @default false
+             */
+            stopOnRemainingAmount: boolean;
+            /**
+             * Remainingamountthreshold
+             * @default 0
+             */
+            remainingAmountThreshold: number;
+            /** Items */
+            items?: components["schemas"]["StopListItemIn"][];
+        };
+        /** StopListItemIn */
+        StopListItemIn: {
+            /**
+             * Productid
+             * @default
+             */
+            productId: string;
+            /**
+             * Productname
+             * @default
+             */
+            productName: string;
+            /**
+             * Sizeid
+             * @default
+             */
+            sizeId: string;
+            /**
+             * Remainingamount
+             * @default 0
+             */
+            remainingAmount: number;
+            /**
+             * Isrestricted
+             * @default false
+             */
+            isRestricted: boolean;
+            /**
+             * Isstopped
+             * @default false
+             */
+            isStopped: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
         /** StopListRead */
         StopListRead: {
             /**
@@ -3601,6 +4280,27 @@ export interface components {
             group: string | null;
             /** Applied */
             applied: boolean;
+        };
+        /**
+         * SyncResult
+         * @description Сколько записей обработали. Плагин это только логирует.
+         */
+        SyncResult: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Added
+             * @default 0
+             */
+            added: number;
+            /**
+             * Removed
+             * @default 0
+             */
+            removed: number;
         };
         /** SyncRunRead */
         SyncRunRead: {
@@ -7177,6 +7877,501 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedbackSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_bridges_api_v1_admin_iiko_bridges_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BridgeRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_secret_api_v1_admin_iiko_bridges__restaurant_id__secret_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                restaurant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BridgeSecret"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_toggle_api_v1_admin_iiko_bridges__restaurant_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                restaurant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BridgeToggle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BridgeToggle"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_products_api_v1_admin_iiko_products_get: {
+        parameters: {
+            query: {
+                restaurant_id: string;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IikoProductRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_links_api_v1_admin_iiko_links_get: {
+        parameters: {
+            query: {
+                restaurant_id: string;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_save_links_api_v1_admin_iiko_links_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_auto_links_api_v1_admin_iiko_links_auto_post: {
+        parameters: {
+            query: {
+                restaurant_id: string;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_queue_api_v1_admin_iiko_queue_get: {
+        parameters: {
+            query?: {
+                only_problems?: boolean;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_retry_api_v1_admin_iiko_queue__order_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_orders_api_v1_integrations_iiko_orders_pending_get: {
+        parameters: {
+            query: {
+                restaurant_id: string;
+                limit?: number;
+            };
+            header: {
+                "X-Iiko-Bridge-Secret": string;
+                "X-Iiko-Restaurant-Id"?: string | null;
+                "X-Iiko-Terminal"?: string | null;
+                "X-Iiko-Plugin-Version"?: string | null;
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingOrdersOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ack_orders_api_v1_integrations_iiko_orders_ack_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Iiko-Bridge-Secret": string;
+                "X-Iiko-Restaurant-Id"?: string | null;
+                "X-Iiko-Terminal"?: string | null;
+                "X-Iiko-Plugin-Version"?: string | null;
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderAckIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_list_api_v1_integrations_iiko_stop_list_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Iiko-Bridge-Secret": string;
+                "X-Iiko-Restaurant-Id"?: string | null;
+                "X-Iiko-Terminal"?: string | null;
+                "X-Iiko-Plugin-Version"?: string | null;
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopListIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    menu_api_v1_integrations_iiko_menu_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Iiko-Bridge-Secret": string;
+                "X-Iiko-Restaurant-Id"?: string | null;
+                "X-Iiko-Terminal"?: string | null;
+                "X-Iiko-Plugin-Version"?: string | null;
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MenuIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delivery_status_api_v1_integrations_iiko_delivery_status_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Iiko-Bridge-Secret": string;
+                "X-Iiko-Restaurant-Id"?: string | null;
+                "X-Iiko-Terminal"?: string | null;
+                "X-Iiko-Plugin-Version"?: string | null;
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryStatusIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
                 };
             };
             /** @description Validation Error */

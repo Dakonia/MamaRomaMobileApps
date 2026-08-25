@@ -37,3 +37,11 @@ firebase-service-account.json
 apps/mobile/credentials/
 
 backend/media/
+
+# Плагин iikoFront: секреты, сборка и локальная очередь
+iiko_front_bridge/bridge.settings.json
+iiko_front_bridge/**/bin/
+iiko_front_bridge/**/obj/
+iiko_front_bridge/**/launchSettings.json
+iiko_front_bridge/**/reservly-offline-queue/
+iiko_front_bridge/**/*.user

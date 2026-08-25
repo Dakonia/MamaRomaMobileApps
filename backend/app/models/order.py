@@ -39,8 +39,18 @@ class Order(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Base):
     address_latitude: Mapped[float | None] = mapped_column(Float, default=None)
     address_longitude: Mapped[float | None] = mapped_column(Float, default=None)
 
+    # Адрес по частям — снимком, как и всё остальное в заказе. Строкой курьер
+    # находит дом, а квартиру, подъезд, этаж и домофон касса ждёт отдельными
+    # полями: {"street": …, "house": …, "flat": …, "entrance": …, "floor": …,
+    # "intercom": …, "locality": …, "postal_code": …, "comment": …}
+    address_details: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
+
     # None — «как можно скорее», иначе желаемое время в UTC
     delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    # Сколько минут обещали гостю: срок зоны на момент оформления. Кухне нужен
+    # именно он, а не дежурное значение из настроек плагина
+    delivery_minutes: Mapped[int | None] = mapped_column(default=None)
     persons_count: Mapped[int | None] = mapped_column(default=None)
     comment: Mapped[str | None] = mapped_column(Text, default=None)
 

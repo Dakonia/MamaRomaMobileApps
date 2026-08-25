@@ -557,3 +557,93 @@ class FeedbackSummary(BaseModel):
     average: float
     total: int
     by_rating: dict[str, int]
+
+
+# ─────────────────────────── касса iiko ───────────────────────────
+
+
+class BridgeRow(BaseModel):
+    """Плагин точки: жив ли он и что о себе рассказал."""
+
+    restaurant_id: UUID
+    restaurant_name: str
+    is_registered: bool
+    is_active: bool
+    last_seen_at: datetime | None
+    plugin_version: str | None
+    terminal_name: str | None
+    # Сколько блюд и добавок сопоставлено с товарами этой кассы
+    linked_dishes: int
+    linked_extras: int
+    products: int
+    pending_orders: int
+    failed_orders: int
+
+
+class BridgeSecret(BaseModel):
+    """Ответ на создание или смену ключа: показываем секрет один раз."""
+
+    restaurant_id: UUID
+    secret: str
+
+
+class BridgeToggle(BaseModel):
+    is_active: bool
+
+
+class IikoProductRow(BaseModel):
+    product_id: str
+    name: str
+    code: str | None
+    group_name: str | None
+    is_active: bool
+    has_sizes: bool
+
+
+class LinkRow(BaseModel):
+    """Строка сопоставления: наше блюдо и товар кассы этого ресторана."""
+
+    kind: str
+    id: UUID
+    name: str
+    group: str | None
+    product_id: str | None
+    product_name: str | None
+    size_id: str | None
+    modifier_group_id: str | None
+
+
+class LinkWrite(BaseModel):
+    kind: str = Field(pattern="^(dish|extra)$")
+    id: UUID
+    # Пусто — сопоставление снимаем
+    product_id: str = Field(default="", max_length=64)
+    size_id: str = Field(default="", max_length=64)
+    modifier_group_id: str = Field(default="", max_length=64)
+
+
+class LinkBatch(BaseModel):
+    restaurant_id: UUID
+    links: list[LinkWrite] = Field(default_factory=list, max_length=500)
+
+
+class MatchResult(BaseModel):
+    """Итог автосопоставления по названиям."""
+
+    matched: int
+    skipped: int
+
+
+class HandoffRow(BaseModel):
+    """Заказ в очереди на кассу: чем закончилась попытка."""
+
+    order_id: UUID
+    order_number: str
+    restaurant_name: str
+    status: str
+    attempts: int
+    error: str | None
+    missing_products: list[str]
+    iiko_order_number: str | None
+    created_at: datetime
+    total_kopecks: int

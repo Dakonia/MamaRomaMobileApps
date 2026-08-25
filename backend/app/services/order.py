@@ -17,7 +17,7 @@ from app.models.enums import (
     PaymentStatus,
 )
 from app.models.geo import Restaurant
-from app.models.guest import Guest
+from app.models.guest import Guest, GuestAddress
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishExtra, DishPrice, StopListEntry
 from app.models.order import Order, OrderItem
@@ -33,6 +33,7 @@ from app.schemas.order import (
     UnavailableItem,
 )
 from app.services import delivery as delivery_service
+from app.services import iiko_bridge
 from app.services import loyalty as loyalty_service
 from app.services import promo_code as promo_service
 
@@ -228,6 +229,43 @@ async def delivery_terms(
     return terms
 
 
+async def _address_snapshot(
+    session: AsyncSession, tenant: Tenant, guest: Guest, payload: OrderCreate
+) -> dict[str, str]:
+    """Снимает адрес по частям с того адреса гостя, который он выбрал.
+
+    Курьер находит дом по строке, а квартиру, подъезд, этаж и домофон касса
+    ждёт отдельными полями. Гость может потом поправить или удалить адрес —
+    заказ документ, поэтому храним снимок, а не ссылку.
+    """
+    if payload.type is not OrderType.DELIVERY or payload.address_id is None:
+        return {}
+
+    address = await session.scalar(
+        select(GuestAddress).where(
+            GuestAddress.id == payload.address_id,
+            GuestAddress.tenant_id == tenant.id,
+            GuestAddress.guest_id == guest.id,
+        )
+    )
+    if address is None:
+        return {}
+
+    parts = {
+        "street": address.street,
+        "house": address.house,
+        "building": address.building,
+        "flat": address.flat,
+        "entrance": address.entrance,
+        "floor": address.floor,
+        "intercom": address.intercom,
+        "locality": address.locality,
+        "postal_code": address.postal_code,
+        "comment": address.comment,
+    }
+    return {key: value for key, value in parts.items() if value}
+
+
 async def create_order(
     session: AsyncSession,
     tenant: Tenant,
@@ -356,7 +394,14 @@ async def create_order(
                 name=dish.name,
                 image_url=dish.image_url,
                 extras=[
-                    {"name": extra.name, "price_kopecks": extra.price_kopecks} for extra in picked
+                    # Код добавки нужен, чтобы найти её сопоставление с кассой:
+                    # по названию искать нельзя, названия повторяются и меняются
+                    {
+                        "id": str(extra.id),
+                        "name": extra.name,
+                        "price_kopecks": extra.price_kopecks,
+                    }
+                    for extra in picked
                 ],
                 unit_price_kopecks=unit_price,
                 quantity=quantity,
@@ -365,6 +410,7 @@ async def create_order(
         )
 
     delivery_price = 0
+    promised_minutes: int | None = None
     if payload.type is OrderType.DELIVERY:
         terms = await delivery_terms(
             session,
@@ -378,6 +424,7 @@ async def create_order(
         if terms.blocker is not None:
             raise OrderError(terms.blocker)
         delivery_price = terms.price_kopecks
+        promised_minutes = terms.minutes
 
     # Время «ко времени»: раньше чем через полчаса и в закрытый ресторан не берём
     if payload.delivery_at is not None:
@@ -443,7 +490,9 @@ async def create_order(
         address_text=payload.address_text,
         address_latitude=payload.address_latitude,
         address_longitude=payload.address_longitude,
+        address_details=await _address_snapshot(session, tenant, guest, payload),
         delivery_at=payload.delivery_at,
+        delivery_minutes=promised_minutes,
         persons_count=payload.persons_count,
         comment=payload.comment,
         subtotal_kopecks=subtotal,
@@ -470,6 +519,11 @@ async def create_order(
     session.add_all(_apply_loyalty(tenant, account, order))
     if promo is not None:
         await promo_service.mark_used(session, tenant.id, promo.code)
+
+    # Ресторан работает с кассой через плагин — ставим заказ в очередь на выдачу.
+    # Плагина нет: ничего не происходит, менеджер ведёт заказ в админке как раньше
+    await iiko_bridge.enqueue_order(session, tenant, order)
+
     await session.commit()
     await session.refresh(order)
 

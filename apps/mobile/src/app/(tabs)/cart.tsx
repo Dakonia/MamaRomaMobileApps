@@ -407,6 +407,9 @@ export default function CartScreen() {
         restaurant_id: cart.restaurantId ?? '',
         type: cart.mode,
         payment_method: payment ?? 'cash_on_delivery',
+        // Ссылку на адрес сервер разложит по частям для кассы: курьеру нужны
+        // квартира, подъезд и домофон отдельными полями
+        address_id: delivery ? (address?.id ?? null) : null,
         address_text: delivery ? (address?.full_text ?? null) : null,
         address_latitude: delivery ? (address?.latitude ?? null) : null,
         address_longitude: delivery ? (address?.longitude ?? null) : null,

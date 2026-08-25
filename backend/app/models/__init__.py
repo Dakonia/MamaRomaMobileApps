@@ -2,6 +2,7 @@ from app.models.auth import PhoneCode
 from app.models.enums import (
     DevicePlatform,
     Gender,
+    IikoHandoffStatus,
     LoyaltyOperation,
     OrderStatus,
     OrderType,
@@ -14,6 +15,7 @@ from app.models.enums import (
 from app.models.feedback import OrderFeedback
 from app.models.geo import City, Restaurant, RestaurantPhoto
 from app.models.guest import Device, Guest, GuestAddress
+from app.models.integration import IikoBridge, IikoOrderHandoff, IikoProduct
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishExtra, DishPrice, MenuCategory, StopListEntry
 from app.models.notification import (
@@ -47,6 +49,10 @@ __all__ = [
     "Gender",
     "Guest",
     "GuestAddress",
+    "IikoBridge",
+    "IikoHandoffStatus",
+    "IikoOrderHandoff",
+    "IikoProduct",
     "LoyaltyAccount",
     "LoyaltyOperation",
     "LoyaltyTransaction",

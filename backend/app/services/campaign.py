@@ -5,7 +5,7 @@
 заказа, но по другому каналу: рекламу гость может отключить отдельно.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -211,8 +211,12 @@ async def send_campaign(
 
 
 async def _birthday_guests(session: AsyncSession, tenant: Tenant, days_before: int) -> list[Guest]:
-    """У кого день рождения через столько-то дней."""
-    target = date.today() + timedelta(days=days_before)
+    """У кого день рождения через столько-то дней.
+
+    День считаем по часам ресторана, а не по часам сервера: до трёх ночи по
+    Москве в UTC ещё вчера, и поздравление ушло бы на сутки позже.
+    """
+    target = datetime.now(ZoneInfo(tenant.timezone)).date() + timedelta(days=days_before)
 
     return list(
         await session.scalars(

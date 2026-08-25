@@ -1,3 +1,4 @@
+import secrets
 from datetime import UTC, datetime, time
 from typing import Annotated, cast
 from uuid import UUID
@@ -8,10 +9,17 @@ from sqlalchemy import delete, func, insert, or_, select
 from app.api.deps import SessionDep, StaffDep, TenantDep
 from app.core.db import SessionLocal
 from app.core.security import create_token, normalize_phone, verify_password
-from app.models.enums import CampaignStatus, OrderStatus, ReservationStatus, TriggerKind
+from app.models.enums import (
+    CampaignStatus,
+    IikoHandoffStatus,
+    OrderStatus,
+    ReservationStatus,
+    TriggerKind,
+)
 from app.models.feedback import OrderFeedback
 from app.models.geo import City, DeliveryZone, Restaurant
 from app.models.guest import Guest, GuestAddress
+from app.models.integration import IikoBridge, IikoLink, IikoOrderHandoff, IikoProduct
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import (
     Dish,
@@ -38,6 +46,9 @@ from app.schemas.admin import (
     AudienceQuery,
     AutomationRead,
     AutomationWrite,
+    BridgeRow,
+    BridgeSecret,
+    BridgeToggle,
     CampaignRead,
     CampaignWrite,
     CategoryAdminRead,
@@ -59,8 +70,13 @@ from app.schemas.admin import (
     GuestPointsRead,
     GuestReservationRead,
     GuestWrite,
+    HandoffRow,
     HoursRead,
     HoursWrite,
+    IikoProductRow,
+    LinkBatch,
+    LinkRow,
+    MatchResult,
     OrderStatusWrite,
     PromoCodePatch,
     PromoCodeRead,
@@ -82,6 +98,7 @@ from app.schemas.admin import (
     ZonePatch,
     ZoneRead,
 )
+from app.schemas.integration import SyncResult
 from app.schemas.order import OrderRead
 from app.schemas.promotion import (
     PromotionAdminRead,
@@ -92,6 +109,7 @@ from app.schemas.reservation import ReservationRead
 from app.schemas.sync import SyncApply, SyncChangeRead, SyncRunRead
 from app.services import campaign as campaign_service
 from app.services import guest as guest_service
+from app.services import iiko_bridge
 from app.services import loyalty as loyalty_service
 from app.services import media as media_service
 from app.services import order as order_service
@@ -1890,3 +1908,334 @@ async def feedback_summary(
         total=len(ratings),
         by_rating=counts,
     )
+
+
+# ─────────────────────────── касса iiko ───────────────────────────
+
+
+@router.get("/iiko/bridges", summary="Плагины по ресторанам")
+async def iiko_bridges(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[BridgeRow]:
+    """Список всех точек: где плагин заведён, где молчит, сколько сопоставлено."""
+    restaurants = list(
+        await session.scalars(
+            select(Restaurant)
+            .where(Restaurant.tenant_id == tenant.id, Restaurant.is_active.is_(True))
+            .order_by(Restaurant.name)
+        )
+    )
+
+    bridges = {
+        bridge.restaurant_id: bridge
+        for bridge in await session.scalars(
+            select(IikoBridge).where(IikoBridge.tenant_id == tenant.id)
+        )
+    }
+
+    counters = await _iiko_counters(session, tenant.id)
+
+    return [
+        BridgeRow(
+            restaurant_id=restaurant.id,
+            restaurant_name=restaurant.name,
+            is_registered=restaurant.id in bridges,
+            is_active=bridges[restaurant.id].is_active if restaurant.id in bridges else False,
+            last_seen_at=bridges[restaurant.id].last_seen_at if restaurant.id in bridges else None,
+            plugin_version=(
+                bridges[restaurant.id].plugin_version if restaurant.id in bridges else None
+            ),
+            terminal_name=(
+                bridges[restaurant.id].terminal_name if restaurant.id in bridges else None
+            ),
+            **counters.get(restaurant.id, _EMPTY_COUNTERS),
+        )
+        for restaurant in restaurants
+    ]
+
+
+_EMPTY_COUNTERS = {
+    "linked_dishes": 0,
+    "linked_extras": 0,
+    "products": 0,
+    "pending_orders": 0,
+    "failed_orders": 0,
+}
+
+
+async def _iiko_counters(session: SessionDep, tenant_id: str) -> dict[UUID, dict[str, int]]:
+    """Считает всё одним проходом на ресторан, а не запросом на строку таблицы."""
+    counters: dict[UUID, dict[str, int]] = {}
+
+    def slot(restaurant_id: UUID) -> dict[str, int]:
+        return counters.setdefault(restaurant_id, dict(_EMPTY_COUNTERS))
+
+    links = await session.execute(
+        select(
+            IikoLink.restaurant_id,
+            func.count(IikoLink.dish_id),
+            func.count(IikoLink.extra_id),
+        )
+        .where(IikoLink.tenant_id == tenant_id)
+        .group_by(IikoLink.restaurant_id)
+    )
+    for restaurant_id, dishes, extras in links:
+        slot(restaurant_id)["linked_dishes"] = dishes
+        slot(restaurant_id)["linked_extras"] = extras
+
+    products = await session.execute(
+        select(IikoProduct.restaurant_id, func.count())
+        .where(IikoProduct.tenant_id == tenant_id)
+        .group_by(IikoProduct.restaurant_id)
+    )
+    for restaurant_id, total in products:
+        slot(restaurant_id)["products"] = total
+
+    handoffs = await session.execute(
+        select(IikoOrderHandoff.restaurant_id, IikoOrderHandoff.status, func.count())
+        .where(IikoOrderHandoff.tenant_id == tenant_id)
+        .group_by(IikoOrderHandoff.restaurant_id, IikoOrderHandoff.status)
+    )
+    for restaurant_id, status_value, total in handoffs:
+        if status_value is IikoHandoffStatus.FAILED:
+            slot(restaurant_id)["failed_orders"] = total
+        elif status_value in (IikoHandoffStatus.PENDING, IikoHandoffStatus.SENT):
+            slot(restaurant_id)["pending_orders"] += total
+
+    return counters
+
+
+@router.post("/iiko/bridges/{restaurant_id}/secret", summary="Выдать или сменить ключ плагина")
+async def iiko_secret(
+    restaurant_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> BridgeSecret:
+    """Новый ключ этой точки. Показываем один раз — сохранить его в настройках плагина."""
+    restaurant = await session.scalar(
+        select(Restaurant).where(
+            Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id
+        )
+    )
+    if restaurant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
+
+    secret = secrets.token_urlsafe(32)
+
+    bridge = await session.scalar(
+        select(IikoBridge).where(
+            IikoBridge.tenant_id == tenant.id, IikoBridge.restaurant_id == restaurant_id
+        )
+    )
+    if bridge is None:
+        bridge = IikoBridge(tenant_id=tenant.id, restaurant_id=restaurant_id, secret=secret)
+        session.add(bridge)
+    else:
+        bridge.secret = secret
+        bridge.is_active = True
+
+    await session.commit()
+    return BridgeSecret(restaurant_id=restaurant_id, secret=secret)
+
+
+@router.patch("/iiko/bridges/{restaurant_id}", summary="Включить или выключить плагин точки")
+async def iiko_toggle(
+    restaurant_id: UUID,
+    payload: BridgeToggle,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> BridgeToggle:
+    bridge = await session.scalar(
+        select(IikoBridge).where(
+            IikoBridge.tenant_id == tenant.id, IikoBridge.restaurant_id == restaurant_id
+        )
+    )
+    if bridge is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Плагин этой точки не заведён")
+
+    bridge.is_active = payload.is_active
+    await session.commit()
+    return BridgeToggle(is_active=bridge.is_active)
+
+
+@router.get("/iiko/products", summary="Номенклатура кассы этой точки")
+async def iiko_products(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID, Query()],
+) -> list[IikoProductRow]:
+    rows = await session.scalars(
+        select(IikoProduct)
+        .where(IikoProduct.tenant_id == tenant.id, IikoProduct.restaurant_id == restaurant_id)
+        .order_by(IikoProduct.name)
+    )
+
+    return [
+        IikoProductRow(
+            product_id=row.product_id,
+            name=row.name,
+            code=row.code,
+            group_name=row.group_name,
+            is_active=row.is_active,
+            has_sizes=row.has_sizes,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/iiko/links", summary="Сопоставление блюд с товарами кассы")
+async def iiko_links(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID, Query()],
+) -> list[LinkRow]:
+    """Все блюда и добавки сети с их сопоставлением в этом ресторане."""
+    links = {
+        ("dish", link.dish_id) if link.dish_id else ("extra", link.extra_id): link
+        for link in await session.scalars(
+            select(IikoLink).where(
+                IikoLink.tenant_id == tenant.id, IikoLink.restaurant_id == restaurant_id
+            )
+        )
+    }
+
+    names = {
+        product.product_id: product.name
+        for product in await session.scalars(
+            select(IikoProduct).where(
+                IikoProduct.tenant_id == tenant.id, IikoProduct.restaurant_id == restaurant_id
+            )
+        )
+    }
+
+    rows: list[LinkRow] = []
+
+    dishes = await session.execute(
+        select(Dish, MenuCategory.name)
+        .join(MenuCategory, MenuCategory.id == Dish.category_id)
+        .where(Dish.tenant_id == tenant.id, Dish.is_active.is_(True))
+        .order_by(MenuCategory.sort_order, Dish.sort_order, Dish.name)
+    )
+    for dish, category in dishes:
+        link = links.get(("dish", dish.id))
+        rows.append(
+            LinkRow(
+                kind="dish",
+                id=dish.id,
+                name=dish.name,
+                group=category,
+                product_id=link.product_id if link else None,
+                product_name=names.get(link.product_id) if link else None,
+                size_id=link.size_id if link else None,
+                modifier_group_id=None,
+            )
+        )
+
+    extras = await session.scalars(
+        select(DishExtra)
+        .where(DishExtra.tenant_id == tenant.id, DishExtra.is_active.is_(True))
+        .order_by(DishExtra.name)
+    )
+    for extra in extras:
+        link = links.get(("extra", extra.id))
+        rows.append(
+            LinkRow(
+                kind="extra",
+                id=extra.id,
+                name=extra.name,
+                group="Добавки",
+                product_id=link.product_id if link else None,
+                product_name=names.get(link.product_id) if link else None,
+                size_id=link.size_id if link else None,
+                modifier_group_id=link.modifier_group_id if link else None,
+            )
+        )
+
+    return rows
+
+
+@router.put("/iiko/links", summary="Сохранить сопоставление")
+async def iiko_save_links(
+    payload: LinkBatch, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> SyncResult:
+    saved = await iiko_bridge.save_links(
+        session,
+        tenant,
+        payload.restaurant_id,
+        [link.model_dump() for link in payload.links],
+    )
+    await session.commit()
+    return SyncResult(applied=saved)
+
+
+@router.post("/iiko/links/auto", summary="Сопоставить по названиям")
+async def iiko_auto_links(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID, Query()],
+) -> MatchResult:
+    """Связывает совпадающие названия. Спорное оставляет человеку."""
+    matched, skipped = await iiko_bridge.auto_match(session, tenant, restaurant_id)
+    await session.commit()
+    return MatchResult(matched=matched, skipped=skipped)
+
+
+@router.get("/iiko/queue", summary="Очередь заказов на кассу")
+async def iiko_queue(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    only_problems: Annotated[bool, Query()] = False,
+) -> list[HandoffRow]:
+    """Что уехало на кассу, что застряло и почему."""
+    query = (
+        select(IikoOrderHandoff, Order, Restaurant.name)
+        .join(Order, Order.id == IikoOrderHandoff.order_id)
+        .join(Restaurant, Restaurant.id == IikoOrderHandoff.restaurant_id)
+        .where(IikoOrderHandoff.tenant_id == tenant.id)
+        .order_by(IikoOrderHandoff.created_at.desc())
+        .limit(200)
+    )
+    if only_problems:
+        query = query.where(IikoOrderHandoff.status == IikoHandoffStatus.FAILED)
+
+    rows = await session.execute(query)
+
+    return [
+        HandoffRow(
+            order_id=order.id,
+            order_number=order.number,
+            restaurant_name=restaurant_name,
+            status=handoff.status.value,
+            attempts=handoff.attempts,
+            error=handoff.error,
+            missing_products=handoff.missing_products or [],
+            iiko_order_number=handoff.iiko_order_number,
+            created_at=handoff.created_at,
+            total_kopecks=order.total_kopecks,
+        )
+        for handoff, order, restaurant_name in rows
+    ]
+
+
+@router.post("/iiko/queue/{order_id}/retry", summary="Отдать заказ на кассу заново")
+async def iiko_retry(
+    order_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> SyncResult:
+    """После починки сопоставления заказ можно отправить ещё раз."""
+    handoff = await session.scalar(
+        select(IikoOrderHandoff).where(
+            IikoOrderHandoff.tenant_id == tenant.id, IikoOrderHandoff.order_id == order_id
+        )
+    )
+    if handoff is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не стоял в очереди")
+
+    handoff.status = IikoHandoffStatus.PENDING
+    handoff.attempts = 0
+    handoff.locked_until = None
+    handoff.error = None
+    handoff.missing_products = []
+
+    await session.commit()
+    return SyncResult(applied=1)

@@ -164,6 +164,54 @@ export type PromotionDraft = {
 
 export type Restaurant = { id: string; name: string };
 
+export type Bridge = {
+  restaurant_id: string;
+  restaurant_name: string;
+  is_registered: boolean;
+  is_active: boolean;
+  last_seen_at: string | null;
+  plugin_version: string | null;
+  terminal_name: string | null;
+  linked_dishes: number;
+  linked_extras: number;
+  products: number;
+  pending_orders: number;
+  failed_orders: number;
+};
+
+export type IikoProduct = {
+  product_id: string;
+  name: string;
+  code: string | null;
+  group_name: string | null;
+  is_active: boolean;
+  has_sizes: boolean;
+};
+
+export type IikoLink = {
+  kind: "dish" | "extra";
+  id: string;
+  name: string;
+  group: string | null;
+  product_id: string | null;
+  product_name: string | null;
+  size_id: string | null;
+  modifier_group_id: string | null;
+};
+
+export type Handoff = {
+  order_id: string;
+  order_number: string;
+  restaurant_name: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  missing_products: string[];
+  iiko_order_number: string | null;
+  created_at: string;
+  total_kopecks: number;
+};
+
 export type Feedback = {
   id: string;
   order_id: string;
@@ -577,6 +625,49 @@ export const api = {
 
   sendCampaign: (id: string, force = false) =>
     request<Campaign>(`/admin/campaigns/${id}/send?force=${force}`, { method: "POST" }),
+
+  // --- Касса iiko ---
+
+  bridges: () => request<Bridge[]>("/admin/iiko/bridges"),
+
+  bridgeSecret: (restaurantId: string) =>
+    request<{ restaurant_id: string; secret: string }>(
+      `/admin/iiko/bridges/${restaurantId}/secret`,
+      { method: "POST" },
+    ),
+
+  toggleBridge: (restaurantId: string, isActive: boolean) =>
+    request<{ is_active: boolean }>(`/admin/iiko/bridges/${restaurantId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: isActive }),
+    }),
+
+  iikoProducts: (restaurantId: string) =>
+    request<IikoProduct[]>(`/admin/iiko/products?restaurant_id=${restaurantId}`),
+
+  iikoLinks: (restaurantId: string) =>
+    request<IikoLink[]>(`/admin/iiko/links?restaurant_id=${restaurantId}`),
+
+  saveIikoLinks: (
+    restaurantId: string,
+    links: { kind: string; id: string; product_id: string; size_id?: string; modifier_group_id?: string }[],
+  ) =>
+    request<{ applied: number }>("/admin/iiko/links", {
+      method: "PUT",
+      body: JSON.stringify({ restaurant_id: restaurantId, links }),
+    }),
+
+  autoMatchIiko: (restaurantId: string) =>
+    request<{ matched: number; skipped: number }>(
+      `/admin/iiko/links/auto?restaurant_id=${restaurantId}`,
+      { method: "POST" },
+    ),
+
+  iikoQueue: (onlyProblems: boolean) =>
+    request<Handoff[]>(`/admin/iiko/queue?only_problems=${onlyProblems}`),
+
+  retryHandoff: (orderId: string) =>
+    request<{ applied: number }>(`/admin/iiko/queue/${orderId}/retry`, { method: "POST" }),
 
   feedback: (params: { restaurant_id?: string; max_rating?: number }) => {
     const query = new URLSearchParams();
