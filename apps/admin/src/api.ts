@@ -1,7 +1,17 @@
 import { getTenant } from "@mr/tenants";
 
 const TOKEN_KEY = "mr.admin.token";
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+/**
+ * Адрес API. На сервере админка лежит в папке рядом с самим API
+ * (/mamaroma/admin/ и /mamaroma/api/), поэтому считаем его от собственного
+ * адреса страницы: сборка не знает, в какую папку её положат, и знать не должна.
+ * В разработке ходим на локальный бэкенд.
+ */
+const API_URL =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV
+    ? "http://localhost:8000"
+    : new URL("..", window.location.href).href.replace(/\/$/, ""));
 
 export const tenant = getTenant();
 
