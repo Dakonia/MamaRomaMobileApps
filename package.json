@@ -8,6 +8,8 @@
   },
   "scripts": {
     "mobile": "pnpm --filter @mr/mobile start",
+    "demo": "pnpm --filter @mr/mobile demo",
+    "demo:tunnel": "pnpm --filter @mr/mobile demo:tunnel",
     "ios": "pnpm --filter @mr/mobile ios",
     "android": "pnpm --filter @mr/mobile android",
     "api": "cd backend && uv run fastapi dev app/main.py",
