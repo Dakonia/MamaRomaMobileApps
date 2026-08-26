@@ -40,6 +40,8 @@ backend/media/
 
 # Плагин iikoFront: секреты, сборка и локальная очередь
 iiko_front_bridge/bridge.settings.json
+# Готовая к переносу папка: собранная DLL и настройки с боевыми ключами
+iiko_front_bridge/install/
 iiko_front_bridge/**/bin/
 iiko_front_bridge/**/obj/
 iiko_front_bridge/**/launchSettings.json
