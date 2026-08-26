@@ -511,29 +511,31 @@ internal sealed class DeliveryWriter
     {
         try
         {
+            // Размеры живут не у товара, а у его шкалы: нет шкалы — нет и размеров
             var scale = product.Scale;
             if (scale == null)
             {
                 return null;
             }
 
-            var sizes = scale.Sizes;
-            if (sizes == null || sizes.Count == 0)
-            {
-                return null;
-            }
-
             if (Guid.TryParse(sizeId, out var id))
             {
-                var exact = sizes.FirstOrDefault(size => size.Id == id);
+                var exact = PluginContext.Operations.TryGetProductSizeById(id);
                 if (exact != null)
                 {
                     return exact;
                 }
             }
 
-            // Размер по умолчанию задан у шкалы товара, а не у самого товара
-            return scale.DefaultSize ?? sizes.First();
+            // Размер не назвали или он из чужой шкалы — берём тот, что назначен
+            // по умолчанию, иначе первый из шкалы
+            if (scale.DefaultSize != null)
+            {
+                return scale.DefaultSize;
+            }
+
+            var sizes = PluginContext.Operations.GetProductScaleSizes(scale);
+            return sizes != null && sizes.Count > 0 ? sizes[0] : null;
         }
         catch (Exception exc)
         {

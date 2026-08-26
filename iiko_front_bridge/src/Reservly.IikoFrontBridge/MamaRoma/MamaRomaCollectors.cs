@@ -169,8 +169,9 @@ internal static class MenuCollector
     {
         try
         {
-            var scale = product.Scale;
-            return scale?.Sizes != null && scale.Sizes.Count > 0;
+            // Шкала есть — значит товар продаётся в размерах, и в заказе
+            // без кода размера касса не поймёт, что пробивать
+            return product.Scale != null;
         }
         catch
         {
