@@ -596,6 +596,7 @@ class IikoProductRow(BaseModel):
     name: str
     code: str | None
     group_name: str | None
+    product_type: str | None
     is_active: bool
     has_sizes: bool
 

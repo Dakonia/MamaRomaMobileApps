@@ -88,6 +88,7 @@ class MenuProductIn(_Incoming):
     group_path: str = Field(default="", alias="groupPath")
     category: str = ""
     measure_unit: str = Field(default="", alias="measureUnit")
+    product_type: str = Field(default="", alias="type")
     is_active: bool = Field(default=True, alias="isActive")
 
     # У товара есть размеры — в заказе для него обязателен код размера

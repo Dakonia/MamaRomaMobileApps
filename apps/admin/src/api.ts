@@ -184,6 +184,8 @@ export type IikoProduct = {
   name: string;
   code: string | null;
   group_name: string | null;
+  /** Dish — блюдо, Goods — товар, Modifier — добавка. */
+  product_type: string | null;
   is_active: boolean;
   has_sizes: boolean;
 };

@@ -228,6 +228,12 @@ internal sealed class MenuProduct
     public string MeasureUnit { get; set; } = string.Empty;
     public bool IsActive { get; set; }
 
+    /// <summary>
+    /// Вид товара в кассе: Dish — блюдо, Goods — товар, Modifier — добавка.
+    /// Остальное (заготовки, услуги, тарифы) в продажу не идёт.
+    /// </summary>
+    public string Type { get; set; } = string.Empty;
+
     /// <summary>Есть ли у товара размеры — тогда в заказе нужен ещё и код размера.</summary>
     public bool HasSizes { get; set; }
 }

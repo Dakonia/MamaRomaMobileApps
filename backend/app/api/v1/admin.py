@@ -2093,6 +2093,7 @@ async def iiko_products(
             name=row.name,
             code=row.code,
             group_name=row.group_name,
+            product_type=row.product_type,
             is_active=row.is_active,
             has_sizes=row.has_sizes,
         )
@@ -2118,6 +2119,7 @@ async def iiko_search(
             name=row.name,
             code=row.code,
             group_name=row.group_name,
+            product_type=row.product_type,
             is_active=row.is_active,
             has_sizes=row.has_sizes,
         )
@@ -2209,6 +2211,7 @@ async def iiko_links(
                         name=product.name,
                         code=product.code,
                         group_name=product.group_name,
+                        product_type=product.product_type,
                         is_active=product.is_active,
                         has_sizes=product.has_sizes,
                     )

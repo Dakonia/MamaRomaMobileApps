@@ -326,6 +326,7 @@ async def apply_menu(
         product.measure_unit = (str(raw.get("measureUnit") or "") or None) and str(
             raw.get("measureUnit")
         )[:32]
+        product.product_type = (str(raw.get("type") or "") or None) and str(raw.get("type"))[:32]
         product.is_active = bool(raw.get("isActive", True))
         product.has_sizes = bool(raw.get("hasSizes", False))
         product.seen_at = now

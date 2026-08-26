@@ -160,6 +160,11 @@ class IikoProduct(UUIDMixin, TenantMixin, TimestampMixin, Base):
     category: Mapped[str | None] = mapped_column(String(120), default=None)
     measure_unit: Mapped[str | None] = mapped_column(String(32), default=None)
 
+    # Вид товара в кассе: Dish, Goods, Modifier и прочее. «Активный» в iiko
+    # значит «не удалён из справочника», поэтому отбирать по нему бесполезно —
+    # продаётся именно то, что нужного вида
+    product_type: Mapped[str | None] = mapped_column(String(32), default=None)
+
     is_active: Mapped[bool] = mapped_column(default=True)
 
     # У товара есть размеры — тогда в заказе обязателен ещё и код размера

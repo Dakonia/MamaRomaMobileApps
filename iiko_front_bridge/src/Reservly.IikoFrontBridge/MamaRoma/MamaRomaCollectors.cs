@@ -98,6 +98,17 @@ internal static class StopListMapper
 /// </summary>
 internal static class MenuCollector
 {
+    /// <summary>
+    /// Что вообще может уехать гостю. Всё прочее — заготовки, услуги, тарифы,
+    /// топливо — в справочнике кассы лежит годами и к меню отношения не имеет.
+    /// </summary>
+    private static readonly ProductType[] Sellable =
+    {
+        ProductType.Dish,
+        ProductType.Goods,
+        ProductType.Modifier,
+    };
+
     public static MenuSnapshot Collect(MamaRomaConfig config)
     {
         var snapshot = new MenuSnapshot
@@ -128,6 +139,7 @@ internal static class MenuCollector
                     Category = groupInfo.category,
                     MeasureUnit = product.MeasuringUnitName ?? string.Empty,
                     IsActive = product.IsActive,
+                    Type = product.Type.ToString(),
                     HasSizes = HasSizes(product),
                 });
             }
@@ -152,7 +164,15 @@ internal static class MenuCollector
                 return Enumerable.Empty<IProduct>();
             }
 
-            return includeInactive ? products : products.Where(item => item.IsActive);
+            if (includeInactive)
+            {
+                return products;
+            }
+
+            // «Активный» в кассе означает «не удалён из справочника», а не
+            // «продаётся»: у сети за годы накопились тысячи старых позиций.
+            // Поэтому отбираем ещё и по виду товара
+            return products.Where(item => item.IsActive && Sellable.Contains(item.Type));
         }
         catch (Exception exc)
         {
