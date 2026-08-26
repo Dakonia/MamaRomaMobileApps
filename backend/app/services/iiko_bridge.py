@@ -762,6 +762,90 @@ async def groups(
     return [{"name": name or "", "products": total} for name, total in rows]
 
 
+def _tokens(name: str) -> set[str]:
+    """Слова названия для сравнения: короткие обрывки только мешают."""
+    return {word for word in _normalize(name).split() if len(word) > 2}
+
+
+def _score(ours: str, theirs: str) -> float:
+    """Насколько название кассы похоже на наше блюдо.
+
+    Считаем по общим словам, а не по буквам: «Пицца Пепперони» и «Пепперони»
+    должны сойтись, а «Пицца Маргарита» и «Пицца Пепперони» — нет.
+    """
+    left, right = _tokens(ours), _tokens(theirs)
+    if not left or not right:
+        return 0.0
+
+    common = len(left & right)
+    if common == 0:
+        return 0.0
+
+    # Делим на большее множество: длинное название кассы с кучей приписок
+    # не должно выигрывать только потому, что в нём много слов
+    return common / max(len(left), len(right))
+
+
+async def search_products(
+    session: AsyncSession,
+    tenant: Tenant,
+    restaurant_id: UUID,
+    query: str,
+    only_groups: list[str] | None = None,
+    limit: int = 40,
+) -> list[IikoProduct]:
+    """Поиск по номенклатуре кассы. Ищет сервер: в базе точки десятки тысяч позиций."""
+    stmt = select(IikoProduct).where(
+        IikoProduct.tenant_id == tenant.id,
+        IikoProduct.restaurant_id == restaurant_id,
+        IikoProduct.is_active.is_(True),
+    )
+    if only_groups:
+        stmt = stmt.where(IikoProduct.group_name.in_(only_groups))
+
+    needle = query.strip()
+    if needle:
+        stmt = stmt.where(IikoProduct.name.ilike(f"%{needle}%"))
+
+    return list(await session.scalars(stmt.order_by(IikoProduct.name).limit(limit)))
+
+
+async def suggest(
+    session: AsyncSession,
+    tenant: Tenant,
+    restaurant_id: UUID,
+    names: list[str],
+    only_groups: list[str] | None = None,
+    per_name: int = 3,
+) -> dict[str, list[IikoProduct]]:
+    """Кандидаты для каждого нашего блюда — по совпадению слов в названии.
+
+    Считаем один раз на всю страницу: отдельный запрос на строку превратил бы
+    сопоставление в ожидание.
+    """
+    stmt = select(IikoProduct).where(
+        IikoProduct.tenant_id == tenant.id,
+        IikoProduct.restaurant_id == restaurant_id,
+        IikoProduct.is_active.is_(True),
+    )
+    if only_groups:
+        stmt = stmt.where(IikoProduct.group_name.in_(only_groups))
+
+    products = list(await session.scalars(stmt))
+    found: dict[str, list[IikoProduct]] = {}
+
+    for name in names:
+        scored = [(_score(name, product.name), product) for product in products]
+        best = sorted(
+            (pair for pair in scored if pair[0] >= 0.5),
+            key=lambda pair: (-pair[0], len(pair[1].name)),
+        )[:per_name]
+        if best:
+            found[name] = [product for _, product in best]
+
+    return found
+
+
 async def auto_match(
     session: AsyncSession,
     tenant: Tenant,

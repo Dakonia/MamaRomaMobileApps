@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { radius, spacing, typography } from "@mr/design-tokens";
 import { useEffect, useMemo, useState } from "react";
 
-import { api, formatDateTime, formatPrice, type IikoLink } from "./api";
+import { api, formatDateTime, formatPrice, type IikoLink, type IikoProduct } from "./api";
 import { Badge, Button, c, Section, styles } from "./ui";
 
 type Pane = "bridges" | "links" | "queue";
@@ -181,20 +181,143 @@ function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void 
   );
 }
 
+/** Окно поиска товара кассы: ищет сервер, в браузер список целиком не влезает. */
+function ProductPicker({
+  restaurantId,
+  groups,
+  title,
+  onPick,
+  onClose,
+}: {
+  restaurantId: string;
+  groups: string[];
+  title: string;
+  onPick: (product: IikoProduct) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState(title);
+  const [typed, setTyped] = useState(title);
+
+  // Пока печатают, сервер не дёргаем
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(typed), 300);
+    return () => clearTimeout(timer);
+  }, [typed]);
+
+  const found = useQuery({
+    queryKey: ["iiko-search", restaurantId, query, groups],
+    queryFn: () => api.searchIikoProducts(restaurantId, query, groups),
+  });
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(20,17,16,.45)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 50,
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "min(720px, 92vw)",
+          maxHeight: "80vh",
+          display: "flex",
+          flexDirection: "column",
+          background: c.surface,
+          borderRadius: radius.lg,
+          border: `1px solid ${c.border}`,
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: spacing.base, borderBottom: `1px solid ${c.divider}` }}>
+          <div style={{ fontWeight: 600, marginBottom: spacing.sm }}>{title}</div>
+          <input
+            autoFocus
+            style={{ ...styles.input, width: "100%" }}
+            placeholder="Название товара в кассе"
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+          />
+          <div style={{ marginTop: 6, color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+            {groups.length > 0
+              ? `Ищем в выбранных группах (${groups.length})`
+              : "Ищем по всей номенклатуре — выберите группы, чтобы сузить"}
+          </div>
+        </div>
+
+        <div style={{ overflow: "auto" }}>
+          {found.isPending ? (
+            <p style={{ padding: spacing.base, color: c.textSecondary }}>Ищем…</p>
+          ) : (found.data ?? []).length === 0 ? (
+            <p style={{ padding: spacing.base, color: c.textSecondary }}>Ничего не нашлось</p>
+          ) : (
+            (found.data ?? []).map((product) => (
+              <button
+                key={product.product_id}
+                type="button"
+                onClick={() => onPick(product)}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: `${spacing.sm}px ${spacing.base}px`,
+                  border: "none",
+                  borderBottom: `1px solid ${c.divider}`,
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: typography.body.fontSize,
+                  color: c.textPrimary,
+                }}
+              >
+                {product.name}
+                <span style={{ color: c.textTertiary }}>
+                  {product.group_name ? ` · ${product.group_name}` : ""}
+                  {product.code ? ` · ${product.code}` : ""}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Links({ restaurantId }: { restaurantId: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [onlyEmpty, setOnlyEmpty] = useState(false);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  // Группы кассы, в которых ищем товар. В базе точки десятки тысяч позиций —
-  // без сужения одно и то же блюдо находится и в заготовках, и в акциях
+  const [onlyEmpty, setOnlyEmpty] = useState(true);
+  const [draft, setDraft] = useState<Record<string, { id: string; name: string }>>({});
+  const [picking, setPicking] = useState<IikoLink | null>(null);
+
+  /**
+   * Группы кассы, в которых ищем товар. В базе точки десятки тысяч позиций:
+   * заготовки, посуда, акции прошлых лет. Выбор помним — он один и тот же
+   * изо дня в день, а перевыбирать его каждый раз утомительно.
+   */
   const [groups, setGroups] = useState<string[]>([]);
 
-  const links = useQuery({
-    queryKey: ["iiko-links", restaurantId],
-    queryFn: () => api.iikoLinks(restaurantId),
-    enabled: restaurantId !== "",
-  });
+  useEffect(() => {
+    const saved = localStorage.getItem(`iiko-groups-${restaurantId}`);
+    setGroups(saved ? (JSON.parse(saved) as string[]) : []);
+    setDraft({});
+  }, [restaurantId]);
+
+  const pickGroup = (name: string) => {
+    setGroups((current) => {
+      const next = current.includes(name)
+        ? current.filter((item) => item !== name)
+        : [...current, name];
+      localStorage.setItem(`iiko-groups-${restaurantId}`, JSON.stringify(next));
+      return next;
+    });
+  };
 
   const allGroups = useQuery({
     queryKey: ["iiko-groups", restaurantId],
@@ -202,30 +325,19 @@ function Links({ restaurantId }: { restaurantId: string }) {
     enabled: restaurantId !== "",
   });
 
-  const products = useQuery({
-    queryKey: ["iiko-products", restaurantId, groups],
-    queryFn: async () => {
-      if (groups.length === 0) return api.iikoProducts(restaurantId);
-
-      const batches = await Promise.all(groups.map((name) => api.iikoProducts(restaurantId, name)));
-      return batches.flat().sort((left, right) => left.name.localeCompare(right.name));
-    },
+  const links = useQuery({
+    queryKey: ["iiko-links", restaurantId, groups],
+    queryFn: () => api.iikoLinks(restaurantId, groups),
     enabled: restaurantId !== "",
   });
-
-  // Сменили ресторан — черновик прошлого больше не про этот
-  useEffect(() => {
-    setDraft({});
-    setGroups([]);
-  }, [restaurantId]);
 
   const save = useMutation({
     mutationFn: () =>
       api.saveIikoLinks(
         restaurantId,
-        Object.entries(draft).map(([key, productId]) => {
+        Object.entries(draft).map(([key, value]) => {
           const [kind, id] = key.split(":");
-          return { kind, id, product_id: productId };
+          return { kind, id, product_id: value.id };
         }),
       ),
     onSuccess: () => {
@@ -245,17 +357,16 @@ function Links({ restaurantId }: { restaurantId: string }) {
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (links.data ?? []).filter((row: IikoLink) => {
-      if (onlyEmpty && row.product_id) return false;
+    return (links.data ?? []).filter((row) => {
+      const linked = draft[`${row.kind}:${row.id}`]?.id ?? row.product_id;
+      if (onlyEmpty && linked) return false;
       if (needle === "") return true;
-      return (
-        row.name.toLowerCase().includes(needle) ||
-        (row.group ?? "").toLowerCase().includes(needle)
-      );
+      return row.name.toLowerCase().includes(needle);
     });
-  }, [links.data, search, onlyEmpty]);
+  }, [links.data, search, onlyEmpty, draft]);
 
-  const linkedCount = (links.data ?? []).filter((row) => row.product_id).length;
+  const total = (links.data ?? []).length;
+  const linked = (links.data ?? []).filter((row) => row.product_id).length;
   const changed = Object.keys(draft).length;
 
   if (restaurantId === "") {
@@ -267,48 +378,15 @@ function Links({ restaurantId }: { restaurantId: string }) {
   }
 
   return (
-    <Section
-      title={`Сопоставление · ${linkedCount} из ${(links.data ?? []).length}`}
-      action={
-        <div style={{ display: "flex", gap: spacing.sm, alignItems: "center" }}>
-          <input
-            style={{ ...styles.input, minWidth: 200 }}
-            placeholder="Поиск блюда"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <Button tone={onlyEmpty ? "brand" : "quiet"} onClick={() => setOnlyEmpty(!onlyEmpty)}>
-            Только пустые
-          </Button>
-          <Button tone="quiet" onClick={() => auto.mutate()}>
-            {auto.isPending ? "Ищем…" : "Сопоставить по названиям"}
-          </Button>
-          <Button tone="brand" onClick={() => save.mutate()}>
-            {save.isPending ? "Сохраняем…" : changed > 0 ? `Сохранить (${changed})` : "Сохранить"}
-          </Button>
-        </div>
-      }
-    >
-      {/* Выбор групп: сначала сужаем номенклатуру, потом сопоставляем */}
-      <div style={{ marginBottom: spacing.base }}>
-        <div style={{ color: c.textSecondary, marginBottom: spacing.sm }}>
-          Где искать товары кассы
-          {groups.length > 0 ? ` · выбрано ${groups.length}` : " · пока везде"}
-        </div>
+    <>
+      <Section title="Где искать товары кассы">
+        <p style={{ marginTop: 0, color: c.textSecondary }}>
+          В базе этой точки {(allGroups.data ?? []).reduce((sum, g) => sum + g.products, 0)} позиций:
+          заготовки, посуда, акции прошлых лет. Отметьте группы настоящего меню — поиск,
+          подсказки и автоподбор будут работать только по ним.
+        </p>
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: spacing.xs,
-            maxHeight: 132,
-            overflow: "auto",
-            padding: spacing.sm,
-            border: `1px solid ${c.border}`,
-            borderRadius: radius.md,
-            background: c.surfaceSunken,
-          }}
-        >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs, maxHeight: 180, overflow: "auto" }}>
           {(allGroups.data ?? []).map((group) => {
             const picked = groups.includes(group.name);
 
@@ -316,13 +394,7 @@ function Links({ restaurantId }: { restaurantId: string }) {
               <button
                 key={group.name}
                 type="button"
-                onClick={() =>
-                  setGroups((current) =>
-                    picked
-                      ? current.filter((name) => name !== group.name)
-                      : [...current, group.name],
-                  )
-                }
+                onClick={() => pickGroup(group.name)}
                 style={{
                   padding: `4px ${spacing.sm}px`,
                   borderRadius: radius.pill,
@@ -339,74 +411,155 @@ function Links({ restaurantId }: { restaurantId: string }) {
             );
           })}
         </div>
-      </div>
+      </Section>
 
-      {auto.data ? (
-        <p style={{ color: c.textSecondary, marginTop: 0 }}>
-          Связано {auto.data.matched}, оставлено человеку {auto.data.skipped} — это позиции,
-          где названия не совпали или в кассе нашлось несколько одинаковых.
-        </p>
+      <Section
+        title={`Блюда · связано ${linked} из ${total}`}
+        action={
+          <div style={{ display: "flex", gap: spacing.sm, alignItems: "center" }}>
+            <input
+              style={{ ...styles.input, minWidth: 180 }}
+              placeholder="Поиск блюда"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <Button tone={onlyEmpty ? "brand" : "quiet"} onClick={() => setOnlyEmpty(!onlyEmpty)}>
+              Только несвязанные
+            </Button>
+            <Button tone="quiet" onClick={() => auto.mutate()}>
+              {auto.isPending ? "Ищем…" : "Связать совпадения"}
+            </Button>
+            <Button tone="brand" onClick={() => save.mutate()}>
+              {save.isPending ? "Сохраняем…" : changed > 0 ? `Сохранить (${changed})` : "Сохранить"}
+            </Button>
+          </div>
+        }
+      >
+        {groups.length === 0 ? (
+          <p style={{ color: c.warning, marginTop: 0 }}>
+            Группы не выбраны — подсказок не будет, а поиск пойдёт по всем позициям сразу.
+          </p>
+        ) : null}
+
+        {auto.data ? (
+          <p style={{ color: c.textSecondary, marginTop: 0 }}>
+            Связано {auto.data.matched}. Оставлено вам {auto.data.skipped} — там названия не совпали
+            точно или в кассе нашлось несколько одинаковых.
+          </p>
+        ) : null}
+
+        {links.isPending ? (
+          <p style={{ color: c.textSecondary }}>Загружаем…</p>
+        ) : rows.length === 0 ? (
+          <p style={{ color: c.textSecondary }}>
+            {onlyEmpty ? "Всё связано" : "Ничего не нашлось"}
+          </p>
+        ) : (
+          <div style={styles.card}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Наше блюдо</th>
+                  <th style={styles.th}>Товар кассы</th>
+                  <th style={styles.th}>Подсказки</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 120).map((row) => {
+                  const key = `${row.kind}:${row.id}`;
+                  const chosen = draft[key];
+                  const currentName = chosen?.name ?? row.product_name;
+
+                  return (
+                    <tr key={key}>
+                      <td style={styles.td}>
+                        <div>{row.name}</div>
+                        <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+                          {row.group}
+                        </div>
+                      </td>
+
+                      <td style={{ ...styles.td, minWidth: 260 }}>
+                        {currentName ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: spacing.xs }}>
+                            <span style={{ color: chosen ? c.brand : c.textPrimary }}>
+                              {currentName}
+                            </span>
+                            <Button
+                              tone="quiet"
+                              onClick={() =>
+                                setDraft((current) => ({ ...current, [key]: { id: "", name: "" } }))
+                              }
+                            >
+                              снять
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button tone="quiet" onClick={() => setPicking(row)}>
+                            Найти в кассе
+                          </Button>
+                        )}
+                      </td>
+
+                      <td style={styles.td}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs }}>
+                          {row.suggestions.map((product) => (
+                            <button
+                              key={product.product_id}
+                              type="button"
+                              onClick={() =>
+                                setDraft((current) => ({
+                                  ...current,
+                                  [key]: { id: product.product_id, name: product.name },
+                                }))
+                              }
+                              style={{
+                                padding: `2px ${spacing.sm}px`,
+                                borderRadius: radius.pill,
+                                border: `1px solid ${c.border}`,
+                                background: c.surface,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                                fontSize: typography.caption.fontSize,
+                                color: c.textSecondary,
+                              }}
+                            >
+                              {product.name}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {rows.length > 120 ? (
+              <div style={{ padding: spacing.base, color: c.textTertiary }}>
+                Показаны первые 120 из {rows.length}. Сохраните сделанное или сузьте поиском.
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Section>
+
+      {picking ? (
+        <ProductPicker
+          restaurantId={restaurantId}
+          groups={groups}
+          title={picking.name}
+          onClose={() => setPicking(null)}
+          onPick={(product) => {
+            setDraft((current) => ({
+              ...current,
+              [`${picking.kind}:${picking.id}`]: { id: product.product_id, name: product.name },
+            }));
+            setPicking(null);
+          }}
+        />
       ) : null}
-
-      {(products.data ?? []).length === 0 ? (
-        <p style={{ color: c.warning }}>
-          Номенклатура этой кассы ещё не выгружена. Плагин присылает её сам — проверьте,
-          что он на связи и что в настройках включено <code>syncMenu</code>.
-        </p>
-      ) : null}
-
-      {links.isPending ? (
-        <p style={{ color: c.textSecondary }}>Загружаем…</p>
-      ) : (
-        <div style={{ ...styles.card, maxHeight: "60vh", overflow: "auto" }}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Наше блюдо</th>
-                <th style={styles.th}>Раздел</th>
-                <th style={styles.th}>Товар кассы</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const key = `${row.kind}:${row.id}`;
-                const value = draft[key] ?? row.product_id ?? "";
-
-                return (
-                  <tr key={key}>
-                    <td style={styles.td}>
-                      {row.name}
-                      {row.kind === "extra" ? (
-                        <span style={{ color: c.textTertiary }}> · добавка</span>
-                      ) : null}
-                    </td>
-                    <td style={{ ...styles.td, color: c.textSecondary }}>{row.group}</td>
-                    <td style={styles.td}>
-                      <select
-                        style={{ ...styles.input, minWidth: 320 }}
-                        value={value}
-                        onChange={(event) =>
-                          setDraft((current) => ({ ...current, [key]: event.target.value }))
-                        }
-                      >
-                        <option value="">— не сопоставлено —</option>
-                        {(products.data ?? []).map((product) => (
-                          <option key={product.product_id} value={product.product_id}>
-                            {product.name}
-                            {product.code ? ` · ${product.code}` : ""}
-                            {product.has_sizes ? " · есть размеры" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Section>
+    </>
   );
 }
 

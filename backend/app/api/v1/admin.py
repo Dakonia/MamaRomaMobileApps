@@ -2100,12 +2100,38 @@ async def iiko_products(
     ]
 
 
+@router.get("/iiko/search", summary="Поиск по номенклатуре кассы")
+async def iiko_search(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID, Query()],
+    q: Annotated[str, Query()] = "",
+    groups: Annotated[list[str] | None, Query()] = None,
+) -> list[IikoProductRow]:
+    """Ищет сервер: список номенклатуры целиком браузер не переживает."""
+    rows = await iiko_bridge.search_products(session, tenant, restaurant_id, q, groups)
+
+    return [
+        IikoProductRow(
+            product_id=row.product_id,
+            name=row.name,
+            code=row.code,
+            group_name=row.group_name,
+            is_active=row.is_active,
+            has_sizes=row.has_sizes,
+        )
+        for row in rows
+    ]
+
+
 @router.get("/iiko/links", summary="Сопоставление блюд с товарами кассы")
 async def iiko_links(
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
     restaurant_id: Annotated[UUID, Query()],
+    groups: Annotated[list[str] | None, Query()] = None,
 ) -> list[LinkRow]:
     """Все блюда и добавки сети с их сопоставлением в этом ресторане."""
     links = {
@@ -2168,6 +2194,25 @@ async def iiko_links(
                 modifier_group_id=link.modifier_group_id if link else None,
             )
         )
+
+    # Подсказки — только для несопоставленных и только внутри выбранных групп:
+    # по всей номенклатуре это и долго, и бессмысленно
+    if groups:
+        waiting = [row.name for row in rows if row.product_id is None]
+        hints = await iiko_bridge.suggest(session, tenant, restaurant_id, waiting, groups)
+
+        for row in rows:
+            for product in hints.get(row.name, []):
+                row.suggestions.append(
+                    IikoProductRow(
+                        product_id=product.product_id,
+                        name=product.name,
+                        code=product.code,
+                        group_name=product.group_name,
+                        is_active=product.is_active,
+                        has_sizes=product.has_sizes,
+                    )
+                )
 
     return rows
 

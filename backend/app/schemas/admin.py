@@ -618,6 +618,8 @@ class LinkRow(BaseModel):
     product_name: str | None
     size_id: str | None
     modifier_group_id: str | None
+    # Подходящие товары кассы: чтобы связать в одно нажатие, не открывая поиск
+    suggestions: list[IikoProductRow] = Field(default_factory=list)
 
 
 class LinkWrite(BaseModel):

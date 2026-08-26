@@ -197,6 +197,7 @@ export type IikoLink = {
   product_name: string | null;
   size_id: string | null;
   modifier_group_id: string | null;
+  suggestions: IikoProduct[];
 };
 
 export type Handoff = {
@@ -653,8 +654,17 @@ export const api = {
         (group ? `&group=${encodeURIComponent(group)}` : ""),
     ),
 
-  iikoLinks: (restaurantId: string) =>
-    request<IikoLink[]>(`/admin/iiko/links?restaurant_id=${restaurantId}`),
+  iikoLinks: (restaurantId: string, groups: string[]) =>
+    request<IikoLink[]>(
+      `/admin/iiko/links?restaurant_id=${restaurantId}` +
+        groups.map((name) => `&groups=${encodeURIComponent(name)}`).join(""),
+    ),
+
+  searchIikoProducts: (restaurantId: string, query: string, groups: string[]) =>
+    request<IikoProduct[]>(
+      `/admin/iiko/search?restaurant_id=${restaurantId}&q=${encodeURIComponent(query)}` +
+        groups.map((name) => `&groups=${encodeURIComponent(name)}`).join(""),
+    ),
 
   saveIikoLinks: (
     restaurantId: string,
