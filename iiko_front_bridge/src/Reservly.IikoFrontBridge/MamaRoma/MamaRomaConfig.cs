@@ -32,13 +32,30 @@ internal sealed class MamaRomaConfig
     public int DeliveryPollIntervalSeconds { get; set; } = 20;
 
     /// <summary>
-    /// Название типа заказа для курьерской доставки — ровно как заведено в iiko.
-    /// Пусто — берём первый тип с признаком доставки.
+    /// Код типа заказа для курьерской доставки. Самый надёжный способ: в V8
+    /// списка типов заказов через API нет, и по названию их можно найти только
+    /// среди уже заведённых доставок. Код виден в логе плагина при старте.
+    /// </summary>
+    public string DeliveryOrderTypeId { get; set; } = string.Empty;
+
+    /// <summary>То же для самовывоза.</summary>
+    public string PickupOrderTypeId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Название типа заказа — запасной способ, если код не задан. Ищем среди
+    /// типов, встреченных в уже заведённых доставках этой точки.
     /// </summary>
     public string DeliveryOrderTypeName { get; set; } = string.Empty;
 
     /// <summary>То же для самовывоза.</summary>
     public string PickupOrderTypeName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Код источника заказа в iiko: по нему в отчётах видно, что заказ пришёл
+    /// из приложения. Пусто — источник не проставляем, и заказ будет считаться
+    /// обычным. Список источников API тоже не отдаёт, только поиск по коду.
+    /// </summary>
+    public string MarketingSourceId { get; set; } = string.Empty;
 
     /// <summary>Сколько минут закладывать на доставку, если сервер не прислал своё.</summary>
     public int DefaultDeliveryMinutes { get; set; } = 60;
@@ -102,8 +119,11 @@ internal sealed class MamaRomaConfig
         BackendUrl = (BackendUrl ?? string.Empty).Trim().TrimEnd('/');
         Secret = (Secret ?? string.Empty).Trim();
         RestaurantId = (RestaurantId ?? string.Empty).Trim();
+        DeliveryOrderTypeId = (DeliveryOrderTypeId ?? string.Empty).Trim();
+        PickupOrderTypeId = (PickupOrderTypeId ?? string.Empty).Trim();
         DeliveryOrderTypeName = (DeliveryOrderTypeName ?? string.Empty).Trim();
         PickupOrderTypeName = (PickupOrderTypeName ?? string.Empty).Trim();
+        MarketingSourceId = (MarketingSourceId ?? string.Empty).Trim();
 
         if (DeliveryPollIntervalSeconds < 10) DeliveryPollIntervalSeconds = 10;
         if (DeliveryStatusIntervalSeconds < 10) DeliveryStatusIntervalSeconds = 10;

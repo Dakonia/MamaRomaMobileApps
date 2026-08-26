@@ -122,12 +122,12 @@ internal static class MenuCollector
                 {
                     ProductId = productId,
                     Name = FrontOrderValueReader.ReadString(product, "Name", "Title"),
-                    Code = FrontOrderValueReader.ReadString(product, "Code", "Num", "FastCode"),
+                    Code = FrontOrderValueReader.ReadString(product, "FastCode", "Number", "Code"),
                     GroupName = groupInfo.name,
                     GroupPath = groupInfo.path,
                     Category = groupInfo.category,
-                    MeasureUnit = FrontOrderValueReader.ReadNestedName(product, "MeasuringUnit"),
-                    IsActive = ReadIsActive(product),
+                    MeasureUnit = product.MeasuringUnitName ?? string.Empty,
+                    IsActive = product.IsActive,
                     HasSizes = HasSizes(product),
                 });
             }
@@ -145,32 +145,19 @@ internal static class MenuCollector
     {
         try
         {
-            var products = includeInactive
-                ? PluginContext.Operations.GetAllProducts()
-                : PluginContext.Operations.GetActiveProducts();
-            return products ?? Enumerable.Empty<IProduct>();
+            // Отдельного «только активные» в V8 нет — фильтруем сами
+            var products = PluginContext.Operations.GetAllProducts();
+            if (products == null)
+            {
+                return Enumerable.Empty<IProduct>();
+            }
+
+            return includeInactive ? products : products.Where(item => item.IsActive);
         }
         catch (Exception exc)
         {
             PluginDiagnostics.Error("MamaRoma Menu: не удалось получить номенклатуру.", exc);
             return Enumerable.Empty<IProduct>();
-        }
-    }
-
-    private static bool ReadIsActive(IProduct product)
-    {
-        try
-        {
-            var deleted = FrontOrderValueReader.ReadProperty(product, "Deleted");
-            if (deleted is bool isDeleted)
-            {
-                return !isDeleted;
-            }
-            return true;
-        }
-        catch
-        {
-            return true;
         }
     }
 
@@ -261,7 +248,8 @@ internal static class DeliveryStatusCollector
     {
         try
         {
-            var orders = PluginContext.Operations.GetDeliveryOrders();
+            // false — без удалённых: их статусы гостю показывать нечего
+            var orders = PluginContext.Operations.GetDeliveryOrders(false);
             return orders == null ? Enumerable.Empty<object>() : orders.Cast<object>();
         }
         catch (Exception exc)

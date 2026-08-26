@@ -6,6 +6,7 @@ using Resto.Front.Api;
 using Resto.Front.Api.Data.Assortment;
 using Resto.Front.Api.Data.Brd;
 using Resto.Front.Api.Data.Orders;
+using Resto.Front.Api.Data.Organization;
 using Resto.Front.Api.Data.Security;
 using Resto.Front.Api.Editors;
 using Reservly.IikoFrontBridge.Collectors;
@@ -45,8 +46,8 @@ internal sealed class DeliveryWriter
             if (already != null)
             {
                 result.Status = "accepted";
-                result.IikoOrderId = SafeString(already, o => FrontOrderValueReader.ReadString(o, "Id"));
-                result.IikoOrderNumber = SafeString(already, o => FrontOrderValueReader.ReadString(o, "Number"));
+                result.IikoOrderId = FrontOrderValueReader.ReadString(already, "Id");
+                result.IikoOrderNumber = FrontOrderValueReader.ReadString(already, "Number");
                 PluginDiagnostics.Info(
                     $"MamaRoma: заказ {order.OrderNumber} уже заведён ранее как {result.IikoOrderNumber}, повтор пропущен."
                 );
@@ -126,12 +127,16 @@ internal sealed class DeliveryWriter
 
                 foreach (var modifier in item.Modifiers)
                 {
+                    // Количество модификатора целое: касса считает их штуками.
+                    // payableAmount — сколько из них платные, у нас все
                     editSession.AddOrderModifierItem(
                         modifier.Amount,
                         modifier.Product,
                         modifier.Group,
                         deliveryOrder,
-                        addedItem
+                        addedItem,
+                        modifier.Amount,
+                        null
                     );
                 }
             }
@@ -165,19 +170,23 @@ internal sealed class DeliveryWriter
                     "ChangeOrderExternalNumber");
             }
 
-            // Источник заказа — чтобы в отчётах iiko заказы приложения
-            // были отделены от заказов с сайта
-            var source = string.IsNullOrWhiteSpace(order.MarketingSource)
-                ? "Мобильное приложение"
-                : order.MarketingSource.Trim();
-            TrySafely(() => editSession.ChangeDeliveryMarketingSource(source, deliveryOrder),
-                "ChangeDeliveryMarketingSource");
+            // Источник заказа: в отчётах iiko заказы приложения отделятся от
+            // сайта и колл-центра. Списка источников API не отдаёт, поэтому
+            // код источника берём из настроек — не задан, оставляем как есть
+            var source = ResolveMarketingSource();
+            if (source != null)
+            {
+                TrySafely(() => editSession.ChangeDeliveryMarketingSource(deliveryOrder, source),
+                    "ChangeDeliveryMarketingSource");
+            }
 
-            PluginContext.Operations.SubmitChanges(editSession);
+            PluginContext.Operations.SubmitChanges(
+                editSession, PluginContext.Operations.GetDefaultCredentials()
+            );
 
             result.Status = "accepted";
-            result.IikoOrderId = SafeString(deliveryOrder, o => o.Id.ToString());
-            result.IikoOrderNumber = SafeString(deliveryOrder, o => o.Number.ToString(CultureInfo.InvariantCulture));
+            result.IikoOrderId = FrontOrderValueReader.ReadString(deliveryOrder, "Id");
+            result.IikoOrderNumber = FrontOrderValueReader.ReadString(deliveryOrder, "Number");
 
             PluginDiagnostics.Info(
                 $"MamaRoma: заказ {order.OrderNumber} заведён в iiko как {result.IikoOrderNumber}."
@@ -380,13 +389,7 @@ internal sealed class DeliveryWriter
 
         try
         {
-            var orders = PluginContext.Operations.GetDeliveryOrders();
-            if (orders == null)
-            {
-                return null;
-            }
-
-            foreach (var candidate in orders)
+            foreach (var candidate in LoadDeliveryOrders())
             {
                 var external = FrontOrderValueReader.ReadString(candidate, "ExternalNumber");
                 if (string.Equals(external, orderId, StringComparison.OrdinalIgnoreCase))
@@ -418,7 +421,9 @@ internal sealed class DeliveryWriter
     {
         public IProduct Product { get; set; }
         public IProductGroup Group { get; set; }
-        public decimal Amount { get; set; }
+
+        /// <summary>Касса считает модификаторы штуками, дробных не бывает.</summary>
+        public int Amount { get; set; }
     }
 
     private static List<ResolvedItem> ResolveItems(PendingOrder order, List<string> missing)
@@ -454,7 +459,7 @@ internal sealed class DeliveryWriter
                 {
                     Product = modifierProduct,
                     Group = TryGetProductGroup(modifier.GroupId),
-                    Amount = modifier.Amount > 0 ? modifier.Amount : 1,
+                    Amount = modifier.Amount > 0 ? (int)Math.Round(modifier.Amount) : 1,
                 });
             }
 
@@ -527,7 +532,8 @@ internal sealed class DeliveryWriter
                 }
             }
 
-            return product.DefaultSize ?? sizes.First();
+            // Размер по умолчанию задан у шкалы товара, а не у самого товара
+            return scale.DefaultSize ?? sizes.First();
         }
         catch (Exception exc)
         {
@@ -544,39 +550,88 @@ internal sealed class DeliveryWriter
     /// </summary>
     private IOrderType ResolveOrderType(bool isPickup)
     {
+        // Сначала код из настроек: единственный способ получить тип напрямую
+        var configuredId = isPickup ? _config.PickupOrderTypeId : _config.DeliveryOrderTypeId;
+        if (Guid.TryParse(configuredId, out var id))
+        {
+            try
+            {
+                var byId = PluginContext.Operations.TryGetOrderTypeById(id);
+                if (byId != null)
+                {
+                    return byId;
+                }
+                PluginDiagnostics.Info($"MamaRoma: тип заказа {configuredId} в этой базе не найден.");
+            }
+            catch (Exception exc)
+            {
+                PluginDiagnostics.Info($"MamaRoma: тип заказа по коду не получен: {exc.Message}");
+            }
+        }
+
+        // Списка типов заказов V8 не отдаёт вовсе. Поэтому берём его из уже
+        // заведённых доставок: там лежат настоящие типы этой точки
+        var name = isPickup ? _config.PickupOrderTypeName : _config.DeliveryOrderTypeName;
+        var wanted = isPickup
+            ? OrderServiceTypes.DeliveryByClient
+            : OrderServiceTypes.DeliveryByCourier;
+
+        IOrderType byService = null;
+
+        foreach (var existing in LoadDeliveryOrders())
+        {
+            var type = FrontOrderValueReader.ReadProperty(existing, "OrderType") as IOrderType;
+            if (type == null || !type.IsActive)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(name)
+                && string.Equals(type.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return type;
+            }
+
+            if (byService == null && type.OrderServiceType == wanted)
+            {
+                byService = type;
+            }
+        }
+
+        return byService;
+    }
+
+    /// <summary>Источник заказа по коду из настроек. Не задан — null.</summary>
+    private IMarketingSource ResolveMarketingSource()
+    {
+        if (!Guid.TryParse(_config.MarketingSourceId, out var id))
+        {
+            return null;
+        }
+
         try
         {
-            var types = PluginContext.Operations.GetOrderTypes();
-            if (types == null)
-            {
-                return null;
-            }
-
-            var configured = isPickup ? _config.PickupOrderTypeName : _config.DeliveryOrderTypeName;
-            if (!string.IsNullOrWhiteSpace(configured))
-            {
-                var byName = types.FirstOrDefault(type =>
-                    string.Equals(type.Name, configured, StringComparison.OrdinalIgnoreCase));
-                if (byName != null)
-                {
-                    return byName;
-                }
-
-                PluginDiagnostics.Info(
-                    $"MamaRoma: тип заказа «{configured}» не найден, подбираем по признаку доставки."
-                );
-            }
-
-            var wanted = isPickup
-                ? OrderServiceTypes.DeliveryByClient
-                : OrderServiceTypes.DeliveryByCourier;
-
-            return types.FirstOrDefault(type => type.OrderServiceType == wanted);
+            return PluginContext.Operations.TryGetMarketingSourceById(id);
         }
         catch (Exception exc)
         {
-            PluginDiagnostics.Error("MamaRoma: не удалось получить типы заказов.", exc);
+            PluginDiagnostics.Info($"MamaRoma: источник заказа не найден: {exc.Message}");
             return null;
+        }
+    }
+
+    /// <summary>Доставки этой точки без удалённых. Общий источник для поиска.</summary>
+    private static IEnumerable<object> LoadDeliveryOrders()
+    {
+        try
+        {
+            var orders = PluginContext.Operations.GetDeliveryOrders(false);
+            return orders == null ? Enumerable.Empty<object>() : orders.Cast<object>();
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info($"MamaRoma: список доставок недоступен: {exc.Message}");
+            return Enumerable.Empty<object>();
         }
     }
 
@@ -659,15 +714,4 @@ internal sealed class DeliveryWriter
         }
     }
 
-    private static string SafeString<T>(T source, Func<T, string> read)
-    {
-        try
-        {
-            return read(source) ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
-        }
-    }
 }
