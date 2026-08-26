@@ -5,10 +5,11 @@
 а интернет в ресторане пропадает регулярно.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenants import Tenant
@@ -729,27 +730,63 @@ async def save_links(
 
 
 def _normalize(name: str) -> str:
-    """Название для сравнения: регистр, ё и лишние пробелы значения не имеют."""
-    return " ".join(name.lower().replace("ё", "е").split())
+    """Название для сравнения.
+
+    Регистр, «ё» и лишние пробелы значения не имеют. Скобки выбрасываем:
+    в номенклатуре кассы к названию дописывают всё подряд — «(доставка от
+    1500р)», «(с собой)», «(СЕТ)», — а блюдо за ними одно и то же.
+    """
+    cleaned = re.sub(r"[(\[].*?[)\]]", " ", name.lower().replace("ё", "е"))
+    return " ".join(cleaned.split())
+
+
+async def groups(
+    session: AsyncSession, tenant: Tenant, restaurant_id: UUID
+) -> list[dict[str, object]]:
+    """Группы номенклатуры кассы со счётчиком товаров.
+
+    В базе точки тысячи позиций: заготовки, посуда, акции прошлых лет. Меню,
+    которое реально продаётся, лежит в нескольких группах — по ним и работаем.
+    """
+    rows = await session.execute(
+        select(IikoProduct.group_name, func.count())
+        .where(
+            IikoProduct.tenant_id == tenant.id,
+            IikoProduct.restaurant_id == restaurant_id,
+            IikoProduct.is_active.is_(True),
+        )
+        .group_by(IikoProduct.group_name)
+        .order_by(func.count().desc())
+    )
+
+    return [{"name": name or "", "products": total} for name, total in rows]
 
 
 async def auto_match(
-    session: AsyncSession, tenant: Tenant, restaurant_id: UUID
+    session: AsyncSession,
+    tenant: Tenant,
+    restaurant_id: UUID,
+    only_groups: list[str] | None = None,
 ) -> tuple[int, int]:
     """Связывает блюда с товарами кассы по совпадению названий.
 
     Берём только однозначные совпадения: если в кассе два товара с одинаковым
     названием, выбор оставляем человеку — ошибка здесь уедет прямо на кухню.
     Уже сопоставленное не трогаем.
+
+    Группы сужают поиск: без них одно и то же блюдо находится и в заготовках,
+    и в прошлогодних акциях, и совпадение перестаёт быть однозначным.
     """
+    query = select(IikoProduct).where(
+        IikoProduct.tenant_id == tenant.id,
+        IikoProduct.restaurant_id == restaurant_id,
+        IikoProduct.is_active.is_(True),
+    )
+    if only_groups:
+        query = query.where(IikoProduct.group_name.in_(only_groups))
+
     products: dict[str, list[str]] = {}
-    for product in await session.scalars(
-        select(IikoProduct).where(
-            IikoProduct.tenant_id == tenant.id,
-            IikoProduct.restaurant_id == restaurant_id,
-            IikoProduct.is_active.is_(True),
-        )
-    ):
+    for product in await session.scalars(query):
         products.setdefault(_normalize(product.name), []).append(product.product_id)
 
     linked_dishes = set()

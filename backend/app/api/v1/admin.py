@@ -78,6 +78,7 @@ from app.schemas.admin import (
     LinkRow,
     MatchResult,
     OrderStatusWrite,
+    ProductGroupRow,
     PromoCodePatch,
     PromoCodeRead,
     PromoCodeWrite,
@@ -2055,18 +2056,36 @@ async def iiko_toggle(
     return BridgeToggle(is_active=bridge.is_active)
 
 
+@router.get("/iiko/groups", summary="Группы номенклатуры кассы")
+async def iiko_groups(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    restaurant_id: Annotated[UUID, Query()],
+) -> list[ProductGroupRow]:
+    """В базе точки тысячи позиций — меню лежит в нескольких группах."""
+    rows = await iiko_bridge.groups(session, tenant, restaurant_id)
+    return [ProductGroupRow(**row) for row in rows]
+
+
 @router.get("/iiko/products", summary="Номенклатура кассы этой точки")
 async def iiko_products(
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
     restaurant_id: Annotated[UUID, Query()],
+    group: Annotated[str | None, Query()] = None,
 ) -> list[IikoProductRow]:
-    rows = await session.scalars(
+    query = (
         select(IikoProduct)
         .where(IikoProduct.tenant_id == tenant.id, IikoProduct.restaurant_id == restaurant_id)
         .order_by(IikoProduct.name)
     )
+    # Без фильтра список неподъёмный: у точки бывает больше десяти тысяч позиций
+    if group:
+        query = query.where(IikoProduct.group_name == group)
+
+    rows = await session.scalars(query)
 
     return [
         IikoProductRow(
@@ -2173,9 +2192,14 @@ async def iiko_auto_links(
     tenant: TenantDep,
     staff: StaffDep,
     restaurant_id: Annotated[UUID, Query()],
+    groups: Annotated[list[str] | None, Query()] = None,
 ) -> MatchResult:
-    """Связывает совпадающие названия. Спорное оставляет человеку."""
-    matched, skipped = await iiko_bridge.auto_match(session, tenant, restaurant_id)
+    """Связывает совпадающие названия. Спорное оставляет человеку.
+
+    Группы сужают поиск: без них блюдо находится и в заготовках, и в акциях
+    прошлых лет, и совпадение перестаёт быть однозначным.
+    """
+    matched, skipped = await iiko_bridge.auto_match(session, tenant, restaurant_id, groups)
     await session.commit()
     return MatchResult(matched=matched, skipped=skipped)
 

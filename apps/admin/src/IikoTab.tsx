@@ -186,6 +186,9 @@ function Links({ restaurantId }: { restaurantId: string }) {
   const [search, setSearch] = useState("");
   const [onlyEmpty, setOnlyEmpty] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // Группы кассы, в которых ищем товар. В базе точки десятки тысяч позиций —
+  // без сужения одно и то же блюдо находится и в заготовках, и в акциях
+  const [groups, setGroups] = useState<string[]>([]);
 
   const links = useQuery({
     queryKey: ["iiko-links", restaurantId],
@@ -193,14 +196,28 @@ function Links({ restaurantId }: { restaurantId: string }) {
     enabled: restaurantId !== "",
   });
 
+  const allGroups = useQuery({
+    queryKey: ["iiko-groups", restaurantId],
+    queryFn: () => api.iikoGroups(restaurantId),
+    enabled: restaurantId !== "",
+  });
+
   const products = useQuery({
-    queryKey: ["iiko-products", restaurantId],
-    queryFn: () => api.iikoProducts(restaurantId),
+    queryKey: ["iiko-products", restaurantId, groups],
+    queryFn: async () => {
+      if (groups.length === 0) return api.iikoProducts(restaurantId);
+
+      const batches = await Promise.all(groups.map((name) => api.iikoProducts(restaurantId, name)));
+      return batches.flat().sort((left, right) => left.name.localeCompare(right.name));
+    },
     enabled: restaurantId !== "",
   });
 
   // Сменили ресторан — черновик прошлого больше не про этот
-  useEffect(() => setDraft({}), [restaurantId]);
+  useEffect(() => {
+    setDraft({});
+    setGroups([]);
+  }, [restaurantId]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -219,7 +236,7 @@ function Links({ restaurantId }: { restaurantId: string }) {
   });
 
   const auto = useMutation({
-    mutationFn: () => api.autoMatchIiko(restaurantId),
+    mutationFn: () => api.autoMatchIiko(restaurantId, groups),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["iiko-links", restaurantId] });
       void queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] });
@@ -272,6 +289,58 @@ function Links({ restaurantId }: { restaurantId: string }) {
         </div>
       }
     >
+      {/* Выбор групп: сначала сужаем номенклатуру, потом сопоставляем */}
+      <div style={{ marginBottom: spacing.base }}>
+        <div style={{ color: c.textSecondary, marginBottom: spacing.sm }}>
+          Где искать товары кассы
+          {groups.length > 0 ? ` · выбрано ${groups.length}` : " · пока везде"}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: spacing.xs,
+            maxHeight: 132,
+            overflow: "auto",
+            padding: spacing.sm,
+            border: `1px solid ${c.border}`,
+            borderRadius: radius.md,
+            background: c.surfaceSunken,
+          }}
+        >
+          {(allGroups.data ?? []).map((group) => {
+            const picked = groups.includes(group.name);
+
+            return (
+              <button
+                key={group.name}
+                type="button"
+                onClick={() =>
+                  setGroups((current) =>
+                    picked
+                      ? current.filter((name) => name !== group.name)
+                      : [...current, group.name],
+                  )
+                }
+                style={{
+                  padding: `4px ${spacing.sm}px`,
+                  borderRadius: radius.pill,
+                  border: `1px solid ${picked ? c.brand : c.border}`,
+                  background: picked ? c.brandSubtle : c.surface,
+                  color: picked ? c.brand : c.textSecondary,
+                  cursor: "pointer",
+                  fontSize: typography.caption.fontSize,
+                  fontFamily: "inherit",
+                }}
+              >
+                {group.name || "без группы"} · {group.products}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {auto.data ? (
         <p style={{ color: c.textSecondary, marginTop: 0 }}>
           Связано {auto.data.matched}, оставлено человеку {auto.data.skipped} — это позиции,

@@ -642,8 +642,16 @@ export const api = {
       body: JSON.stringify({ is_active: isActive }),
     }),
 
-  iikoProducts: (restaurantId: string) =>
-    request<IikoProduct[]>(`/admin/iiko/products?restaurant_id=${restaurantId}`),
+  iikoGroups: (restaurantId: string) =>
+    request<{ name: string; products: number }[]>(
+      `/admin/iiko/groups?restaurant_id=${restaurantId}`,
+    ),
+
+  iikoProducts: (restaurantId: string, group?: string) =>
+    request<IikoProduct[]>(
+      `/admin/iiko/products?restaurant_id=${restaurantId}` +
+        (group ? `&group=${encodeURIComponent(group)}` : ""),
+    ),
 
   iikoLinks: (restaurantId: string) =>
     request<IikoLink[]>(`/admin/iiko/links?restaurant_id=${restaurantId}`),
@@ -657,9 +665,10 @@ export const api = {
       body: JSON.stringify({ restaurant_id: restaurantId, links }),
     }),
 
-  autoMatchIiko: (restaurantId: string) =>
+  autoMatchIiko: (restaurantId: string, groups: string[]) =>
     request<{ matched: number; skipped: number }>(
-      `/admin/iiko/links/auto?restaurant_id=${restaurantId}`,
+      `/admin/iiko/links/auto?restaurant_id=${restaurantId}` +
+        groups.map((name) => `&groups=${encodeURIComponent(name)}`).join(""),
       { method: "POST" },
     ),
 

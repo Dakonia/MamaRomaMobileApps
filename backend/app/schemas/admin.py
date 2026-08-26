@@ -600,6 +600,13 @@ class IikoProductRow(BaseModel):
     has_sizes: bool
 
 
+class ProductGroupRow(BaseModel):
+    """Группа номенклатуры кассы: по ним сужают поиск при сопоставлении."""
+
+    name: str
+    products: int
+
+
 class LinkRow(BaseModel):
     """Строка сопоставления: наше блюдо и товар кассы этого ресторана."""
 
