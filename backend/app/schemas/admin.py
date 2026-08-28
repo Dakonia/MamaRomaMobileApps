@@ -596,6 +596,7 @@ class IikoProductRow(BaseModel):
     name: str
     code: str | None
     group_name: str | None
+    group_path: str | None
     product_type: str | None
     is_active: bool
     has_sizes: bool
@@ -605,7 +606,9 @@ class ProductGroupRow(BaseModel):
     """Группа номенклатуры кассы: по ним сужают поиск при сопоставлении."""
 
     name: str
+    path: str
     products: int
+    is_preset: bool = False
 
 
 class LinkRow(BaseModel):
@@ -617,6 +620,9 @@ class LinkRow(BaseModel):
     group: str | None
     product_id: str | None
     product_name: str | None
+    product_code: str | None = None
+    product_group_path: str | None = None
+    product_type: str | None = None
     size_id: str | None
     modifier_group_id: str | None
     # Подходящие товары кассы: чтобы связать в одно нажатие, не открывая поиск

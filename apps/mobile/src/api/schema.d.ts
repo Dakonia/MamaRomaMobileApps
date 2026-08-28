@@ -1354,6 +1354,26 @@ export interface paths {
         patch: operations["iiko_toggle_api_v1_admin_iiko_bridges__restaurant_id__patch"];
         trace?: never;
     };
+    "/api/v1/admin/iiko/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Группы номенклатуры кассы
+         * @description В базе точки тысячи позиций — меню лежит в нескольких группах.
+         */
+        get: operations["iiko_groups_api_v1_admin_iiko_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/iiko/products": {
         parameters: {
             query?: never;
@@ -1363,6 +1383,26 @@ export interface paths {
         };
         /** Номенклатура кассы этой точки */
         get: operations["iiko_products_api_v1_admin_iiko_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Поиск по номенклатуре кассы
+         * @description Ищет сервер: список номенклатуры целиком браузер не переживает.
+         */
+        get: operations["iiko_search_api_v1_admin_iiko_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1404,6 +1444,9 @@ export interface paths {
         /**
          * Сопоставить по названиям
          * @description Связывает совпадающие названия. Спорное оставляет человеку.
+         *
+         *     Группы сужают поиск: без них блюдо находится и в заготовках, и в акциях
+         *     прошлых лет, и совпадение перестаёт быть однозначным.
          */
         post: operations["iiko_auto_links_api_v1_admin_iiko_links_auto_post"];
         delete?: never;
@@ -2194,6 +2237,47 @@ export interface components {
             orders?: components["schemas"]["DeliveryStatusOrderIn"][];
         };
         /**
+         * DeliveryStatusItemIn
+         * @description Фактическая позиция заказа в iiko после ручных правок на кассе.
+         */
+        DeliveryStatusItemIn: {
+            /**
+             * Productid
+             * @default
+             */
+            productId: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Price
+             * @default 0
+             */
+            price: number;
+            /**
+             * Netsum
+             * @default 0
+             */
+            netSum: number;
+            /**
+             * Groupname
+             * @default
+             */
+            groupName: string;
+            /**
+             * Grouppath
+             * @default
+             */
+            groupPath: string;
+        };
+        /**
          * DeliveryStatusOrderIn
          * @description Состояние одного заказа на кухне.
          *
@@ -2272,10 +2356,17 @@ export interface components {
              */
             cancelCause: string;
             /**
+             * Cancelcomment
+             * @default
+             */
+            cancelComment: string;
+            /**
              * Couriername
              * @default
              */
             courierName: string;
+            /** Items */
+            items?: components["schemas"]["DeliveryStatusItemIn"][];
         };
         /**
          * DevicePlatform
@@ -2929,6 +3020,44 @@ export interface components {
              */
             weekly_limit: number;
         };
+        /**
+         * IikoOrderItemRead
+         * @description Фактическая позиция заказа по последнему снимку iikoFront.
+         */
+        IikoOrderItemRead: {
+            /**
+             * Product Id
+             * @default
+             */
+            product_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Price
+             * @default 0
+             */
+            price: number;
+            /**
+             * Net Sum
+             * @default 0
+             */
+            net_sum: number;
+            /**
+             * Group Name
+             * @default
+             */
+            group_name: string;
+            /**
+             * Group Path
+             * @default
+             */
+            group_path: string;
+        };
         /** IikoProductRow */
         IikoProductRow: {
             /** Product Id */
@@ -2939,6 +3068,10 @@ export interface components {
             code: string | null;
             /** Group Name */
             group_name: string | null;
+            /** Group Path */
+            group_path: string | null;
+            /** Product Type */
+            product_type: string | null;
             /** Is Active */
             is_active: boolean;
             /** Has Sizes */
@@ -2978,6 +3111,8 @@ export interface components {
             size_id: string | null;
             /** Modifier Group Id */
             modifier_group_id: string | null;
+            /** Suggestions */
+            suggestions?: components["schemas"]["IikoProductRow"][];
         };
         /** LinkWrite */
         LinkWrite: {
@@ -3110,6 +3245,11 @@ export interface components {
              * @default
              */
             measureUnit: string;
+            /**
+             * Type
+             * @default
+             */
+            type: string;
             /**
              * Isactive
              * @default true
@@ -3307,6 +3447,22 @@ export interface components {
             address_text: string | null;
             /** Comment */
             comment: string | null;
+            /** Cancel Reason */
+            cancel_reason?: string | null;
+            /** Iiko Status */
+            iiko_status?: string | null;
+            /** Iiko Problem Comment */
+            iiko_problem_comment?: string | null;
+            /** Iiko Courier Name */
+            iiko_courier_name?: string | null;
+            /** Iiko Cancel Cause */
+            iiko_cancel_cause?: string | null;
+            /** Iiko Cancel Comment */
+            iiko_cancel_comment?: string | null;
+            /** Iiko Items */
+            iiko_items?: components["schemas"]["IikoOrderItemRead"][];
+            /** Iiko Items Changed At */
+            iiko_items_changed_at?: string | null;
             /** Subtotal Kopecks */
             subtotal_kopecks: number;
             /** Delivery Kopecks */
@@ -3372,6 +3528,23 @@ export interface components {
             orders?: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * ProductGroupRow
+         * @description Группа номенклатуры кассы: по ним сужают поиск при сопоставлении.
+         */
+        ProductGroupRow: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Products */
+            products: number;
+            /**
+             * Is Preset
+             * @default false
+             */
+            is_preset: boolean;
         };
         /** ProfileRead */
         ProfileRead: {
@@ -7991,10 +8164,79 @@ export interface operations {
             };
         };
     };
+    iiko_groups_api_v1_admin_iiko_groups_get: {
+        parameters: {
+            query: {
+                restaurant_id: string;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductGroupRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     iiko_products_api_v1_admin_iiko_products_get: {
         parameters: {
             query: {
                 restaurant_id: string;
+                group?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IikoProductRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_search_api_v1_admin_iiko_search_get: {
+        parameters: {
+            query: {
+                restaurant_id: string;
+                q?: string;
+                groups?: string[] | null;
             };
             header?: {
                 "X-Tenant-Id"?: string | null;
@@ -8028,6 +8270,7 @@ export interface operations {
         parameters: {
             query: {
                 restaurant_id: string;
+                groups?: string[] | null;
             };
             header?: {
                 "X-Tenant-Id"?: string | null;
@@ -8096,6 +8339,7 @@ export interface operations {
         parameters: {
             query: {
                 restaurant_id: string;
+                groups?: string[] | null;
             };
             header?: {
                 "X-Tenant-Id"?: string | null;

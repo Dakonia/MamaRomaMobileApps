@@ -184,10 +184,18 @@ export type IikoProduct = {
   name: string;
   code: string | null;
   group_name: string | null;
+  group_path: string | null;
   /** Dish — блюдо, Goods — товар, Modifier — добавка. */
   product_type: string | null;
   is_active: boolean;
   has_sizes: boolean;
+};
+
+export type IikoGroup = {
+  name: string;
+  path: string;
+  products: number;
+  is_preset: boolean;
 };
 
 export type IikoLink = {
@@ -197,6 +205,9 @@ export type IikoLink = {
   group: string | null;
   product_id: string | null;
   product_name: string | null;
+  product_code: string | null;
+  product_group_path: string | null;
+  product_type: string | null;
   size_id: string | null;
   modifier_group_id: string | null;
   suggestions: IikoProduct[];
@@ -646,7 +657,7 @@ export const api = {
     }),
 
   iikoGroups: (restaurantId: string) =>
-    request<{ name: string; products: number }[]>(
+    request<IikoGroup[]>(
       `/admin/iiko/groups?restaurant_id=${restaurantId}`,
     ),
 

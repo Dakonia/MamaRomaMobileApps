@@ -130,7 +130,21 @@ class DeliveryStatusOrderIn(_Incoming):
     has_problem: bool = Field(default=False, alias="hasProblem")
     problem_comment: str = Field(default="", alias="problemComment")
     cancel_cause: str = Field(default="", alias="cancelCause")
+    cancel_comment: str = Field(default="", alias="cancelComment")
     courier_name: str = Field(default="", alias="courierName")
+    items: list["DeliveryStatusItemIn"] = Field(default_factory=list)
+
+
+class DeliveryStatusItemIn(_Incoming):
+    """Фактическая позиция заказа в iiko после ручных правок на кассе."""
+
+    product_id: str = Field(default="", alias="productId")
+    name: str = ""
+    amount: float = 0
+    price: float = 0
+    net_sum: float = Field(default=0, alias="netSum")
+    group_name: str = Field(default="", alias="groupName")
+    group_path: str = Field(default="", alias="groupPath")
 
 
 class DeliveryStatusIn(_Incoming):

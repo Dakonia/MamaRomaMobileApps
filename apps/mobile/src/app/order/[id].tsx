@@ -205,6 +205,10 @@ export default function OrderScreen() {
   }, [cancelled, progress, stage]);
 
   const live = data !== undefined && !['completed', 'cancelled'].includes(data.status);
+  const iikoItems = data?.iiko_items ?? [];
+  const iikoItemsChanged =
+    data?.iiko_items_changed_at !== null &&
+    data?.iiko_items_changed_at !== undefined;
 
   useEffect(() => {
     if (!live) return;
@@ -399,6 +403,26 @@ export default function OrderScreen() {
               важно узнать, когда он поедет */}
           {['completed', 'cancelled'].includes(data.status) ? null : <PushPrompt />}
 
+          {cancelled && data.cancel_reason ? (
+            <Animated.View
+              entering={FadeIn.delay(540).duration(320)}
+              style={[
+                styles.row,
+                {
+                  gap: theme.spacing.md,
+                  padding: theme.spacing.base,
+                  borderRadius: theme.radius.xl,
+                  backgroundColor: theme.colors.surfaceSunken,
+                },
+              ]}
+            >
+              <Ionicons name="information-circle-outline" size={18} color={theme.colors.textSecondary} />
+              <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textSecondary }]}>
+                {data.cancel_reason}
+              </Text>
+            </Animated.View>
+          ) : null}
+
           {/* Куда и откуда */}
           <Animated.View
             entering={FadeIn.delay(560).duration(320)}
@@ -477,6 +501,26 @@ export default function OrderScreen() {
             </Animated.View>
           ) : null}
 
+          {data.iiko_problem_comment ? (
+            <Animated.View
+              entering={FadeIn.delay(650).duration(320)}
+              style={[
+                styles.row,
+                {
+                  gap: theme.spacing.md,
+                  padding: theme.spacing.base,
+                  borderRadius: theme.radius.xl,
+                  backgroundColor: theme.colors.warningSubtle,
+                },
+              ]}
+            >
+              <Ionicons name="alert-circle-outline" size={18} color={theme.colors.warning} />
+              <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textPrimary }]}>
+                {data.iiko_problem_comment}
+              </Text>
+            </Animated.View>
+          ) : null}
+
           {/* Состав с фотографиями */}
           <Animated.View
             entering={FadeIn.delay(680).duration(320)}
@@ -537,6 +581,80 @@ export default function OrderScreen() {
               </View>
             ))}
           </Animated.View>
+
+          {iikoItemsChanged ? (
+            <Animated.View
+              entering={FadeIn.delay(700).duration(320)}
+              style={[
+                theme.elevation.card,
+                {
+                  borderRadius: theme.radius.xl,
+                  backgroundColor: theme.colors.surface,
+                  overflow: 'hidden',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.row,
+                  {
+                    gap: theme.spacing.md,
+                    padding: theme.spacing.base,
+                    backgroundColor: theme.colors.accentSubtle,
+                  },
+                ]}
+              >
+                <Ionicons name="sync-outline" size={18} color={theme.colors.accent} />
+                <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.accent }]}>
+                  Состав обновлён рестораном
+                </Text>
+              </View>
+
+              {iikoItems.length === 0 ? (
+                <View
+                  style={[
+                    styles.row,
+                    {
+                      gap: theme.spacing.md,
+                      paddingHorizontal: theme.spacing.base,
+                      paddingVertical: theme.spacing.sm,
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      borderTopColor: theme.colors.divider,
+                    },
+                  ]}
+                >
+                  <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textPrimary }]}>
+                    Все позиции удалены в ресторане
+                  </Text>
+                </View>
+              ) : (
+                iikoItems.map((item, index) => (
+                  <View
+                    key={`${item.product_id}-${item.name}-${index}`}
+                    style={[
+                      styles.row,
+                      {
+                        gap: theme.spacing.md,
+                        paddingHorizontal: theme.spacing.base,
+                        paddingVertical: theme.spacing.sm,
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: theme.colors.divider,
+                      },
+                    ]}
+                  >
+                    <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textPrimary }]}>
+                      {item.name} × {item.amount || 1}
+                    </Text>
+                    {item.group_name ? (
+                      <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
+                        {item.group_name}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))
+              )}
+            </Animated.View>
+          ) : null}
 
           <Animated.View
             entering={FadeIn.delay(740).duration(320)}

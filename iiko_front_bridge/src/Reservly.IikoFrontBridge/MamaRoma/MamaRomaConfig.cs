@@ -66,6 +66,30 @@ internal sealed class MamaRomaConfig
     /// </summary>
     public int DeliveryBatchSize { get; set; } = 10;
 
+    /// <summary>
+    /// Код товара iiko для платных приборов. Приборы в приложении — отдельная
+    /// продажная строка, а не комментарий, поэтому должны попадать в заказ.
+    /// </summary>
+    public string CutleryProductId { get; set; } = string.Empty;
+
+    /// <summary>Код размера товара приборов, если в iiko он заведён размерным.</summary>
+    public string CutleryProductSizeId { get; set; } = string.Empty;
+
+    /// <summary>Название для отчёта об ошибке, если товар приборов не найден.</summary>
+    public string CutleryProductName { get; set; } = "Приборы";
+
+    /// <summary>
+    /// Аварийный товар iiko, которым заменяем несопоставленную позицию.
+    /// Пусто — заказ с неизвестным товаром не создаём, как раньше.
+    /// </summary>
+    public string MissingProductFallbackProductId { get; set; } = string.Empty;
+
+    /// <summary>Код размера аварийного товара, если в iiko он размерный.</summary>
+    public string MissingProductFallbackProductSizeId { get; set; } = string.Empty;
+
+    /// <summary>Название аварийного товара для логов и комментариев.</summary>
+    public string MissingProductFallbackProductName { get; set; } = "Аварийная позиция";
+
     // ─────────────── стоп-лист ───────────────
 
     public bool SyncStopList { get; set; } = true;
@@ -101,6 +125,12 @@ internal sealed class MamaRomaConfig
     /// <summary>Выгружать ли снятые с продажи товары. Обычно не нужно.</summary>
     public bool MenuIncludeInactive { get; set; }
 
+    /// <summary>
+    /// Версия схемы выгрузки меню. Попадает в hash, чтобы после доработки полей
+    /// плагин отправил полный срез заново, даже если сама номенклатура не менялась.
+    /// </summary>
+    public string MenuSchemaVersion { get; set; } = "mamaroma-menu-v2";
+
     // ─────────────── статусы ───────────────
 
     /// <summary>Отдавать ли приложению состояние заказов, заведённых через нас.</summary>
@@ -124,6 +154,25 @@ internal sealed class MamaRomaConfig
         DeliveryOrderTypeName = (DeliveryOrderTypeName ?? string.Empty).Trim();
         PickupOrderTypeName = (PickupOrderTypeName ?? string.Empty).Trim();
         MarketingSourceId = (MarketingSourceId ?? string.Empty).Trim();
+        CutleryProductId = (CutleryProductId ?? string.Empty).Trim();
+        CutleryProductSizeId = (CutleryProductSizeId ?? string.Empty).Trim();
+        CutleryProductName = (CutleryProductName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(CutleryProductName))
+        {
+            CutleryProductName = "Приборы";
+        }
+        MissingProductFallbackProductId = (MissingProductFallbackProductId ?? string.Empty).Trim();
+        MissingProductFallbackProductSizeId = (MissingProductFallbackProductSizeId ?? string.Empty).Trim();
+        MissingProductFallbackProductName = (MissingProductFallbackProductName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(MissingProductFallbackProductName))
+        {
+            MissingProductFallbackProductName = "Аварийная позиция";
+        }
+        MenuSchemaVersion = (MenuSchemaVersion ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(MenuSchemaVersion))
+        {
+            MenuSchemaVersion = "mamaroma-menu-v2";
+        }
 
         if (DeliveryPollIntervalSeconds < 10) DeliveryPollIntervalSeconds = 10;
         if (DeliveryStatusIntervalSeconds < 10) DeliveryStatusIntervalSeconds = 10;

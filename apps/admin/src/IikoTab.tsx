@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { radius, spacing, typography } from "@mr/design-tokens";
 import { useEffect, useMemo, useState } from "react";
 
-import { api, formatDateTime, formatPrice, type IikoLink, type IikoProduct } from "./api";
+import {
+  api,
+  formatDateTime,
+  formatPrice,
+  type IikoLink,
+  type IikoProduct,
+} from "./api";
 import { Badge, Button, c, Section, styles } from "./ui";
 
 type Pane = "bridges" | "links" | "queue";
@@ -256,32 +262,36 @@ function ProductPicker({
           ) : (found.data ?? []).length === 0 ? (
             <p style={{ padding: spacing.base, color: c.textSecondary }}>Ничего не нашлось</p>
           ) : (
-            (found.data ?? []).map((product) => (
-              <button
-                key={product.product_id}
-                type="button"
-                onClick={() => onPick(product)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  padding: `${spacing.sm}px ${spacing.base}px`,
-                  border: "none",
-                  borderBottom: `1px solid ${c.divider}`,
-                  background: "transparent",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: typography.body.fontSize,
-                  color: c.textPrimary,
-                }}
-              >
-                {product.name}
-                <span style={{ color: c.textTertiary }}>
-                  {product.group_name ? ` · ${product.group_name}` : ""}
-                  {product.code ? ` · ${product.code}` : ""}
-                </span>
-              </button>
-            ))
+            (found.data ?? []).map((product) => {
+              const groupLabel = product.group_path ?? product.group_name;
+
+              return (
+                <button
+                  key={product.product_id}
+                  type="button"
+                  onClick={() => onPick(product)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: `${spacing.sm}px ${spacing.base}px`,
+                    border: "none",
+                    borderBottom: `1px solid ${c.divider}`,
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: typography.body.fontSize,
+                    color: c.textPrimary,
+                  }}
+                >
+                  {product.name}
+                  <span style={{ color: c.textTertiary }}>
+                    {groupLabel ? ` · ${groupLabel}` : ""}
+                    {product.code ? ` · ${product.code}` : ""}
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
@@ -289,32 +299,83 @@ function ProductPicker({
   );
 }
 
-function Links({ restaurantId }: { restaurantId: string }) {
+type DraftPick = {
+  id: string;
+  name: string;
+  code?: string | null;
+  groupPath?: string | null;
+  productType?: string | null;
+};
+
+type MatchFilter = "unmatched" | "matched" | "all";
+type LinkKindFilter = "all" | "dish" | "extra";
+
+function Links({
+  restaurantId,
+  onRestaurantChange,
+}: {
+  restaurantId: string;
+  onRestaurantChange: (id: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [onlyEmpty, setOnlyEmpty] = useState(true);
-  const [draft, setDraft] = useState<Record<string, { id: string; name: string }>>({});
+  const [matchFilter, setMatchFilter] = useState<MatchFilter>("unmatched");
+  const [kindFilter, setKindFilter] = useState<LinkKindFilter>("dish");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [draft, setDraft] = useState<Record<string, DraftPick>>({});
   const [picking, setPicking] = useState<IikoLink | null>(null);
 
-  /**
-   * Группы кассы, в которых ищем товар. В базе точки десятки тысяч позиций:
-   * заготовки, посуда, акции прошлых лет. Выбор помним — он один и тот же
-   * изо дня в день, а перевыбирать его каждый раз утомительно.
-   */
-  const [groups, setGroups] = useState<string[]>([]);
+  const bridges = useQuery({
+    queryKey: ["iiko-bridges"],
+    queryFn: api.bridges,
+    refetchInterval: 30000,
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem(`iiko-groups-${restaurantId}`);
-    setGroups(saved ? (JSON.parse(saved) as string[]) : []);
-    setDraft({});
-  }, [restaurantId]);
+    if (restaurantId !== "" || !bridges.data || bridges.data.length === 0) return;
+    const preferred =
+      bridges.data.find((row) => row.is_registered && row.products > 0)?.restaurant_id ??
+      bridges.data[0].restaurant_id;
+    onRestaurantChange(preferred);
+  }, [bridges.data, onRestaurantChange, restaurantId]);
 
-  const pickGroup = (name: string) => {
+  const currentBridge = useMemo(
+    () => (bridges.data ?? []).find((row) => row.restaurant_id === restaurantId) ?? null,
+    [bridges.data, restaurantId],
+  );
+
+  const [groups, setGroups] = useState<string[]>([]);
+  const storageKey = `iiko-group-paths-${restaurantId}`;
+
+  useEffect(() => {
+    if (restaurantId === "") {
+      setGroups([]);
+      return;
+    }
+
+    try {
+      const saved = localStorage.getItem(storageKey);
+      setGroups(saved ? (JSON.parse(saved) as string[]) : []);
+    } catch {
+      setGroups([]);
+    }
+    setDraft({});
+    setCategoryFilter("all");
+    setSearch("");
+  }, [restaurantId, storageKey]);
+
+  const saveGroups = (next: string[]) => {
+    const unique = [...new Set(next)].filter(Boolean);
+    setGroups(unique);
+    localStorage.setItem(storageKey, JSON.stringify(unique));
+  };
+
+  const pickGroup = (path: string) => {
     setGroups((current) => {
-      const next = current.includes(name)
-        ? current.filter((item) => item !== name)
-        : [...current, name];
-      localStorage.setItem(`iiko-groups-${restaurantId}`, JSON.stringify(next));
+      const next = current.includes(path)
+        ? current.filter((item) => item !== path)
+        : [...current, path];
+      localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
   };
@@ -325,11 +386,29 @@ function Links({ restaurantId }: { restaurantId: string }) {
     enabled: restaurantId !== "",
   });
 
+  const presetGroups = useMemo(
+    () => (allGroups.data ?? []).filter((group) => group.is_preset).map((group) => group.path),
+    [allGroups.data],
+  );
+
+  useEffect(() => {
+    if (restaurantId === "" || groups.length > 0 || presetGroups.length === 0) return;
+    if (localStorage.getItem(storageKey)) return;
+    saveGroups(presetGroups);
+  }, [groups.length, presetGroups, restaurantId, storageKey]);
+
   const links = useQuery({
     queryKey: ["iiko-links", restaurantId, groups],
     queryFn: () => api.iikoLinks(restaurantId, groups),
     enabled: restaurantId !== "",
   });
+
+  const keyOf = (row: IikoLink) => `${row.kind}:${row.id}`;
+  const selectedProductId = (row: IikoLink) => {
+    const drafted = draft[keyOf(row)];
+    return drafted ? drafted.id : row.product_id ?? "";
+  };
+  const isRowLinked = (row: IikoLink) => selectedProductId(row) !== "";
 
   const save = useMutation({
     mutationFn: () =>
@@ -355,194 +434,415 @@ function Links({ restaurantId }: { restaurantId: string }) {
     },
   });
 
+  const allRows = links.data ?? [];
+
+  const categoryStats = useMemo(() => {
+    const byCategory = new Map<string, { name: string; total: number; linked: number; dishes: number; extras: number }>();
+
+    for (const row of allRows) {
+      const name = row.group ?? "Без категории";
+      const current = byCategory.get(name) ?? {
+        name,
+        total: 0,
+        linked: 0,
+        dishes: 0,
+        extras: 0,
+      };
+      current.total += 1;
+      if (isRowLinked(row)) current.linked += 1;
+      if (row.kind === "dish") current.dishes += 1;
+      if (row.kind === "extra") current.extras += 1;
+      byCategory.set(name, current);
+    }
+
+    return [...byCategory.values()];
+  }, [allRows, draft]);
+
+  useEffect(() => {
+    if (categoryFilter === "all") return;
+    if (!categoryStats.some((item) => item.name === categoryFilter)) {
+      setCategoryFilter("all");
+    }
+  }, [categoryFilter, categoryStats]);
+
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (links.data ?? []).filter((row) => {
-      const linked = draft[`${row.kind}:${row.id}`]?.id ?? row.product_id;
-      if (onlyEmpty && linked) return false;
+    return allRows.filter((row) => {
+      const linked = isRowLinked(row);
+      if (matchFilter === "unmatched" && linked) return false;
+      if (matchFilter === "matched" && !linked) return false;
+      if (kindFilter !== "all" && row.kind !== kindFilter) return false;
+      if (categoryFilter !== "all" && (row.group ?? "Без категории") !== categoryFilter) {
+        return false;
+      }
       if (needle === "") return true;
-      return row.name.toLowerCase().includes(needle);
+      const haystack = [
+        row.name,
+        row.group ?? "",
+        row.product_name ?? "",
+        row.product_code ?? "",
+        row.product_group_path ?? "",
+      ].join(" ").toLowerCase();
+      return haystack.includes(needle);
     });
-  }, [links.data, search, onlyEmpty, draft]);
+  }, [allRows, categoryFilter, draft, kindFilter, matchFilter, search]);
 
-  const total = (links.data ?? []).length;
-  const linked = (links.data ?? []).filter((row) => row.product_id).length;
+  const total = allRows.length;
+  const linked = allRows.filter(isRowLinked).length;
+  const unlinked = total - linked;
   const changed = Object.keys(draft).length;
-
-  if (restaurantId === "") {
-    return (
-      <Section title="Сопоставление">
-        <p style={{ color: c.textSecondary }}>Выберите ресторан на вкладке «Плагины».</p>
-      </Section>
-    );
-  }
+  const dishTotal = allRows.filter((row) => row.kind === "dish").length;
+  const dishLinked = allRows.filter((row) => row.kind === "dish" && isRowLinked(row)).length;
+  const extraTotal = allRows.filter((row) => row.kind === "extra").length;
+  const extraLinked = allRows.filter((row) => row.kind === "extra" && isRowLinked(row)).length;
 
   return (
     <>
-      <Section title="Где искать товары кассы">
-        <p style={{ marginTop: 0, color: c.textSecondary }}>
-          В базе этой точки {(allGroups.data ?? []).reduce((sum, g) => sum + g.products, 0)} позиций:
-          заготовки, посуда, акции прошлых лет. Отметьте группы настоящего меню — поиск,
-          подсказки и автоподбор будут работать только по ним.
-        </p>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs, maxHeight: 180, overflow: "auto" }}>
-          {(allGroups.data ?? []).map((group) => {
-            const picked = groups.includes(group.name);
-
-            return (
-              <button
-                key={group.name}
-                type="button"
-                onClick={() => pickGroup(group.name)}
-                style={{
-                  padding: `4px ${spacing.sm}px`,
-                  borderRadius: radius.pill,
-                  border: `1px solid ${picked ? c.brand : c.border}`,
-                  background: picked ? c.brandSubtle : c.surface,
-                  color: picked ? c.brand : c.textSecondary,
-                  cursor: "pointer",
-                  fontSize: typography.caption.fontSize,
-                  fontFamily: "inherit",
-                }}
-              >
-                {group.name || "без группы"} · {group.products}
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-
       <Section
-        title={`Блюда · связано ${linked} из ${total}`}
+        title="Сопоставление iiko"
         action={
-          <div style={{ display: "flex", gap: spacing.sm, alignItems: "center" }}>
-            <input
-              style={{ ...styles.input, minWidth: 180 }}
-              placeholder="Поиск блюда"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Button tone={onlyEmpty ? "brand" : "quiet"} onClick={() => setOnlyEmpty(!onlyEmpty)}>
-              Только несвязанные
+          <div style={{ display: "flex", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              style={{ ...styles.input, minWidth: 280 }}
+              value={restaurantId}
+              onChange={(event) => onRestaurantChange(event.target.value)}
+            >
+              <option value="">Выберите ресторан</option>
+              {(bridges.data ?? []).map((row) => (
+                <option key={row.restaurant_id} value={row.restaurant_id}>
+                  {row.restaurant_name}
+                </option>
+              ))}
+            </select>
+            <Button tone="quiet" onClick={() => saveGroups(presetGroups)} disabled={restaurantId === ""}>
+              Группы Mama Roma
             </Button>
-            <Button tone="quiet" onClick={() => auto.mutate()}>
-              {auto.isPending ? "Ищем…" : "Связать совпадения"}
-            </Button>
-            <Button tone="brand" onClick={() => save.mutate()}>
-              {save.isPending ? "Сохраняем…" : changed > 0 ? `Сохранить (${changed})` : "Сохранить"}
+            <Button tone="quiet" onClick={() => saveGroups([])} disabled={restaurantId === ""}>
+              Вся касса
             </Button>
           </div>
         }
       >
-        {groups.length === 0 ? (
-          <p style={{ color: c.warning, marginTop: 0 }}>
-            Группы не выбраны — подсказок не будет, а поиск пойдёт по всем позициям сразу.
-          </p>
-        ) : null}
-
-        {auto.data ? (
-          <p style={{ color: c.textSecondary, marginTop: 0 }}>
-            Связано {auto.data.matched}. Оставлено вам {auto.data.skipped} — там названия не совпали
-            точно или в кассе нашлось несколько одинаковых.
-          </p>
-        ) : null}
-
-        {links.isPending ? (
-          <p style={{ color: c.textSecondary }}>Загружаем…</p>
-        ) : rows.length === 0 ? (
-          <p style={{ color: c.textSecondary }}>
-            {onlyEmpty ? "Всё связано" : "Ничего не нашлось"}
-          </p>
+        {restaurantId === "" ? (
+          <p style={{ color: c.textSecondary, margin: 0 }}>Выберите ресторан.</p>
         ) : (
-          <div style={styles.card}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Наше блюдо</th>
-                  <th style={styles.th}>Товар кассы</th>
-                  <th style={styles.th}>Подсказки</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 120).map((row) => {
-                  const key = `${row.kind}:${row.id}`;
-                  const chosen = draft[key];
-                  const currentName = chosen?.name ?? row.product_name;
-
-                  return (
-                    <tr key={key}>
-                      <td style={styles.td}>
-                        <div>{row.name}</div>
-                        <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                          {row.group}
-                        </div>
-                      </td>
-
-                      <td style={{ ...styles.td, minWidth: 260 }}>
-                        {currentName ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: spacing.xs }}>
-                            <span style={{ color: chosen ? c.brand : c.textPrimary }}>
-                              {currentName}
-                            </span>
-                            <Button
-                              tone="quiet"
-                              onClick={() =>
-                                setDraft((current) => ({ ...current, [key]: { id: "", name: "" } }))
-                              }
-                            >
-                              снять
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button tone="quiet" onClick={() => setPicking(row)}>
-                            Найти в кассе
-                          </Button>
-                        )}
-                      </td>
-
-                      <td style={styles.td}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs }}>
-                          {row.suggestions.map((product) => (
-                            <button
-                              key={product.product_id}
-                              type="button"
-                              onClick={() =>
-                                setDraft((current) => ({
-                                  ...current,
-                                  [key]: { id: product.product_id, name: product.name },
-                                }))
-                              }
-                              style={{
-                                padding: `2px ${spacing.sm}px`,
-                                borderRadius: radius.pill,
-                                border: `1px solid ${c.border}`,
-                                background: c.surface,
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                                fontSize: typography.caption.fontSize,
-                                color: c.textSecondary,
-                              }}
-                            >
-                              {product.name}
-                            </button>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {rows.length > 120 ? (
-              <div style={{ padding: spacing.base, color: c.textTertiary }}>
-                Показаны первые 120 из {rows.length}. Сохраните сделанное или сузьте поиском.
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: spacing.md,
+              }}
+            >
+              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
+                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Ресторан</div>
+                <div style={{ fontWeight: 700 }}>{currentBridge?.restaurant_name ?? "—"}</div>
+                <div style={{ marginTop: 4 }}>
+                  {currentBridge && isOnline(currentBridge.last_seen_at) ? (
+                    <Badge text="плагин на связи" tone="ok" />
+                  ) : (
+                    <Badge text="нет свежей связи" tone="warn" />
+                  )}
+                </div>
               </div>
-            ) : null}
-          </div>
+              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
+                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Блюда</div>
+                <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {dishLinked} / {dishTotal}
+                </div>
+                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
+                  не связано {Math.max(dishTotal - dishLinked, 0)}
+                </div>
+              </div>
+              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
+                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Добавки</div>
+                <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {extraLinked} / {extraTotal}
+                </div>
+                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
+                  требуют группы модификатора
+                </div>
+              </div>
+              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
+                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Номенклатура iiko</div>
+                <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {currentBridge?.products ?? 0}
+                </div>
+                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
+                  {groups.length > 0 ? `групп выбрано ${groups.length}` : "поиск по всей кассе"}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs }}>
+              {(allGroups.data ?? []).filter((group) => group.is_preset).map((group) => {
+                const picked = groups.includes(group.path);
+                return (
+                  <button
+                    key={group.path}
+                    type="button"
+                    onClick={() => pickGroup(group.path)}
+                    style={{
+                      padding: `4px ${spacing.sm}px`,
+                      borderRadius: radius.pill,
+                      border: `1px solid ${picked ? c.brand : c.border}`,
+                      background: picked ? c.brandSubtle : c.surface,
+                      color: picked ? c.brand : c.textSecondary,
+                      cursor: "pointer",
+                      fontSize: typography.caption.fontSize,
+                      fontFamily: "inherit",
+                      fontWeight: 600,
+                    }}
+                    title={group.path}
+                  >
+                    {group.name} · {group.products}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </Section>
+
+      {restaurantId !== "" ? (
+        <Section
+          title={`Позиции · связано ${linked} из ${total}`}
+          action={
+            <div style={{ display: "flex", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                style={{ ...styles.input, minWidth: 220 }}
+                placeholder="Блюдо или товар iiko"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <Button tone={matchFilter === "unmatched" ? "brand" : "quiet"} onClick={() => setMatchFilter("unmatched")}>
+                Нет связи
+              </Button>
+              <Button tone={matchFilter === "matched" ? "brand" : "quiet"} onClick={() => setMatchFilter("matched")}>
+                Есть связь
+              </Button>
+              <Button tone={matchFilter === "all" ? "brand" : "quiet"} onClick={() => setMatchFilter("all")}>
+                Все
+              </Button>
+              <Button tone="quiet" onClick={() => auto.mutate()} disabled={auto.isPending}>
+                {auto.isPending ? "Ищем…" : "Автосвязать точные"}
+              </Button>
+              <Button tone="brand" onClick={() => save.mutate()} disabled={changed === 0 || save.isPending}>
+                {save.isPending ? "Сохраняем…" : changed > 0 ? `Сохранить (${changed})` : "Сохранить"}
+              </Button>
+            </div>
+          }
+        >
+          {auto.data ? (
+            <div style={{ color: c.textSecondary }}>
+              Автоподбор добавил {auto.data.matched}; без точного совпадения осталось {auto.data.skipped}.
+            </div>
+          ) : null}
+
+          <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
+            <Button tone={kindFilter === "dish" ? "brand" : "quiet"} onClick={() => setKindFilter("dish")}>
+              Блюда
+            </Button>
+            <Button tone={kindFilter === "extra" ? "brand" : "quiet"} onClick={() => setKindFilter("extra")}>
+              Добавки
+            </Button>
+            <Button tone={kindFilter === "all" ? "brand" : "quiet"} onClick={() => setKindFilter("all")}>
+              Всё
+            </Button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "280px minmax(0, 1fr)",
+              gap: spacing.base,
+              alignItems: "start",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: spacing.xs }}>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter("all")}
+                style={{
+                  textAlign: "left",
+                  padding: spacing.sm,
+                  borderRadius: radius.md,
+                  border: `1px solid ${categoryFilter === "all" ? c.brand : c.border}`,
+                  background: categoryFilter === "all" ? c.brandSubtle : c.surface,
+                  color: c.textPrimary,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>Все категории</div>
+                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
+                  не связано {unlinked}
+                </div>
+              </button>
+              {categoryStats.map((item) => {
+                const missing = item.total - item.linked;
+                const picked = categoryFilter === item.name;
+
+                return (
+                  <button
+                    key={item.name}
+                    type="button"
+                    onClick={() => setCategoryFilter(item.name)}
+                    style={{
+                      textAlign: "left",
+                      padding: spacing.sm,
+                      borderRadius: radius.md,
+                      border: `1px solid ${picked ? c.brand : c.border}`,
+                      background: picked ? c.brandSubtle : c.surface,
+                      color: c.textPrimary,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: spacing.sm }}>
+                      <span style={{ fontWeight: 700 }}>{item.name}</span>
+                      <span style={{ fontVariantNumeric: "tabular-nums" }}>{item.linked}/{item.total}</span>
+                    </div>
+                    <div style={{ color: missing > 0 ? c.warning : c.success, fontSize: typography.caption.fontSize }}>
+                      {missing > 0 ? `нет связи ${missing}` : "готово"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div>
+              {links.isPending ? (
+                <p style={{ color: c.textSecondary }}>Загружаем…</p>
+              ) : rows.length === 0 ? (
+                <div style={{ ...styles.card, padding: spacing.base, color: c.textSecondary }}>
+                  Ничего не найдено.
+                </div>
+              ) : (
+                <div style={styles.card}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>Позиция приложения</th>
+                        <th style={styles.th}>Товар iiko</th>
+                        <th style={styles.th}>Действие</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.slice(0, 200).map((row) => {
+                        const key = keyOf(row);
+                        const chosen = draft[key];
+                        const currentName = chosen ? chosen.name : row.product_name ?? "";
+                        const currentCode = chosen ? chosen.code : row.product_code;
+                        const currentGroupPath = chosen ? chosen.groupPath : row.product_group_path;
+                        const currentType = chosen ? chosen.productType : row.product_type;
+
+                        return (
+                          <tr key={key}>
+                            <td style={styles.td}>
+                              <div style={{ fontWeight: 700 }}>{row.name}</div>
+                              <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+                                {row.kind === "dish" ? row.group : "Добавка"}
+                              </div>
+                            </td>
+
+                            <td style={{ ...styles.td, minWidth: 320 }}>
+                              {currentName ? (
+                                <div>
+                                  <div style={{ color: chosen ? c.brand : c.textPrimary, fontWeight: 600 }}>
+                                    {currentName}
+                                  </div>
+                                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
+                                    {currentCode ? `код ${currentCode}` : "без кода"}
+                                    {currentType ? ` · ${currentType}` : ""}
+                                  </div>
+                                  {currentGroupPath ? (
+                                    <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+                                      {currentGroupPath}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <Badge text="нет связи" tone="warn" />
+                              )}
+                            </td>
+
+                            <td style={styles.td}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: spacing.xs }}>
+                                <div style={{ display: "flex", gap: spacing.xs, flexWrap: "wrap" }}>
+                                  <Button tone="quiet" onClick={() => setPicking(row)}>
+                                    {currentName ? "Сменить" : "Найти"}
+                                  </Button>
+                                  {currentName ? (
+                                    <Button
+                                      tone="danger"
+                                      onClick={() =>
+                                        setDraft((current) => ({
+                                          ...current,
+                                          [key]: { id: "", name: "" },
+                                        }))
+                                      }
+                                    >
+                                      Снять
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                {row.suggestions.length > 0 ? (
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs }}>
+                                    {row.suggestions.map((product) => (
+                                      <button
+                                        key={product.product_id}
+                                        type="button"
+                                        onClick={() =>
+                                          setDraft((current) => ({
+                                            ...current,
+                                            [key]: {
+                                              id: product.product_id,
+                                              name: product.name,
+                                              code: product.code,
+                                              groupPath: product.group_path,
+                                              productType: product.product_type,
+                                            },
+                                          }))
+                                        }
+                                        style={{
+                                          padding: `2px ${spacing.sm}px`,
+                                          borderRadius: radius.pill,
+                                          border: `1px solid ${c.border}`,
+                                          background: c.surface,
+                                          cursor: "pointer",
+                                          fontFamily: "inherit",
+                                          fontSize: typography.caption.fontSize,
+                                          color: c.textSecondary,
+                                          maxWidth: 360,
+                                        }}
+                                        title={product.group_path ?? product.group_name ?? ""}
+                                      >
+                                        {product.name}
+                                        {product.code ? ` · ${product.code}` : ""}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {rows.length > 200 ? (
+                    <div style={{ padding: spacing.base, color: c.textTertiary }}>
+                      Показаны первые 200 из {rows.length}. Выберите категорию или уточните поиск.
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        </Section>
+      ) : null}
 
       {picking ? (
         <ProductPicker
@@ -553,7 +853,13 @@ function Links({ restaurantId }: { restaurantId: string }) {
           onPick={(product) => {
             setDraft((current) => ({
               ...current,
-              [`${picking.kind}:${picking.id}`]: { id: product.product_id, name: product.name },
+              [`${picking.kind}:${picking.id}`]: {
+                id: product.product_id,
+                name: product.name,
+                code: product.code,
+                groupPath: product.group_path,
+                productType: product.product_type,
+              },
             }));
             setPicking(null);
           }}
@@ -702,7 +1008,9 @@ export function IikoTab() {
           }}
         />
       ) : null}
-      {pane === "links" ? <Links restaurantId={restaurantId} /> : null}
+      {pane === "links" ? (
+        <Links restaurantId={restaurantId} onRestaurantChange={setRestaurantId} />
+      ) : null}
       {pane === "queue" ? <Queue /> : null}
     </>
   );

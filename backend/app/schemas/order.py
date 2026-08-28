@@ -55,6 +55,18 @@ class OrderItemRead(BaseModel):
     total_kopecks: int
 
 
+class IikoOrderItemRead(BaseModel):
+    """Фактическая позиция заказа по последнему снимку iikoFront."""
+
+    product_id: str = ""
+    name: str
+    amount: float = 0
+    price: float = 0
+    net_sum: float = 0
+    group_name: str = ""
+    group_path: str = ""
+
+
 class OrderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,6 +87,15 @@ class OrderRead(BaseModel):
     delivery_at: datetime | None
     address_text: str | None
     comment: str | None
+    cancel_reason: str | None = None
+
+    iiko_status: str | None = None
+    iiko_problem_comment: str | None = None
+    iiko_courier_name: str | None = None
+    iiko_cancel_cause: str | None = None
+    iiko_cancel_comment: str | None = None
+    iiko_items: list[IikoOrderItemRead] = Field(default_factory=list)
+    iiko_items_changed_at: datetime | None = None
 
     subtotal_kopecks: int
     delivery_kopecks: int

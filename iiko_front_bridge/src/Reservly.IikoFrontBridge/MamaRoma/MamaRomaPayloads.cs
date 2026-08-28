@@ -79,6 +79,7 @@ internal sealed class PendingOrderPayment
     public string PromoCode { get; set; } = string.Empty;
     public int PromoDiscountKopecks { get; set; }
     public int PointsSpent { get; set; }
+    public int PointsEarned { get; set; }
 
     /// <summary>Сколько гость должен по нашему расчёту.</summary>
     public int TotalKopecks { get; set; }
@@ -108,6 +109,9 @@ internal sealed class PendingOrderAddress
 
     /// <summary>Всё, что не легло в поля: «во дворе», «звонить за 10 минут».</summary>
     public string AdditionalInfo { get; set; } = string.Empty;
+
+    /// <summary>Комментарий к сохранённому адресу: подъезд со двора, охрана и т.п.</summary>
+    public string Comment { get; set; } = string.Empty;
 
     /// <summary>Адрес одной строкой — как его видит гость в приложении.</summary>
     public string FullText { get; set; } = string.Empty;
@@ -214,6 +218,7 @@ internal sealed class MenuSnapshot
 {
     public string RestaurantId { get; set; } = string.Empty;
     public string CapturedAt { get; set; } = string.Empty;
+    public string SchemaVersion { get; set; } = string.Empty;
     public List<MenuProduct> Products { get; set; } = new List<MenuProduct>();
 }
 
@@ -272,5 +277,19 @@ internal sealed class DeliveryStatusEntry
     public bool HasProblem { get; set; }
     public string ProblemComment { get; set; } = string.Empty;
     public string CancelCause { get; set; } = string.Empty;
+    public string CancelComment { get; set; } = string.Empty;
     public string CourierName { get; set; } = string.Empty;
+    public List<DeliveryStatusItem> Items { get; set; } = new List<DeliveryStatusItem>();
+}
+
+/// <summary>Фактическая позиция заказа в iiko после ручных правок на кассе.</summary>
+internal sealed class DeliveryStatusItem
+{
+    public string ProductId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public decimal Price { get; set; }
+    public decimal NetSum { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public string GroupPath { get; set; } = string.Empty;
 }

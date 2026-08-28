@@ -2083,7 +2083,9 @@ async def iiko_products(
     )
     # Без фильтра список неподъёмный: у точки бывает больше десяти тысяч позиций
     if group:
-        query = query.where(IikoProduct.group_name == group)
+        query = query.where(
+            (IikoProduct.group_path == group) | (IikoProduct.group_name == group)
+        )
 
     rows = await session.scalars(query)
 
@@ -2093,6 +2095,7 @@ async def iiko_products(
             name=row.name,
             code=row.code,
             group_name=row.group_name,
+            group_path=row.group_path,
             product_type=row.product_type,
             is_active=row.is_active,
             has_sizes=row.has_sizes,
@@ -2119,6 +2122,7 @@ async def iiko_search(
             name=row.name,
             code=row.code,
             group_name=row.group_name,
+            group_path=row.group_path,
             product_type=row.product_type,
             is_active=row.is_active,
             has_sizes=row.has_sizes,
@@ -2145,8 +2149,8 @@ async def iiko_links(
         )
     }
 
-    names = {
-        product.product_id: product.name
+    products = {
+        product.product_id: product
         for product in await session.scalars(
             select(IikoProduct).where(
                 IikoProduct.tenant_id == tenant.id, IikoProduct.restaurant_id == restaurant_id
@@ -2156,14 +2160,25 @@ async def iiko_links(
 
     rows: list[LinkRow] = []
 
+    not_sold = select(DishPrice.dish_id).where(
+        DishPrice.tenant_id == tenant.id,
+        DishPrice.restaurant_id == restaurant_id,
+        DishPrice.is_available.is_(False),
+    )
     dishes = await session.execute(
         select(Dish, MenuCategory.name)
         .join(MenuCategory, MenuCategory.id == Dish.category_id)
-        .where(Dish.tenant_id == tenant.id, Dish.is_active.is_(True))
+        .where(
+            Dish.tenant_id == tenant.id,
+            Dish.is_active.is_(True),
+            MenuCategory.is_active.is_(True),
+            ~Dish.id.in_(not_sold),
+        )
         .order_by(MenuCategory.sort_order, Dish.sort_order, Dish.name)
     )
     for dish, category in dishes:
         link = links.get(("dish", dish.id))
+        product = products.get(link.product_id) if link else None
         rows.append(
             LinkRow(
                 kind="dish",
@@ -2171,7 +2186,10 @@ async def iiko_links(
                 name=dish.name,
                 group=category,
                 product_id=link.product_id if link else None,
-                product_name=names.get(link.product_id) if link else None,
+                product_name=product.name if product else None,
+                product_code=product.code if product else None,
+                product_group_path=product.group_path if product else None,
+                product_type=product.product_type if product else None,
                 size_id=link.size_id if link else None,
                 modifier_group_id=None,
             )
@@ -2184,6 +2202,7 @@ async def iiko_links(
     )
     for extra in extras:
         link = links.get(("extra", extra.id))
+        product = products.get(link.product_id) if link else None
         rows.append(
             LinkRow(
                 kind="extra",
@@ -2191,7 +2210,10 @@ async def iiko_links(
                 name=extra.name,
                 group="Добавки",
                 product_id=link.product_id if link else None,
-                product_name=names.get(link.product_id) if link else None,
+                product_name=product.name if product else None,
+                product_code=product.code if product else None,
+                product_group_path=product.group_path if product else None,
+                product_type=product.product_type if product else None,
                 size_id=link.size_id if link else None,
                 modifier_group_id=link.modifier_group_id if link else None,
             )
@@ -2211,6 +2233,7 @@ async def iiko_links(
                         name=product.name,
                         code=product.code,
                         group_name=product.group_name,
+                        group_path=product.group_path,
                         product_type=product.product_type,
                         is_active=product.is_active,
                         has_sizes=product.has_sizes,

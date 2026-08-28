@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Resto.Front.Api;
 using Resto.Front.Api.Data.Assortment;
+using Resto.Front.Api.Data.Orders;
 using Reservly.IikoFrontBridge.Collectors;
 
 namespace Reservly.IikoFrontBridge.MamaRoma;
@@ -115,6 +116,7 @@ internal static class MenuCollector
         {
             RestaurantId = config.RestaurantId,
             CapturedAt = DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
+            SchemaVersion = config.MenuSchemaVersion,
         };
 
         var products = LoadProducts(config.MenuIncludeInactive);
@@ -207,6 +209,8 @@ internal static class MenuCollector
 /// </summary>
 internal static class DeliveryStatusCollector
 {
+    private const string OrderExternalDataKey = "mamaroma.orderId";
+
     public static DeliveryStatusSnapshot Collect(MamaRomaConfig config)
     {
         var snapshot = new DeliveryStatusSnapshot
@@ -223,8 +227,8 @@ internal static class DeliveryStatusCollector
             {
                 // Наши заказы узнаём по внешнему номеру: его проставил DeliveryWriter.
                 // Чужие — с сайта, из колл-центра — пропускаем молча
-                var externalNumber = FrontOrderValueReader.ReadString(order, "ExternalNumber");
-                if (string.IsNullOrWhiteSpace(externalNumber))
+                var orderId = ResolveMamaRomaOrderReference(order);
+                if (string.IsNullOrWhiteSpace(orderId))
                 {
                     continue;
                 }
@@ -237,7 +241,7 @@ internal static class DeliveryStatusCollector
 
                 snapshot.Orders.Add(new DeliveryStatusEntry
                 {
-                    OrderId = externalNumber,
+                    OrderId = orderId,
                     IikoOrderId = FrontOrderValueReader.ReadString(order, "Id"),
                     IikoOrderNumber = FrontOrderValueReader.ReadString(order, "Number"),
                     Status = FrontOrderValueReader.ReadString(order, "DeliveryStatus"),
@@ -253,7 +257,9 @@ internal static class DeliveryStatusCollector
                     HasProblem = ReadBool(order, "HasProblem"),
                     ProblemComment = FrontOrderValueReader.ReadString(order, "ProblemComment"),
                     CancelCause = FrontOrderValueReader.ReadNestedName(order, "CancelCause"),
+                    CancelComment = FrontOrderValueReader.ReadString(order, "CancelComment"),
                     CourierName = FrontOrderValueReader.ReadNestedName(order, "Courier"),
+                    Items = CollectItems(order),
                 });
             }
             catch (Exception exc)
@@ -265,12 +271,58 @@ internal static class DeliveryStatusCollector
         return snapshot;
     }
 
+    private static string ResolveMamaRomaOrderReference(object order)
+    {
+        try
+        {
+            var frontOrder = order as IOrder;
+            if (frontOrder != null)
+            {
+                var stored = PluginContext.Operations.TryGetOrderExternalDataByKey(
+                    frontOrder,
+                    OrderExternalDataKey
+                );
+                if (!string.IsNullOrWhiteSpace(stored))
+                {
+                    return stored;
+                }
+            }
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info($"MamaRoma Status: скрытый код заказа не прочитан: {exc.Message}");
+        }
+
+        return FrontOrderValueReader.ReadString(order, "ExternalNumber");
+    }
+
+    private static List<DeliveryStatusItem> CollectItems(object order)
+    {
+        var result = new List<DeliveryStatusItem>();
+        foreach (var item in FrontOrderValueReader.CollectItems(order))
+        {
+            result.Add(new DeliveryStatusItem
+            {
+                ProductId = item.ProductId,
+                Name = item.Name,
+                Amount = item.Amount,
+                Price = item.Price,
+                NetSum = item.NetSum,
+                GroupName = item.GroupName,
+                GroupPath = item.GroupPath,
+            });
+        }
+
+        return result;
+    }
+
     private static IEnumerable<object> LoadDeliveryOrders()
     {
         try
         {
-            // false — без удалённых: их статусы гостю показывать нечего
-            var orders = PluginContext.Operations.GetDeliveryOrders(false);
+            // true — нужны и отменённые/удалённые доставки: именно там лежат
+            // причина отмены и финальный состав после ручных правок менеджера.
+            var orders = PluginContext.Operations.GetDeliveryOrders(true);
             return orders == null ? Enumerable.Empty<object>() : orders.Cast<object>();
         }
         catch (Exception exc)

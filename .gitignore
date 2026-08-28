@@ -42,6 +42,10 @@ backend/media/
 iiko_front_bridge/bridge.settings.json
 # Готовая к переносу папка: собранная DLL и настройки с боевыми ключами
 iiko_front_bridge/install/
+# Упакованные сборки плагина: датированные папки, архивы и старые версии
+iiko_front_bridge/Reservly.IikoFrontBridge-*/
+iiko_front_bridge/Reservly.IikoFrontBridge-*.zip
+iiko_front_bridge/_superseded/
 iiko_front_bridge/**/bin/
 iiko_front_bridge/**/obj/
 iiko_front_bridge/**/launchSettings.json

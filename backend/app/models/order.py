@@ -87,6 +87,21 @@ class Order(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     cancel_reason: Mapped[str | None] = mapped_column(String(300), default=None)
 
+    # Что прислал iikoFront после ручных действий менеджера: статус, причины
+    # отмены и фактический состав заказа. Исходный заказ приложения не трогаем.
+    iiko_status: Mapped[str | None] = mapped_column(String(40), default=None)
+    iiko_status_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    iiko_problem_comment: Mapped[str | None] = mapped_column(Text, default=None)
+    iiko_courier_name: Mapped[str | None] = mapped_column(String(120), default=None)
+    iiko_cancel_cause: Mapped[str | None] = mapped_column(String(300), default=None)
+    iiko_cancel_comment: Mapped[str | None] = mapped_column(String(500), default=None)
+    iiko_items: Mapped[list[dict[str, object]]] = mapped_column(JSONB, default=list)
+    iiko_items_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
 
 class OrderItem(UUIDMixin, TenantMixin, TimestampMixin, Base):
     """Позиция заказа. Название и цена — снимок на момент оформления."""

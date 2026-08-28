@@ -6,11 +6,14 @@
 """
 
 import re
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.tenants import Tenant
 from app.models.enums import (
@@ -23,7 +26,7 @@ from app.models.enums import (
 )
 from app.models.integration import IikoBridge, IikoLink, IikoOrderHandoff, IikoProduct
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
-from app.models.menu import Dish, DishExtra, StopListEntry
+from app.models.menu import Dish, DishExtra, DishPrice, MenuCategory, StopListEntry
 from app.models.order import Order
 
 # Столько плагину даётся на то, чтобы завести заказ и отчитаться.
@@ -33,6 +36,59 @@ LOCK_MINUTES = 3
 # Больше этого числа попыток не делаем: если заказ не заводится трижды,
 # дело не в связи, и повторы только мешают менеджеру
 MAX_ATTEMPTS = 3
+
+SELLABLE_PRODUCT_TYPES = {"", "Dish", "Goods", "Modifier"}
+CUTLERY_FINGERPRINT_KEY = "__cutlery__"
+
+# Живые группы Mama Roma, найденные в iiko Большевиков. У точек могут быть
+# не все блюда, но дерево групп для сети должно быть единым.
+MAMAROMA_MENU_GROUP_PATH_PREFIXES = (
+    "КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА",
+    "КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ",
+    "КУХНЯ 2026/САЛАТЫ + ХОЛОДНЫЕ ЗАКУСКИ",
+    "КУХНЯ 2026/СУПЫ",
+    "КУХНЯ 2026/ПАСТЫ",
+    "КУХНЯ 2026/ГРИЛЬ",
+    "КУХНЯ 2026/ГОРЯЧИЕ БЛЮДА",
+    "КУХНЯ 2026/ГАРНИРЫ",
+    "КУХНЯ 2026/СОУС",
+    "КУХНЯ 2026/ФОКАЧЧА И БУЛОЧКИ",
+    "КУХНЯ 2026/ДЕСЕРТЫ",
+    "КУХНЯ 2026/ДЕТСКОЕ МЕНЮ М21+М3+М5",
+    "БАР/БЕЗАЛКОГОЛЬНЫЕ НАПИТКИ",
+    "МАГАЗИН ГУРМЕТТО",
+)
+
+MAMAROMA_DENY_GROUP_MARKERS = (
+    "Я СТАРОЕ",
+    "АКЦИИ",
+    "С СОБОЙ",
+    "2 ПО ЦЕНЕ",
+    "ПОДЛОЖКА",
+    "КУХНЯ/ФРУКТЫ",
+    "БИЗНЕС_ЛАНЧ_СТАРОЕ",
+)
+
+MAMAROMA_CATEGORY_GROUP_PATH_PREFIXES = {
+    "Пицца": ("КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА",),
+    "Салаты": ("КУХНЯ 2026/САЛАТЫ + ХОЛОДНЫЕ ЗАКУСКИ",),
+    "Закуски": ("КУХНЯ 2026/САЛАТЫ + ХОЛОДНЫЕ ЗАКУСКИ",),
+    "Супы": ("КУХНЯ 2026/СУПЫ",),
+    "Паста": ("КУХНЯ 2026/ПАСТЫ",),
+    "Ризотто": ("КУХНЯ 2026/ПАСТЫ",),
+    "Гриль": ("КУХНЯ 2026/ГРИЛЬ", "КУХНЯ 2026/ГОРЯЧИЕ БЛЮДА"),
+    "Горячее": ("КУХНЯ 2026/ГОРЯЧИЕ БЛЮДА",),
+    "Гарниры": ("КУХНЯ 2026/ГАРНИРЫ",),
+    "Соусы": ("КУХНЯ 2026/СОУС",),
+    "Хлеб": (
+        "КУХНЯ 2026/ФОКАЧЧА И БУЛОЧКИ",
+        "КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА",
+    ),
+    "Десерты": ("КУХНЯ 2026/ДЕСЕРТЫ",),
+    "Детское меню": ("КУХНЯ 2026/ДЕТСКОЕ МЕНЮ М21+М3+М5",),
+    "Напитки": ("БАР/БЕЗАЛКОГОЛЬНЫЕ НАПИТКИ",),
+    "Gourmetto": ("МАГАЗИН ГУРМЕТТО",),
+}
 
 
 class BridgeError(Exception):
@@ -178,14 +234,15 @@ async def ack_order(
         handoff.accepted_at = datetime.now(UTC)
         handoff.iiko_order_id = (iiko_order_id or "")[:64] or None
         handoff.iiko_order_number = (iiko_order_number or "")[:32] or None
-        handoff.error = None
-        handoff.missing_products = []
+        handoff.error = (error or "")[:2000] or None
+        handoff.missing_products = missing_products or []
 
         # Номер кассы кладём и в сам заказ: по нему заказ находят
         # и на кухне, и в разговоре с гостем
         order = await session.get(Order, order_id)
-        if order is not None and handoff.iiko_order_id:
-            order.external_id = handoff.iiko_order_id[:64]
+        if order is not None:
+            if handoff.iiko_order_id:
+                order.external_id = handoff.iiko_order_id[:64]
             order.synced_at = handoff.accepted_at
         return
 
@@ -468,6 +525,7 @@ def _payment_payload(order: Order) -> dict[str, object]:
         "promoCode": order.promo_code or "",
         "promoDiscountKopecks": order.promo_discount_kopecks,
         "pointsSpent": order.points_spent,
+        "pointsEarned": order.points_earned,
         "totalKopecks": order.total_kopecks,
     }
 
@@ -488,21 +546,41 @@ def _address_payload(order: Order) -> dict[str, str]:
     if not details:
         return {"street": order.address_text or ""} if order.address_text else {}
 
+    full_text = (order.address_text or "").strip()
+
     return {
         "city": details.get("locality", ""),
         "street": details.get("street", ""),
         "house": details.get("house", ""),
-        "building": details.get("building", ""),
+        # Плагин сам укоротит Building, если терминал работает в старом
+        # формате адреса. В Line1 остаётся полный корпус.
+        "building": str(details.get("building", "") or ""),
         "construction": "",
         "flat": details.get("flat", ""),
         "entrance": details.get("entrance", ""),
         "floor": details.get("floor", ""),
         "doorphone": details.get("intercom", ""),
         "postalCode": details.get("postal_code", ""),
-        "additionalInfo": details.get("comment", ""),
+        "comment": str(details.get("comment", "") or ""),
+        "additionalInfo": _delivery_notes(order),
         # Полная строка на случай, если оператор смотрит одним полем
-        "fullText": order.address_text or "",
+        "fullText": full_text,
     }
+
+
+def _delivery_notes(order: Order) -> str:
+    """Текст для поля «Примечания» в доставке iiko."""
+    notes = ["Мобильное приложение"]
+    if order.points_spent > 0:
+        notes.append(f"Списано баллов: {order.points_spent}")
+    if order.points_earned > 0:
+        notes.append(f"Начислено баллов: {order.points_earned}")
+    if order.discount_kopecks > 0:
+        discount = f"Скидка: {order.discount_kopecks / 100:g} руб"
+        if order.promo_code:
+            discount += f" по промокоду {order.promo_code}"
+        notes.append(discount)
+    return ". ".join(notes)
 
 
 # ─────────────────────────── статусы доставок ───────────────────────────
@@ -525,52 +603,323 @@ async def apply_delivery_status(
     touched = 0
 
     for row in orders:
-        raw_id = str(row.get("orderId") or "")
-        try:
-            order_id = UUID(raw_id)
-        except ValueError:
-            continue
-
-        order = await session.scalar(
-            select(Order).where(
-                Order.id == order_id,
-                Order.tenant_id == tenant.id,
-                Order.restaurant_id == restaurant_id,
-            )
+        order = await _find_order_by_iiko_reference(
+            session, tenant, restaurant_id, str(row.get("orderId") or "")
         )
         if order is None:
             continue
 
+        identity_changed = await _sync_iiko_identity(session, tenant, restaurant_id, order, row)
+        details_changed = await _sync_iiko_details(session, tenant, order, row)
         target = _status_from_marks(row)
-        if target is None or target == order.status:
-            continue
+        status_changed = False
 
-        if target is OrderStatus.CANCELLED:
+        if target is None or target == order.status:
+            pass
+        elif target is OrderStatus.CANCELLED:
             # Отмена приходит откуда угодно и в любой момент — она не часть
             # цепочки и правилу «только вперёд» не подчиняется
-            if order.status is OrderStatus.CANCELLED:
-                continue
-
             order.status = OrderStatus.CANCELLED
-            order.cancelled_at = datetime.now(UTC)
-            order.cancel_reason = (
-                str(row.get("cancelCause") or "") or "Отменён рестораном на кассе"
-            )[:200]
+            order.cancelled_at = _parse_iiko_time(row.get("cancelledAt")) or datetime.now(UTC)
+            order.cancel_reason = _cancel_reason(row)
             await _return_points(session, tenant, order)
+            status_changed = True
         else:
             # Назад по цепочке не двигаем: касса могла прислать старый срез,
             # а гость уже видел, что заказ в пути
             if _rank(target) <= _rank(order.status):
-                continue
+                target = None
+            else:
+                order.status = target
+                if target is OrderStatus.COMPLETED:
+                    order.completed_at = _parse_iiko_time(row.get("deliveredAt")) or datetime.now(
+                        UTC
+                    )
+                status_changed = True
 
-            order.status = target
-            if target is OrderStatus.COMPLETED:
-                order.completed_at = datetime.now(UTC)
+        if not status_changed and not details_changed and not identity_changed:
+            continue
 
         touched += 1
-        await _notify(session, tenant, order)
+        if status_changed:
+            await _notify(session, tenant, order)
 
     return touched
+
+
+async def _find_order_by_iiko_reference(
+    session: AsyncSession,
+    tenant: Tenant,
+    restaurant_id: UUID,
+    reference: str,
+) -> Order | None:
+    """Находит заказ по скрытому UUID или по видимому номеру `Мобильное ...`."""
+    text = reference.strip()
+    if not text:
+        return None
+
+    try:
+        order_id = UUID(text)
+    except ValueError:
+        order_number = _order_number_from_iiko_reference(text)
+        if not order_number:
+            return None
+        order = await session.scalar(
+            select(Order).where(
+                Order.number == order_number,
+                Order.tenant_id == tenant.id,
+                Order.restaurant_id == restaurant_id,
+            )
+        )
+        return order
+
+    order = await session.scalar(
+        select(Order).where(
+            Order.id == order_id,
+            Order.tenant_id == tenant.id,
+            Order.restaurant_id == restaurant_id,
+        )
+    )
+    return cast(Order | None, order)
+
+
+def _order_number_from_iiko_reference(reference: str) -> str:
+    text = reference.strip()
+    lowered = text.lower()
+    for prefix in ("мобильное приложение", "мобильное", "mobile"):
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :].strip()
+            break
+    return text.lstrip("№#:- ").strip()[:20]
+
+
+async def _sync_iiko_identity(
+    session: AsyncSession,
+    tenant: Tenant,
+    restaurant_id: UUID,
+    order: Order,
+    row: dict[str, object],
+) -> bool:
+    """Фиксирует факт, что заказ уже существует в iiko, и дописывает его номер."""
+    changed = False
+    now = datetime.now(UTC)
+
+    iiko_order_id = _text_or_none(row.get("iikoOrderId"), 64)
+    iiko_order_number = _text_or_none(row.get("iikoOrderNumber"), 32)
+    has_identity = bool(iiko_order_id or iiko_order_number)
+
+    handoff = await session.scalar(
+        select(IikoOrderHandoff).where(
+            IikoOrderHandoff.tenant_id == tenant.id,
+            IikoOrderHandoff.restaurant_id == restaurant_id,
+            IikoOrderHandoff.order_id == order.id,
+        )
+    )
+
+    confirmed_by_handoff = False
+    if handoff is not None:
+        if handoff.status is not IikoHandoffStatus.ACCEPTED:
+            handoff.status = IikoHandoffStatus.ACCEPTED
+            handoff.locked_until = None
+            handoff.error = None
+            handoff.missing_products = []
+            confirmed_by_handoff = True
+            changed = True
+        if handoff.accepted_at is None:
+            handoff.accepted_at = now
+            changed = True
+        if iiko_order_id and handoff.iiko_order_id != iiko_order_id:
+            handoff.iiko_order_id = iiko_order_id
+            changed = True
+        if iiko_order_number and handoff.iiko_order_number != iiko_order_number:
+            handoff.iiko_order_number = iiko_order_number
+            changed = True
+
+    if iiko_order_id and order.external_id != iiko_order_id:
+        order.external_id = iiko_order_id
+        changed = True
+    if order.synced_at is None and (has_identity or confirmed_by_handoff):
+        order.synced_at = now
+        changed = True
+
+    return changed
+
+
+async def _sync_iiko_details(
+    session: AsyncSession, tenant: Tenant, order: Order, row: dict[str, object]
+) -> bool:
+    """Сохраняет факты iiko, даже если гостевой этап заказа не изменился."""
+    changed = False
+    now = datetime.now(UTC)
+
+    def assign(attr: str, value: object) -> None:
+        nonlocal changed
+        if getattr(order, attr) != value:
+            setattr(order, attr, value)
+            changed = True
+
+    assign("iiko_status", _text_or_none(row.get("status"), 40))
+    assign("iiko_problem_comment", _text_or_none(row.get("problemComment"), 2000))
+    assign("iiko_courier_name", _text_or_none(row.get("courierName"), 120))
+    assign("iiko_cancel_cause", _text_or_none(row.get("cancelCause"), 300))
+    assign("iiko_cancel_comment", _text_or_none(row.get("cancelComment"), 500))
+
+    raw_items = row.get("items")
+    if isinstance(raw_items, list):
+        items = _normalize_iiko_items(raw_items)
+        if order.iiko_items != items:
+            order.iiko_items = items
+            changed = True
+
+        # Пустой список — это «нечего показать», а не «всё убрали». Так
+        # приходят отменённые и закрытые заказы, и объявлять это правкой
+        # состава нельзя: гость увидел бы пустую карточку «заказ изменили»
+        cancelled = bool(row.get("cancelledAt")) or order.status is OrderStatus.CANCELLED
+        items_changed = (
+            bool(items)
+            and not cancelled
+            and await _iiko_items_changed(session, tenant, order, items)
+        )
+
+        next_changed_at = (order.iiko_items_changed_at or now) if items_changed else None
+        if order.iiko_items_changed_at != next_changed_at:
+            order.iiko_items_changed_at = next_changed_at
+            changed = True
+
+    if changed:
+        order.iiko_status_updated_at = now
+
+    return changed
+
+
+def _normalize_iiko_items(raw: object) -> list[dict[str, object]]:
+    if not isinstance(raw, list):
+        return []
+
+    result: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+
+        product_id = str(item.get("productId") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if not product_id and not name:
+            continue
+
+        result.append(
+            {
+                "product_id": product_id,
+                "name": name,
+                "amount": _float(item.get("amount")),
+                "price": _float(item.get("price")),
+                "net_sum": _float(item.get("netSum")),
+                "group_name": str(item.get("groupName") or "").strip(),
+                "group_path": str(item.get("groupPath") or "").strip(),
+            }
+        )
+
+    return result
+
+
+async def _iiko_items_changed(
+    session: AsyncSession,
+    tenant: Tenant,
+    order: Order,
+    actual_items: list[dict[str, object]],
+) -> bool:
+    expected = await _expected_iiko_fingerprint(session, tenant, order)
+    actual = _actual_iiko_fingerprint(actual_items)
+    if not expected:
+        return False
+    return expected != actual
+
+
+async def _expected_iiko_fingerprint(
+    session: AsyncSession, tenant: Tenant, order: Order
+) -> dict[str, float]:
+    links = await _links(session, tenant, order)
+    result: defaultdict[str, float] = defaultdict(float)
+
+    for item in order.items:
+        link = links.get(("dish", str(item.dish_id))) if item.dish_id else None
+        _add_iiko_fingerprint(result, link.product_id if link else "", item.name, item.quantity)
+
+        for extra in item.extras or []:
+            extra_link = links.get(("extra", str(extra.get("id") or "")))
+            _add_iiko_fingerprint(
+                result,
+                extra_link.product_id if extra_link else "",
+                str(extra.get("name") or ""),
+                item.quantity,
+            )
+
+    if (order.persons_count or 0) > 0 and order.cutlery_kopecks > 0:
+        _add_iiko_fingerprint(result, "", "Приборы", order.persons_count or 0)
+
+    return dict(result)
+
+
+def _actual_iiko_fingerprint(items: list[dict[str, object]]) -> dict[str, float]:
+    result: defaultdict[str, float] = defaultdict(float)
+    for item in items:
+        _add_iiko_fingerprint(
+            result,
+            str(item.get("product_id") or ""),
+            str(item.get("name") or ""),
+            _float(item.get("amount")),
+        )
+    return dict(result)
+
+
+def _add_iiko_fingerprint(
+    target: defaultdict[str, float], product_id: str, name: str, amount: float | int
+) -> None:
+    key = (
+        CUTLERY_FINGERPRINT_KEY
+        if _is_cutlery_name(name)
+        else product_id.strip() or _normalize(name)
+    )
+    if not key:
+        return
+    target[key] = round(target[key] + float(amount or 0), 3)
+
+
+def _is_cutlery_name(name: str) -> bool:
+    normalized = _normalize(name)
+    return normalized == "приборы" or normalized.startswith("приборы одноразовые")
+
+
+def _float(value: object) -> float:
+    try:
+        return round(float(str(value or 0)), 3)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _text_or_none(value: object, limit: int) -> str | None:
+    text = str(value or "").strip()
+    return text[:limit] or None
+
+
+def _cancel_reason(row: dict[str, object]) -> str:
+    cause = _text_or_none(row.get("cancelCause"), 200)
+    comment = _text_or_none(row.get("cancelComment"), 200)
+    if cause and comment and cause != comment:
+        return f"{cause}: {comment}"[:300]
+    return (comment or cause or "Отменён рестораном на кассе")[:300]
+
+
+def _parse_iiko_time(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 async def _notify(session: AsyncSession, tenant: Tenant, order: Order) -> None:
@@ -650,7 +999,8 @@ def _rank(status: OrderStatus) -> int:
 
 def _status_from_marks(row: dict[str, object]) -> OrderStatus | None:
     """Какой этап показать гостю по меткам времени с кассы."""
-    if row.get("cancelledAt"):
+    status = str(row.get("status") or "").lower()
+    if row.get("cancelledAt") or status == "cancelled":
         return OrderStatus.CANCELLED
     if row.get("deliveredAt"):
         return OrderStatus.COMPLETED
@@ -750,17 +1100,28 @@ async def groups(
     которое реально продаётся, лежит в нескольких группах — по ним и работаем.
     """
     rows = await session.execute(
-        select(IikoProduct.group_name, func.count())
+        select(IikoProduct.group_path, IikoProduct.group_name, func.count())
         .where(
             IikoProduct.tenant_id == tenant.id,
             IikoProduct.restaurant_id == restaurant_id,
             IikoProduct.is_active.is_(True),
+            IikoProduct.product_type.in_(SELLABLE_PRODUCT_TYPES)
+            | IikoProduct.product_type.is_(None),
         )
-        .group_by(IikoProduct.group_name)
+        .group_by(IikoProduct.group_path, IikoProduct.group_name)
         .order_by(func.count().desc())
     )
 
-    return [{"name": name or "", "products": total} for name, total in rows]
+    result = [
+        {
+            "name": name or path or "",
+            "path": path or name or "",
+            "products": total,
+            "is_preset": _is_mamaroma_menu_path(path or name or ""),
+        }
+        for path, name, total in rows
+    ]
+    return sorted(result, key=lambda row: (not bool(row["is_preset"]), str(row["path"])))
 
 
 def _tokens(name: str) -> set[str]:
@@ -802,7 +1163,7 @@ async def search_products(
         IikoProduct.is_active.is_(True),
     )
     if only_groups:
-        stmt = stmt.where(IikoProduct.group_name.in_(only_groups))
+        stmt = stmt.where(_groups_clause(only_groups))
 
     needle = query.strip()
     if needle:
@@ -830,7 +1191,7 @@ async def suggest(
         IikoProduct.is_active.is_(True),
     )
     if only_groups:
-        stmt = stmt.where(IikoProduct.group_name.in_(only_groups))
+        stmt = stmt.where(_groups_clause(only_groups))
 
     products = list(await session.scalars(stmt))
     found: dict[str, list[IikoProduct]] = {}
@@ -868,11 +1229,9 @@ async def auto_match(
         IikoProduct.is_active.is_(True),
     )
     if only_groups:
-        query = query.where(IikoProduct.group_name.in_(only_groups))
+        query = query.where(_groups_clause(only_groups))
 
-    products: dict[str, list[str]] = {}
-    for product in await session.scalars(query):
-        products.setdefault(_normalize(product.name), []).append(product.product_id)
+    products = list(await session.scalars(query))
 
     linked_dishes = set()
     linked_extras = set()
@@ -889,14 +1248,33 @@ async def auto_match(
     matched = 0
     skipped = 0
 
-    dishes = await session.scalars(
-        select(Dish).where(Dish.tenant_id == tenant.id, Dish.is_active.is_(True))
+    not_sold = select(DishPrice.dish_id).where(
+        DishPrice.tenant_id == tenant.id,
+        DishPrice.restaurant_id == restaurant_id,
+        DishPrice.is_available.is_(False),
     )
-    for dish in dishes:
+    dishes = await session.execute(
+        select(Dish, MenuCategory.name)
+        .join(MenuCategory, MenuCategory.id == Dish.category_id)
+        .where(
+            Dish.tenant_id == tenant.id,
+            Dish.is_active.is_(True),
+            MenuCategory.is_active.is_(True),
+            ~Dish.id.in_(not_sold),
+        )
+    )
+    for dish, category_name in dishes:
         if dish.id in linked_dishes:
             continue
 
-        found = products.get(_normalize(dish.name), [])
+        found = [
+            product.product_id
+            for product in products
+            if _normalize(product.name) == _normalize(dish.name)
+            and _is_mamaroma_category_path(
+                category_name, product.group_path or product.group_name or ""
+            )
+        ]
         if len(found) != 1:
             skipped += 1
             continue
@@ -911,26 +1289,38 @@ async def auto_match(
         )
         matched += 1
 
+    # Автоматом не ставим добавки: для них iikoFront часто требует ещё
+    # modifier_group_id. Пока плагин не выгружает группы модификаторов,
+    # безопаснее оставить добавку несопоставленной, чем завести заказ криво.
     extras = await session.scalars(
         select(DishExtra).where(DishExtra.tenant_id == tenant.id, DishExtra.is_active.is_(True))
     )
     for extra in extras:
         if extra.id in linked_extras:
             continue
-
-        found = products.get(_normalize(extra.name), [])
-        if len(found) != 1:
-            skipped += 1
-            continue
-
-        session.add(
-            IikoLink(
-                tenant_id=tenant.id,
-                restaurant_id=restaurant_id,
-                extra_id=extra.id,
-                product_id=found[0],
-            )
-        )
-        matched += 1
+        skipped += 1
 
     return matched, skipped
+
+
+def _groups_clause(groups: list[str]) -> ColumnElement[bool]:
+    return or_(IikoProduct.group_path.in_(groups), IikoProduct.group_name.in_(groups))
+
+
+def _is_mamaroma_menu_path(path: str) -> bool:
+    normalized = path.upper()
+    if any(marker in normalized for marker in MAMAROMA_DENY_GROUP_MARKERS):
+        return False
+    return any(normalized.startswith(prefix) for prefix in MAMAROMA_MENU_GROUP_PATH_PREFIXES)
+
+
+def _is_mamaroma_category_path(category_name: str, path: str) -> bool:
+    normalized = path.upper()
+    if any(marker in normalized for marker in MAMAROMA_DENY_GROUP_MARKERS):
+        return False
+
+    prefixes = MAMAROMA_CATEGORY_GROUP_PATH_PREFIXES.get(category_name.strip())
+    if not prefixes:
+        return _is_mamaroma_menu_path(path)
+
+    return any(normalized.startswith(prefix) for prefix in prefixes)

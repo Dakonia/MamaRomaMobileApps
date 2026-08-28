@@ -25,6 +25,7 @@ from app.schemas.order import (
     CheckoutLimits,
     CheckoutPreview,
     CheckoutPreviewRequest,
+    IikoOrderItemRead,
     OrderCreate,
     OrderItemCreate,
     OrderItemExtraRead,
@@ -808,6 +809,14 @@ def to_read(order: Order, feedback_left: bool = False) -> OrderRead:
         delivery_at=order.delivery_at,
         address_text=order.address_text,
         comment=order.comment,
+        cancel_reason=order.cancel_reason,
+        iiko_status=order.iiko_status,
+        iiko_problem_comment=order.iiko_problem_comment,
+        iiko_courier_name=order.iiko_courier_name,
+        iiko_cancel_cause=order.iiko_cancel_cause,
+        iiko_cancel_comment=order.iiko_cancel_comment,
+        iiko_items=[_iiko_item_to_read(item) for item in order.iiko_items or []],
+        iiko_items_changed_at=order.iiko_items_changed_at,
         subtotal_kopecks=order.subtotal_kopecks,
         delivery_kopecks=order.delivery_kopecks,
         cutlery_kopecks=order.cutlery_kopecks,
@@ -840,3 +849,22 @@ def to_read(order: Order, feedback_left: bool = False) -> OrderRead:
             for item in order.items
         ],
     )
+
+
+def _iiko_item_to_read(item: dict[str, object]) -> IikoOrderItemRead:
+    return IikoOrderItemRead(
+        product_id=str(item.get("product_id") or ""),
+        name=str(item.get("name") or ""),
+        amount=_read_float(item.get("amount")),
+        price=_read_float(item.get("price")),
+        net_sum=_read_float(item.get("net_sum")),
+        group_name=str(item.get("group_name") or ""),
+        group_path=str(item.get("group_path") or ""),
+    )
+
+
+def _read_float(value: object) -> float:
+    try:
+        return float(str(value or 0))
+    except (TypeError, ValueError):
+        return 0.0

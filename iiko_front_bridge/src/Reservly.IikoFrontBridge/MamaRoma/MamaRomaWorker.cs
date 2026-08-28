@@ -76,6 +76,7 @@ internal sealed class MamaRomaWorker : IDisposable
             $"MamaRoma: интеграция запущена. Ресторан={config.RestaurantId}, " +
             $"заказы={config.AcceptDeliveries}, стоп-лист={config.SyncStopList}, " +
             $"меню={config.SyncMenu}, статусы={config.SyncDeliveryStatus}, " +
+            $"схемаМеню={config.MenuSchemaVersion}, " +
             $"порогОстатка={config.RemainingAmountThreshold} (по остатку={config.StopOnRemainingAmount})."
         );
     }
@@ -235,7 +236,11 @@ internal sealed class MamaRomaWorker : IDisposable
             return;
         }
 
-        var hash = BridgeJson.SerializeCamelCase(snapshot.Products);
+        var hash = BridgeJson.SerializeCamelCase(new
+        {
+            snapshot.SchemaVersion,
+            snapshot.Products,
+        });
         if (hash == _lastMenuHash)
         {
             return;

@@ -7,9 +7,12 @@ using Resto.Front.Api.Data.Assortment;
 using Resto.Front.Api.Data.Brd;
 using Resto.Front.Api.Data.Orders;
 using Resto.Front.Api.Data.Organization;
+using Resto.Front.Api.Data.Search;
 using Resto.Front.Api.Data.Security;
 using Resto.Front.Api.Editors;
+using Resto.Front.Api.Editors.Stubs;
 using Reservly.IikoFrontBridge.Collectors;
+using System.Text.RegularExpressions;
 
 namespace Reservly.IikoFrontBridge.MamaRoma;
 
@@ -22,6 +25,11 @@ namespace Reservly.IikoFrontBridge.MamaRoma;
 /// </summary>
 internal sealed class DeliveryWriter
 {
+    private static readonly Guid EmptyLineAddressStreetId = Guid.Parse("f8aaf1ec-8f46-907f-9357-e4c27bab5f78");
+    private const string OrderExternalDataKey = "mamaroma.orderId";
+    private const string OrderOriginName = "Мобильное";
+    private const string OrderSourceTitle = "Мобильное приложение";
+
     private readonly MamaRomaConfig _config;
 
     public DeliveryWriter(MamaRomaConfig config)
@@ -42,7 +50,7 @@ internal sealed class DeliveryWriter
             // Отчёт мог не дойти до сервера — тогда он отдаст заказ снова.
             // Ищем его в кассе по внешнему номеру: вторая доставка на кухню
             // хуже любой ошибки связи
-            var already = FindExisting(order.OrderId);
+            var already = FindExisting(order);
             if (already != null)
             {
                 result.Status = "accepted";
@@ -67,12 +75,15 @@ internal sealed class DeliveryWriter
             }
 
             // Собираем позиции до открытия сессии: если товара нет в номенклатуре,
-            // лучше отказаться сразу, чем оставить в iiko недособранный заказ
-            var resolved = ResolveItems(order, result.MissingProducts);
-            if (result.MissingProducts.Count > 0)
+            // лучше отказаться сразу, чем оставить в iiko недособранный заказ.
+            // Если в настройках задан аварийный товар, неизвестные позиции
+            // заводим им с явным комментарием менеджеру.
+            var unresolved = new List<string>();
+            var resolved = ResolveItems(order, unresolved, result.MissingProducts);
+            if (unresolved.Count > 0)
             {
                 result.Status = "failed";
-                result.Error = "Не найдены товары: " + string.Join(", ", result.MissingProducts);
+                result.Error = "Не найдены товары: " + string.Join(", ", unresolved);
                 return result;
             }
             if (resolved.Count == 0)
@@ -80,6 +91,10 @@ internal sealed class DeliveryWriter
                 result.Status = "failed";
                 result.Error = "В заказе нет позиций";
                 return result;
+            }
+            if (result.MissingProducts.Count > 0)
+            {
+                result.Error = "Использованы аварийные позиции: " + string.Join(", ", result.MissingProducts);
             }
 
             var deliveryOperator = PluginContext.Operations.GetCurrentUser();
@@ -89,7 +104,7 @@ internal sealed class DeliveryWriter
             );
 
             // Самовывоз идёт без адреса — так требует API
-            var address = isPickup ? null : BuildAddress(order.Address);
+            var address = isPickup ? null : BuildAddress(order);
 
             var editSession = PluginContext.Operations.CreateEditSession();
 
@@ -121,10 +136,30 @@ internal sealed class DeliveryWriter
                     deliveryOrder,
                     guest,
                     item.Size,
-                    OrderItemCourse.First,
-                    null                    // цену не навязываем: iiko берёт свою
+                    OrderItemCourse.Default,
+                    item.PredefinedPrice
                 );
 
+                if (!string.IsNullOrWhiteSpace(item.CustomName))
+                {
+                    TrySafely(() => editSession.SetProductItemCustomName(
+                            TrimTo(item.CustomName, 80),
+                            deliveryOrder,
+                            addedItem),
+                        "SetProductItemCustomName");
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.Comment))
+                {
+                    TrySafely(() => editSession.ChangeOrderItemComment(
+                            TrimTo(item.Comment, 255),
+                            deliveryOrder,
+                            addedItem),
+                        "ChangeOrderItemComment");
+                }
+
+                var addedModifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var addedGroupAmounts = new Dictionary<Guid, int>();
                 foreach (var modifier in item.Modifiers)
                 {
                     // Количество модификатора целое: касса считает их штуками.
@@ -138,7 +173,23 @@ internal sealed class DeliveryWriter
                         modifier.Amount,
                         null
                     );
+                    MarkModifierAdded(
+                        addedModifierKeys,
+                        addedGroupAmounts,
+                        modifier.Product,
+                        modifier.Group,
+                        modifier.Amount
+                    );
                 }
+
+                AddDefaultAndMandatoryModifiers(
+                    editSession,
+                    deliveryOrder,
+                    addedItem,
+                    item.Product,
+                    addedModifierKeys,
+                    addedGroupAmounts
+                );
             }
 
             // Имя дублируем отдельным полем: без карточки клиента оператор
@@ -155,19 +206,31 @@ internal sealed class DeliveryWriter
                     "ChangeDeliveryEmail");
             }
 
-            var comment = BuildComment(order);
+            var comment = BuildComment(order, result.MissingProducts);
             if (!string.IsNullOrWhiteSpace(comment))
             {
                 TrySafely(() => editSession.ChangeDeliveryComment(comment, deliveryOrder),
                     "ChangeDeliveryComment");
             }
 
-            // Мост для статусов: по внешнему номеру мы потом находим, какому гостю
-            // слать пуш. Без него пришлось бы сопоставлять по телефону и времени
+            TrySafely(() => editSession.ChangeOrderOriginName(OrderOriginName, deliveryOrder),
+                "ChangeOrderOriginName");
+
+            // Видимый внешний номер: без технического UUID, чтобы менеджер видел
+            // человеческое происхождение заказа.
+            var externalNumber = BuildExternalNumber(order);
+            if (!string.IsNullOrWhiteSpace(externalNumber))
+            {
+                TrySafely(() => editSession.ChangeOrderExternalNumber(externalNumber, deliveryOrder),
+                    "ChangeOrderExternalNumber");
+            }
+
+            // Скрытый мост для статусов и защиты от дублей. iiko хранит его только
+            // в iikoFront во время жизни заказа, наружу менеджеру не показывает.
             if (!string.IsNullOrWhiteSpace(order.OrderId))
             {
-                TrySafely(() => editSession.ChangeOrderExternalNumber(order.OrderId, deliveryOrder),
-                    "ChangeOrderExternalNumber");
+                TrySafely(() => editSession.AddOrderExternalData(OrderExternalDataKey, order.OrderId, false, deliveryOrder),
+                    "AddOrderExternalData");
             }
 
             // Источник заказа: в отчётах iiko заказы приложения отделятся от
@@ -208,41 +271,252 @@ internal sealed class DeliveryWriter
     /// Собирает адрес так, как его прочтёт курьер. Координаты намеренно не задаём:
     /// курьеры ездят по названию улицы.
     ///
-    /// Line1 — то, по чему находят дом. Line2 — как найти гостя внутри дома.
-    /// Отдельные поля заполняем тоже: Line2 видит курьер одной строкой в накладной,
-    /// а оператор смотрит на поля в карточке. Дублирование здесь осмысленное.
+    /// Line1 — то, по чему находят дом. Подъезд, этаж, квартира и домофон
+    /// идут в отдельные поля iiko. Line2 используем только как запасную строку,
+    /// если какое-то значение пришлось укоротить перед отправкой.
     /// </summary>
-    private static AddressDto BuildAddress(PendingOrderAddress source)
+    private static AddressDto BuildAddress(PendingOrder order)
     {
+        var source = order?.Address;
         if (source == null)
         {
             return null;
         }
 
+        var line2Fallback = new List<string>();
         var address = new AddressDto
         {
             Line1 = BuildLine1(source),
-            Line2 = BuildLine2(source),
-            Flat = Trim(source.Flat),
-            Entrance = Trim(source.Entrance),
-            Floor = Trim(source.Floor),
-            Doorphone = Trim(source.Doorphone),
+            Flat = AddressWindowValue(source.Flat, "кв.", 50, line2Fallback),
+            Entrance = AddressWindowValue(source.Entrance, "под.", 30, line2Fallback),
+            Floor = AddressWindowValue(source.Floor, "эт.", 20, line2Fallback),
+            Doorphone = AddressWindowValue(source.Doorphone, "домофон", 50, line2Fallback),
             Index = Trim(source.PostalCode),
-            AdditionalInfo = Trim(source.AdditionalInfo),
+            AdditionalInfo = BuildNotes(order),
         };
+        address.Line2 = string.Join(", ", line2Fallback);
+
+        if (UseLineAddressFormat())
+        {
+            address.StreetId = EmptyLineAddressStreetId;
+            address.House = string.Empty;
+            address.Building = string.Empty;
+            PluginDiagnostics.Info("MamaRoma: адрес доставки передан в новом формате iiko Line1.");
+            return address;
+        }
+
+        var street = ResolveStreet(source);
+        if (street != null)
+        {
+            address.StreetId = street.Id;
+            PluginDiagnostics.Info(
+                $"MamaRoma: улица доставки «{source.Street}» сопоставлена с iiko «{street.Name}» ({street.Id})."
+            );
+        }
+        else
+        {
+            var defaultStreet = ResolveDefaultStreet();
+            if (defaultStreet != null)
+            {
+                address.StreetId = defaultStreet.Id;
+                PluginDiagnostics.Info(
+                    $"MamaRoma: улица доставки «{source.Street}» не найдена, адрес передан строкой Line1 через улицу iiko «{defaultStreet.Name}» ({defaultStreet.Id})."
+                );
+            }
+            else if (!string.IsNullOrWhiteSpace(source.Street))
+            {
+                address.StreetId = EmptyLineAddressStreetId;
+                PluginDiagnostics.Info(
+                    $"MamaRoma: улица доставки «{source.Street}» не найдена в iiko, используем пустую улицу iiko ({EmptyLineAddressStreetId})."
+                );
+            }
+        }
 
         // House заполняем и отдельно: часть отчётов iiko смотрит именно на него
         var house = BuildHouse(source);
         if (!string.IsNullOrWhiteSpace(house))
         {
-            address.House = house;
+            address.House = TrimTo(house, 20);
         }
         if (!string.IsNullOrWhiteSpace(source.Building))
         {
-            address.Building = Trim(source.Building);
+            address.Building = TrimTo(source.Building, 10);
         }
 
         return address;
+    }
+
+    private static bool UseLineAddressFormat()
+    {
+        try
+        {
+            var restaurant = PluginContext.Operations.GetHostRestaurant();
+            var settings = FrontOrderValueReader.ReadProperty(restaurant, "AddressShowTypeSettings");
+            if (settings == null)
+            {
+                return false;
+            }
+
+            var useNewFormat = ReadBool(settings, "UseNewFormat");
+            var addressShowType = FrontOrderValueReader.ReadString(settings, "AddressShowType");
+            return useNewFormat
+                   || string.Equals(addressShowType, "City", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(addressShowType, "International", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(addressShowType, "NoPostCode", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info($"MamaRoma: настройки формата адреса iiko не прочитаны: {exc.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// iikoFront требует StreetId из справочника улиц даже когда адрес передан
+    /// строкой Line1. Приложение отдаёт человеческое название, поэтому ищем
+    /// улицу локально на терминале и терпимо относимся к сокращениям.
+    /// </summary>
+    private static IStreet ResolveStreet(PendingOrderAddress source)
+    {
+        var raw = Trim(source?.Street);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var expected = NormalizeStreetName(raw);
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            return null;
+        }
+
+        var candidates = new Dictionary<Guid, IStreet>();
+
+        foreach (var query in StreetSearchQueries(raw))
+        {
+            try
+            {
+                var found = PluginContext.Operations.SearchStreets(
+                    query,
+                    SearchType.Prefix,
+                    StreetFields.Name,
+                    null
+                );
+                AddStreetCandidates(candidates, found);
+            }
+            catch (Exception exc)
+            {
+                PluginDiagnostics.Info($"MamaRoma: поиск улицы «{query}» не удался: {exc.Message}");
+            }
+        }
+
+        var exact = candidates.Values.FirstOrDefault(
+            street => NormalizeStreetName(street.Name) == expected
+        );
+        if (exact != null)
+        {
+            return exact;
+        }
+
+        try
+        {
+            AddStreetCandidates(candidates, PluginContext.Operations.GetActiveStreets());
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info($"MamaRoma: список активных улиц iiko не получен: {exc.Message}");
+        }
+
+        return candidates.Values
+            .Where(street => NormalizeStreetName(street.Name) == expected)
+            .OrderBy(street => street.Name.Length)
+            .FirstOrDefault();
+    }
+
+    private static IStreet ResolveDefaultStreet()
+    {
+        try
+        {
+            return PluginContext.Operations.GetActiveStreets()
+                .FirstOrDefault(street =>
+                {
+                    var name = Trim(street.Name);
+                    return name.Length > 0 && name.All(ch => ch == '-' || ch == '—' || char.IsWhiteSpace(ch));
+                });
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info($"MamaRoma: стандартная улица iiko не найдена: {exc.Message}");
+            return null;
+        }
+    }
+
+    private static void AddStreetCandidates(
+        IDictionary<Guid, IStreet> target,
+        IEnumerable<IStreet> streets
+    )
+    {
+        if (streets == null)
+        {
+            return;
+        }
+
+        foreach (var street in streets)
+        {
+            if (street != null && !target.ContainsKey(street.Id))
+            {
+                target[street.Id] = street;
+            }
+        }
+    }
+
+    private static IEnumerable<string> StreetSearchQueries(string street)
+    {
+        var raw = Trim(street);
+        var core = StreetCore(raw);
+        var queries = new[]
+        {
+            raw,
+            core,
+            "проспект " + core,
+            "пр-кт " + core,
+            core + " проспект",
+            core + " пр-кт",
+        };
+
+        return queries
+            .Select(Trim)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string StreetCore(string value)
+    {
+        return NormalizeStreetName(value);
+    }
+
+    private static string NormalizeStreetName(string value)
+    {
+        var normalized = Trim(value).ToLowerInvariant().Replace('ё', 'е');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        normalized = normalized
+            .Replace("пр-кт", " ")
+            .Replace("просп.", " ")
+            .Replace("пр.", " ")
+            .Replace("ул.", " ")
+            .Replace("наб.", " ")
+            .Replace("ш.", " ");
+        normalized = Regex.Replace(
+            normalized,
+            @"\b(проспект|просп|пр|улица|ул|набережная|наб|шоссе|ш|переулок|пер|аллея|ал|бульвар|бул|площадь|пл)\b",
+            " "
+        );
+        normalized = Regex.Replace(normalized, @"[^0-9a-zа-я]+", " ");
+        return string.Join(" ", normalized.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
     }
 
     /// <summary>«Санкт-Петербург, Невский пр., д. 28, корп. 2, стр. 1»</summary>
@@ -270,15 +544,26 @@ internal sealed class DeliveryWriter
         return string.Join(", ", parts);
     }
 
-    /// <summary>«под. 3, эт. 4, кв. 55, домофон 55К»</summary>
-    private static string BuildLine2(PendingOrderAddress source)
+    private static string AddressWindowValue(
+        string value,
+        string label,
+        int maxLength,
+        List<string> fallbackParts
+    )
     {
-        var parts = new List<string>();
-        AppendLabeled(parts, "под.", source.Entrance);
-        AppendLabeled(parts, "эт.", source.Floor);
-        AppendLabeled(parts, "кв.", source.Flat);
-        AppendLabeled(parts, "домофон", source.Doorphone);
-        return string.Join(", ", parts);
+        var trimmed = Trim(value);
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return string.Empty;
+        }
+
+        var safe = trimmed.Length <= maxLength ? trimmed : trimmed.Substring(0, maxLength);
+        if (!string.Equals(safe, trimmed, StringComparison.Ordinal))
+        {
+            fallbackParts.Add(label + " " + trimmed);
+        }
+
+        return safe;
     }
 
     private static string BuildHouse(PendingOrderAddress source)
@@ -295,28 +580,33 @@ internal sealed class DeliveryWriter
         return house;
     }
 
-    /// <summary>
-    /// Комментарий курьеру. Уточнения по адресу дублируем сюда же: курьер
-    /// в накладной чаще смотрит на комментарий, чем на поля.
-    /// </summary>
-    private static string BuildComment(PendingOrder order)
+    /// <summary>Комментарий к заказу: сначала оплата, затем текст гостя.</summary>
+    private static string BuildComment(PendingOrder order, IEnumerable<string> fallbackItems)
     {
         var parts = new List<string>();
-        Append(parts, order.Comment);
-
-        if (order.Address != null && !string.IsNullOrWhiteSpace(order.Address.AdditionalInfo))
-        {
-            Append(parts, order.Address.AdditionalInfo);
-        }
-
-        if (order.PersonsCount > 0)
-        {
-            Append(parts, $"Приборов: {order.PersonsCount}");
-        }
-
         Append(parts, BuildMoneyLine(order));
-        Append(parts, "Заказ из приложения № " + Trim(order.OrderNumber));
-        return string.Join(". ", parts);
+        Append(parts, order.Comment);
+        Append(parts, order.Address == null ? string.Empty : order.Address.Comment);
+        Append(parts, BuildFallbackSummary(fallbackItems));
+        return TrimTo(string.Join(". ", parts), 1000);
+    }
+
+    private static string BuildFallbackSummary(IEnumerable<string> fallbackItems)
+    {
+        if (fallbackItems == null)
+        {
+            return string.Empty;
+        }
+
+        var items = fallbackItems
+            .Select(Trim)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return items.Count == 0
+            ? string.Empty
+            : "ВНИМАНИЕ: не найдены позиции, добавлен аварийный товар: " + string.Join("; ", items);
     }
 
     /// <summary>
@@ -332,42 +622,70 @@ internal sealed class DeliveryWriter
             return string.Empty;
         }
 
-        var parts = new List<string>();
-
-        var label = string.IsNullOrWhiteSpace(payment.MethodLabel) ? payment.Method : payment.MethodLabel;
+        var method = Trim(payment.Method).ToLowerInvariant();
         if (payment.IsPaid)
         {
-            parts.Add($"ОПЛАЧЕНО в приложении ({label})");
-        }
-        else if (!string.IsNullOrWhiteSpace(label))
-        {
-            parts.Add($"К оплате {label}");
-        }
-
-        if (payment.TotalKopecks > 0)
-        {
-            parts.Add($"итого {Money(payment.TotalKopecks)}");
+            if (method == "online_sbp")
+            {
+                return "Оплачено в приложении: СБП";
+            }
+            return "Оплачено в приложении";
         }
 
-        if (payment.DiscountKopecks > 0)
+        if (method == "cash_on_delivery")
         {
-            var reason = string.IsNullOrWhiteSpace(payment.PromoCode)
-                ? "скидка"
-                : $"промокод {payment.PromoCode}";
-            parts.Add($"{reason} −{Money(payment.DiscountKopecks)}");
+            return payment.ChangeFromKopecks > 0
+                ? $"Наличные с {Money(payment.ChangeFromKopecks)}"
+                : "Наличные";
         }
 
-        if (payment.PointsSpent > 0)
+        if (method == "card_on_delivery")
         {
-            parts.Add($"баллами −{Money(payment.PointsSpent)}");
+            return "Оплата картой";
         }
 
-        if (!payment.IsPaid && payment.ChangeFromKopecks > 0)
+        if (method == "online_sbp")
         {
-            parts.Add($"сдача с {Money(payment.ChangeFromKopecks)}");
+            return "Оплата СБП";
         }
 
-        return string.Join(", ", parts);
+        if (method == "online_card")
+        {
+            return "Оплата картой онлайн";
+        }
+
+        var label = string.IsNullOrWhiteSpace(payment.MethodLabel) ? payment.Method : payment.MethodLabel;
+        return string.IsNullOrWhiteSpace(label) ? string.Empty : "Оплата " + label;
+    }
+
+    private static string BuildNotes(PendingOrder order)
+    {
+        var parts = new List<string>();
+        Append(parts, string.IsNullOrWhiteSpace(order?.MarketingSource) ? OrderSourceTitle : order.MarketingSource);
+
+        var payment = order?.Payment;
+        if (payment != null)
+        {
+            if (payment.PointsSpent > 0)
+            {
+                parts.Add("Списано баллов: " + payment.PointsSpent);
+            }
+            if (payment.PointsEarned > 0)
+            {
+                parts.Add("Начислено баллов: " + payment.PointsEarned);
+            }
+            if (payment.DiscountKopecks > 0)
+            {
+                var discount = "Скидка: " + Money(payment.DiscountKopecks);
+                if (!string.IsNullOrWhiteSpace(payment.PromoCode))
+                {
+                    discount += " по промокоду " + payment.PromoCode;
+                }
+                parts.Add(discount);
+            }
+        }
+
+        return string.Join(". ", parts);
     }
 
     private static string Money(int kopecks)
@@ -380,8 +698,16 @@ internal sealed class DeliveryWriter
     /// свежие: старые заказы с тем же номером взяться неоткуда, а перебирать
     /// весь архив на каждом заказе дорого.
     /// </summary>
-    private static object FindExisting(string orderId)
+    private static string BuildExternalNumber(PendingOrder order)
     {
+        var number = Trim(order?.OrderNumber);
+        return string.IsNullOrWhiteSpace(number) ? OrderOriginName : OrderOriginName + " " + number;
+    }
+
+    private static object FindExisting(PendingOrder order)
+    {
+        var orderId = Trim(order?.OrderId);
+        var externalNumber = BuildExternalNumber(order);
         if (string.IsNullOrWhiteSpace(orderId))
         {
             return null;
@@ -391,8 +717,15 @@ internal sealed class DeliveryWriter
         {
             foreach (var candidate in LoadDeliveryOrders())
             {
+                var storedOrderId = ReadOrderExternalData(candidate, OrderExternalDataKey);
+                if (string.Equals(storedOrderId, orderId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+
                 var external = FrontOrderValueReader.ReadString(candidate, "ExternalNumber");
-                if (string.Equals(external, orderId, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(external, orderId, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(external, externalNumber, StringComparison.OrdinalIgnoreCase))
                 {
                     return candidate;
                 }
@@ -407,6 +740,23 @@ internal sealed class DeliveryWriter
         return null;
     }
 
+    private static string ReadOrderExternalData(object order, string key)
+    {
+        try
+        {
+            var frontOrder = order as IOrder;
+            if (frontOrder == null)
+            {
+                return string.Empty;
+            }
+            return PluginContext.Operations.TryGetOrderExternalDataByKey(frontOrder, key) ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     // ─────────────────────── позиции ───────────────────────
 
     private sealed class ResolvedItem
@@ -414,6 +764,9 @@ internal sealed class DeliveryWriter
         public IProduct Product { get; set; }
         public IProductSize Size { get; set; }
         public decimal Amount { get; set; }
+        public decimal? PredefinedPrice { get; set; }
+        public string CustomName { get; set; } = string.Empty;
+        public string Comment { get; set; } = string.Empty;
         public List<ResolvedModifier> Modifiers { get; } = new List<ResolvedModifier>();
     }
 
@@ -426,7 +779,11 @@ internal sealed class DeliveryWriter
         public int Amount { get; set; }
     }
 
-    private static List<ResolvedItem> ResolveItems(PendingOrder order, List<string> missing)
+    private List<ResolvedItem> ResolveItems(
+        PendingOrder order,
+        List<string> missing,
+        List<string> fallbackWarnings
+    )
     {
         var items = new List<ResolvedItem>();
 
@@ -435,7 +792,16 @@ internal sealed class DeliveryWriter
             var product = TryGetProduct(item.ProductId);
             if (product == null)
             {
-                missing.Add(Describe(item.Name, item.ProductId));
+                var description = Describe(item.Name, item.ProductId);
+                var fallback = ResolveMissingProductFallback(description, item.Amount);
+                if (fallback == null)
+                {
+                    missing.Add(description);
+                    continue;
+                }
+
+                fallbackWarnings.Add(description);
+                items.Add(fallback);
                 continue;
             }
 
@@ -451,14 +817,23 @@ internal sealed class DeliveryWriter
                 var modifierProduct = TryGetProduct(modifier.ProductId);
                 if (modifierProduct == null)
                 {
-                    missing.Add(Describe(modifier.Name, modifier.ProductId));
+                    var description = Describe(modifier.Name, modifier.ProductId);
+                    var fallback = ResolveMissingProductFallback(description, modifier.Amount);
+                    if (fallback == null)
+                    {
+                        missing.Add(description);
+                        continue;
+                    }
+
+                    fallbackWarnings.Add(description);
+                    items.Add(fallback);
                     continue;
                 }
 
                 resolved.Modifiers.Add(new ResolvedModifier
                 {
                     Product = modifierProduct,
-                    Group = TryGetProductGroup(modifier.GroupId),
+                    Group = ResolveModifierGroup(product, modifierProduct, TryGetProductGroup(modifier.GroupId)),
                     Amount = modifier.Amount > 0 ? (int)Math.Round(modifier.Amount) : 1,
                 });
             }
@@ -466,7 +841,347 @@ internal sealed class DeliveryWriter
             items.Add(resolved);
         }
 
+        AppendCutlery(order, missing, fallbackWarnings, items);
         return items;
+    }
+
+    private ResolvedItem ResolveMissingProductFallback(string description, decimal amount)
+    {
+        if (string.IsNullOrWhiteSpace(_config.MissingProductFallbackProductId))
+        {
+            return null;
+        }
+
+        var product = TryGetProduct(_config.MissingProductFallbackProductId);
+        if (product == null)
+        {
+            PluginDiagnostics.Info(
+                $"MamaRoma: аварийный товар «{_config.MissingProductFallbackProductName}» не найден в iiko ({_config.MissingProductFallbackProductId})."
+            );
+            return null;
+        }
+
+        var fallbackName = string.IsNullOrWhiteSpace(_config.MissingProductFallbackProductName)
+            ? "Аварийная позиция"
+            : _config.MissingProductFallbackProductName;
+
+        return new ResolvedItem
+        {
+            Product = product,
+            Amount = amount > 0 ? amount : 1,
+            Size = ResolveSize(product, _config.MissingProductFallbackProductSizeId),
+            PredefinedPrice = 0m,
+            CustomName = "НЕ НАЙДЕНО: " + description,
+            Comment = $"Аварийная замена через «{fallbackName}». Нужно вручную заменить на: {description}",
+        };
+    }
+
+    private void AppendCutlery(
+        PendingOrder order,
+        List<string> missing,
+        List<string> fallbackWarnings,
+        List<ResolvedItem> items
+    )
+    {
+        if (order.PersonsCount <= 0 || order.Payment == null || order.Payment.CutleryKopecks <= 0)
+        {
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(_config.CutleryProductName)
+            ? "Приборы"
+            : _config.CutleryProductName;
+
+        if (string.IsNullOrWhiteSpace(_config.CutleryProductId))
+        {
+            var description = $"{name} (не задан cutleryProductId)";
+            var fallback = ResolveMissingProductFallback(description, order.PersonsCount);
+            if (fallback == null)
+            {
+                missing.Add(description);
+                return;
+            }
+
+            fallbackWarnings.Add(description);
+            items.Add(fallback);
+            return;
+        }
+
+        var product = TryGetProduct(_config.CutleryProductId);
+        if (product == null)
+        {
+            var description = Describe(name, _config.CutleryProductId);
+            var fallback = ResolveMissingProductFallback(description, order.PersonsCount);
+            if (fallback == null)
+            {
+                missing.Add(description);
+                return;
+            }
+
+            fallbackWarnings.Add(description);
+            items.Add(fallback);
+            return;
+        }
+
+        items.Add(new ResolvedItem
+        {
+            Product = product,
+            Amount = order.PersonsCount,
+            Size = ResolveSize(product, _config.CutleryProductSizeId),
+            PredefinedPrice = CutleryUnitPrice(order),
+        });
+    }
+
+    private static decimal CutleryUnitPrice(PendingOrder order)
+    {
+        if (order.Payment == null || order.PersonsCount <= 0 || order.Payment.CutleryKopecks <= 0)
+        {
+            return 0m;
+        }
+
+        return decimal.Round(order.Payment.CutleryKopecks / 100m / order.PersonsCount, 2);
+    }
+
+    private static void AddDefaultAndMandatoryModifiers(
+        IEditSession editSession,
+        IOrderStub deliveryOrder,
+        IOrderProductItemStub addedItem,
+        IProduct product,
+        ISet<string> alreadyAddedKeys,
+        IDictionary<Guid, int> addedGroupAmounts
+    )
+    {
+        AddDefaultAndMandatorySimpleModifiers(
+            editSession,
+            deliveryOrder,
+            addedItem,
+            product,
+            alreadyAddedKeys
+        );
+        AddDefaultAndMandatoryGroupModifiers(
+            editSession,
+            deliveryOrder,
+            addedItem,
+            product,
+            alreadyAddedKeys,
+            addedGroupAmounts
+        );
+    }
+
+    private static void AddDefaultAndMandatorySimpleModifiers(
+        IEditSession editSession,
+        IOrderStub deliveryOrder,
+        IOrderProductItemStub addedItem,
+        IProduct product,
+        ISet<string> alreadyAddedKeys
+    )
+    {
+        IReadOnlyList<ISimpleModifier> modifiers;
+        try
+        {
+            modifiers = PluginContext.Operations.GetSimpleModifiers(product, null);
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info(
+                $"MamaRoma: обязательные модификаторы для «{product.Name}» не прочитаны: {exc.Message}"
+            );
+            return;
+        }
+
+        foreach (var modifier in modifiers ?? Enumerable.Empty<ISimpleModifier>())
+        {
+            var amount = Math.Max(modifier.MinimumAmount, modifier.DefaultAmount);
+            if (amount <= 0 || modifier.Product == null || !alreadyAddedKeys.Add(ModifierKey(modifier.Product, null)))
+            {
+                continue;
+            }
+
+            var payableAmount = PayableAmount(amount, modifier.FreeOfChargeAmount);
+            editSession.AddOrderModifierItem(
+                amount,
+                modifier.Product,
+                null,
+                deliveryOrder,
+                addedItem,
+                payableAmount,
+                null
+            );
+
+            PluginDiagnostics.Info(
+                $"MamaRoma: к «{product.Name}» добавлен обязательный модификатор iiko «{modifier.Product.Name}» x{amount}."
+            );
+        }
+    }
+
+    private static void AddDefaultAndMandatoryGroupModifiers(
+        IEditSession editSession,
+        IOrderStub deliveryOrder,
+        IOrderProductItemStub addedItem,
+        IProduct product,
+        ISet<string> alreadyAddedKeys,
+        IDictionary<Guid, int> addedGroupAmounts
+    )
+    {
+        IReadOnlyList<IGroupModifier> groups;
+        try
+        {
+            groups = PluginContext.Operations.GetGroupModifiers(product, null);
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info(
+                $"MamaRoma: групповые модификаторы для «{product.Name}» не прочитаны: {exc.Message}"
+            );
+            return;
+        }
+
+        foreach (var group in groups ?? Enumerable.Empty<IGroupModifier>())
+        {
+            if (group.ProductGroup == null)
+            {
+                continue;
+            }
+
+            var groupId = group.ProductGroup.Id;
+            var addedAmount = addedGroupAmounts.TryGetValue(groupId, out var current) ? current : 0;
+
+            foreach (var child in group.Items ?? Enumerable.Empty<IChildModifier>())
+            {
+                var amount = Math.Max(child.MinimumAmount, child.DefaultAmount);
+                if (amount <= 0 || child.Product == null)
+                {
+                    continue;
+                }
+
+                if (AddGroupModifier(
+                        editSession,
+                        deliveryOrder,
+                        addedItem,
+                        group,
+                        child,
+                        amount,
+                        alreadyAddedKeys,
+                        addedGroupAmounts))
+                {
+                    addedAmount += amount;
+                }
+            }
+
+            addedAmount = addedGroupAmounts.TryGetValue(groupId, out current) ? current : addedAmount;
+            if (group.MinimumAmount <= 0 || addedAmount >= group.MinimumAmount)
+            {
+                continue;
+            }
+
+            var candidates = (group.Items ?? Enumerable.Empty<IChildModifier>())
+                .Where(child => child.Product != null && !alreadyAddedKeys.Contains(ModifierKey(child.Product, group.ProductGroup)))
+                .ToList();
+            if (candidates.Count == 1)
+            {
+                AddGroupModifier(
+                    editSession,
+                    deliveryOrder,
+                    addedItem,
+                    group,
+                    candidates[0],
+                    group.MinimumAmount - addedAmount,
+                    alreadyAddedKeys,
+                    addedGroupAmounts
+                );
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                $"У товара «{product.Name}» обязательная группа модификаторов «{group.ProductGroup.Name}», но в iiko не задан вариант по умолчанию. Нужно выбрать модификатор в приложении или настроить default amount в iiko."
+            );
+        }
+    }
+
+    private static bool AddGroupModifier(
+        IEditSession editSession,
+        IOrderStub deliveryOrder,
+        IOrderProductItemStub addedItem,
+        IGroupModifier group,
+        IChildModifier child,
+        int amount,
+        ISet<string> alreadyAddedKeys,
+        IDictionary<Guid, int> addedGroupAmounts
+    )
+    {
+        if (amount <= 0 || child.Product == null || group.ProductGroup == null)
+        {
+            return false;
+        }
+
+        if (!alreadyAddedKeys.Add(ModifierKey(child.Product, group.ProductGroup)))
+        {
+            return false;
+        }
+
+        var payableAmount = PayableAmount(amount, Math.Max(child.FreeOfChargeAmount, group.FreeOfChargeAmount));
+        editSession.AddOrderModifierItem(
+            amount,
+            child.Product,
+            group.ProductGroup,
+            deliveryOrder,
+            addedItem,
+            payableAmount,
+            null
+        );
+
+        if (addedGroupAmounts.TryGetValue(group.ProductGroup.Id, out var current))
+        {
+            addedGroupAmounts[group.ProductGroup.Id] = current + amount;
+        }
+        else
+        {
+            addedGroupAmounts[group.ProductGroup.Id] = amount;
+        }
+
+        PluginDiagnostics.Info(
+            $"MamaRoma: к позиции добавлен групповой модификатор iiko «{child.Product.Name}» x{amount} из группы «{group.ProductGroup.Name}»."
+        );
+        return true;
+    }
+
+    private static void MarkModifierAdded(
+        ISet<string> alreadyAddedKeys,
+        IDictionary<Guid, int> addedGroupAmounts,
+        IProduct product,
+        IProductGroup group,
+        int amount
+    )
+    {
+        if (product == null)
+        {
+            return;
+        }
+
+        alreadyAddedKeys.Add(ModifierKey(product, group));
+        if (group == null)
+        {
+            return;
+        }
+
+        if (addedGroupAmounts.TryGetValue(group.Id, out var current))
+        {
+            addedGroupAmounts[group.Id] = current + amount;
+        }
+        else
+        {
+            addedGroupAmounts[group.Id] = amount;
+        }
+    }
+
+    private static string ModifierKey(IProduct product, IProductGroup group)
+    {
+        return ((group == null ? Guid.Empty : group.Id) + ":" + product.Id).ToLowerInvariant();
+    }
+
+    private static int PayableAmount(int amount, int freeOfChargeAmount)
+    {
+        return Math.Max(0, amount - Math.Max(0, freeOfChargeAmount));
     }
 
     private static IProduct TryGetProduct(string productId)
@@ -501,6 +1216,57 @@ internal sealed class DeliveryWriter
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Добавка может быть простой или групповой. Если сервер не знает группу,
+    /// ищем её по справочнику модификаторов конкретного блюда.
+    /// </summary>
+    private static IProductGroup ResolveModifierGroup(
+        IProduct parentProduct,
+        IProduct modifierProduct,
+        IProductGroup configuredGroup
+    )
+    {
+        if (configuredGroup != null || parentProduct == null || modifierProduct == null)
+        {
+            return configuredGroup;
+        }
+
+        try
+        {
+            var groups = PluginContext.Operations.GetGroupModifiers(parentProduct, null);
+            var matches = (groups ?? Enumerable.Empty<IGroupModifier>())
+                .Where(group => group.ProductGroup != null)
+                .Where(group => (group.Items ?? Enumerable.Empty<IChildModifier>())
+                    .Any(child => child.Product != null && child.Product.Id == modifierProduct.Id))
+                .Select(group => group.ProductGroup)
+                .Distinct()
+                .ToList();
+
+            if (matches.Count == 1)
+            {
+                PluginDiagnostics.Info(
+                    $"MamaRoma: группа модификатора «{modifierProduct.Name}» определена автоматически: «{matches[0].Name}»."
+                );
+                return matches[0];
+            }
+
+            if (matches.Count > 1)
+            {
+                PluginDiagnostics.Info(
+                    $"MamaRoma: модификатор «{modifierProduct.Name}» найден в нескольких группах товара «{parentProduct.Name}», нужна явная группа."
+                );
+            }
+        }
+        catch (Exception exc)
+        {
+            PluginDiagnostics.Info(
+                $"MamaRoma: группа модификатора «{modifierProduct.Name}» не определена: {exc.Message}"
+            );
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -680,6 +1446,25 @@ internal sealed class DeliveryWriter
     private static string Trim(string value)
     {
         return (value ?? string.Empty).Trim();
+    }
+
+    private static string TrimTo(string value, int maxLength)
+    {
+        var trimmed = Trim(value);
+        return trimmed.Length <= maxLength ? trimmed : trimmed.Substring(0, maxLength);
+    }
+
+    private static bool ReadBool(object source, string property)
+    {
+        try
+        {
+            var value = FrontOrderValueReader.ReadProperty(source, property);
+            return value is bool flag && flag;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void Append(List<string> parts, string value)

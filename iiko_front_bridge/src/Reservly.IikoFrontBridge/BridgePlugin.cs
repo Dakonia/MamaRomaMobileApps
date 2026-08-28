@@ -130,32 +130,44 @@ public sealed class BridgePlugin : IFrontPlugin, IDisposable
         PluginDiagnostics.Initialize(baseDirectory);
         _config = BridgeConfig.Load(baseDirectory);
         PluginDiagnostics.Configure(_config.DiagnosticsLogLevel);
-        _backendClient = new BackendClient(_config, baseDirectory);
-        _attendanceSessionTracker = new AttendanceSessionTracker(baseDirectory);
-        _cashSessionCollector = new CashSessionCollector(baseDirectory);
-        _liveOrderCache = new LiveOrderCache();
-        _bookingOrderCollector = new BookingOrderCollector(_liveOrderCache);
-        _deliveryOrderChangedSubscription = SubscribeDeliveryOrderChanged();
+
+        if (_config.ReservlyEnabled)
+        {
+            _backendClient = new BackendClient(_config, baseDirectory);
+            _attendanceSessionTracker = new AttendanceSessionTracker(baseDirectory);
+            _cashSessionCollector = new CashSessionCollector(baseDirectory);
+            _liveOrderCache = new LiveOrderCache();
+            _bookingOrderCollector = new BookingOrderCollector(_liveOrderCache);
+            _deliveryOrderChangedSubscription = SubscribeDeliveryOrderChanged();
+        }
 
         // Интеграция приложения поднимается последней и в своей песочнице:
         // если она не настроена или упала при старте, TryCreate вернёт null,
         // а сбор данных для Reservly запустится как обычно
         _mamaRomaWorker = MamaRomaWorker.TryCreate(_config.MamaRoma, baseDirectory);
 
-        _timer = new Timer(OnTimer, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(_config.PollIntervalSeconds));
-        PluginContext.Log.Info($"Reservly iikoFront bridge started. Poll interval: {_config.PollIntervalSeconds}s.");
-        PluginDiagnostics.Info(
-            $"Bridge started. PollIntervalSeconds={_config.PollIntervalSeconds}, " +
-            $"SyncAttendance={_config.SyncAttendance}, SyncRevenue={_config.SyncRevenue}, " +
-            $"SyncDeliveries={_config.SyncDeliveries}, SyncReportSnapshots={_config.SyncReportSnapshots}, " +
-            $"SyncTableOrders={_config.SyncTableOrders}, SyncLiveRevenue={_config.SyncLiveRevenue}, " +
-            $"SyncStopList={_config.SyncStopList}, " +
-            $"SyncBridgeStatus={_config.SyncBridgeStatus}, OfflineQueue={_config.OfflineQueueEnabled}, " +
-            $"SyncOrderLifecycle={_config.SyncOrderLifecycle}, SyncOrderAudit={_config.SyncOrderAudit}, " +
-            $"SyncDailyReconciliation={_config.SyncDailyReconciliation}, " +
-            $"ExcludeNonRevenuePayments={_config.ExcludeNonRevenuePayments}, " +
-            $"DiagnosticsLogLevel={_config.DiagnosticsLogLevel}"
-        );
+        if (_config.ReservlyEnabled)
+        {
+            _timer = new Timer(OnTimer, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(_config.PollIntervalSeconds));
+            PluginContext.Log.Info($"Reservly iikoFront bridge started. Poll interval: {_config.PollIntervalSeconds}s.");
+            PluginDiagnostics.Info(
+                $"Bridge started. ReservlyEnabled={_config.ReservlyEnabled}, PollIntervalSeconds={_config.PollIntervalSeconds}, " +
+                $"SyncAttendance={_config.SyncAttendance}, SyncRevenue={_config.SyncRevenue}, " +
+                $"SyncDeliveries={_config.SyncDeliveries}, SyncReportSnapshots={_config.SyncReportSnapshots}, " +
+                $"SyncTableOrders={_config.SyncTableOrders}, SyncLiveRevenue={_config.SyncLiveRevenue}, " +
+                $"SyncStopList={_config.SyncStopList}, " +
+                $"SyncBridgeStatus={_config.SyncBridgeStatus}, OfflineQueue={_config.OfflineQueueEnabled}, " +
+                $"SyncOrderLifecycle={_config.SyncOrderLifecycle}, SyncOrderAudit={_config.SyncOrderAudit}, " +
+                $"SyncDailyReconciliation={_config.SyncDailyReconciliation}, " +
+                $"ExcludeNonRevenuePayments={_config.ExcludeNonRevenuePayments}, " +
+                $"DiagnosticsLogLevel={_config.DiagnosticsLogLevel}"
+            );
+        }
+        else
+        {
+            PluginContext.Log.Info("Reservly iikoFront bridge started with Reservly disabled.");
+            PluginDiagnostics.Info("Bridge started. ReservlyEnabled=false — old Reservly sync loop is not running.");
+        }
     }
 
     private IDisposable SubscribeDeliveryOrderChanged()
@@ -1126,11 +1138,11 @@ public sealed class BridgePlugin : IFrontPlugin, IDisposable
         PluginContext.Log.Info("Reservly iikoFront bridge stopped.");
         PluginDiagnostics.Info("Bridge stopped.");
         _mamaRomaWorker?.Dispose();
-        _timer.Dispose();
-        _attendanceSessionTracker.Dispose();
-        _cashSessionCollector.Dispose();
-        _bookingOrderCollector.Dispose();
-        _liveOrderCache.Dispose();
+        _timer?.Dispose();
+        _attendanceSessionTracker?.Dispose();
+        _cashSessionCollector?.Dispose();
+        _bookingOrderCollector?.Dispose();
+        _liveOrderCache?.Dispose();
         _deliveryOrderChangedSubscription?.Dispose();
         _licenseSlot?.Dispose();
         _syncLock.Dispose();

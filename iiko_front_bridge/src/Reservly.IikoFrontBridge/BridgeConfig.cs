@@ -7,6 +7,12 @@ namespace Reservly.IikoFrontBridge;
 
 internal sealed class BridgeConfig
 {
+    /// <summary>
+    /// Главный выключатель старого контура Reservly. По умолчанию включён,
+    /// чтобы существующие установки без этого ключа работали как раньше.
+    /// </summary>
+    public bool ReservlyEnabled { get; set; } = true;
+
     public string BackendUrl { get; set; } = string.Empty;
     public string Secret { get; set; } = string.Empty;
     public string InstallationId { get; set; } = string.Empty;
@@ -75,11 +81,11 @@ internal sealed class BridgeConfig
         {
             throw new InvalidOperationException("bridge.settings.json is empty");
         }
-        if (string.IsNullOrWhiteSpace(config.BackendUrl))
+        if (config.ReservlyEnabled && string.IsNullOrWhiteSpace(config.BackendUrl))
         {
             throw new InvalidOperationException("backendUrl is required");
         }
-        if (string.IsNullOrWhiteSpace(config.Secret))
+        if (config.ReservlyEnabled && string.IsNullOrWhiteSpace(config.Secret))
         {
             throw new InvalidOperationException("secret is required");
         }
