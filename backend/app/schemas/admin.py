@@ -598,6 +598,7 @@ class IikoProductRow(BaseModel):
     group_name: str | None
     group_path: str | None
     product_type: str | None
+    price_kopecks: int = 0
     is_active: bool
     has_sizes: bool
 
@@ -663,3 +664,41 @@ class HandoffRow(BaseModel):
     iiko_order_number: str | None
     created_at: datetime
     total_kopecks: int
+
+
+class MenuBranchRow(BaseModel):
+    """Категория меню и ветки кассы, в которых искать её блюда."""
+
+    category_id: UUID
+    name: str
+    dishes: int
+    linked: int
+    iiko_group_paths: list[str]
+
+
+class MenuBranchWrite(BaseModel):
+    category_id: UUID
+    iiko_group_paths: list[str] = Field(default_factory=list, max_length=20)
+
+
+class MenuTreeWrite(BaseModel):
+    """Настройка дерева сети целиком: ветки категорий и общие правила."""
+
+    branches: list[MenuBranchWrite] = Field(default_factory=list, max_length=100)
+    deny_markers: list[str] = Field(default_factory=list, max_length=50)
+    extra_group_paths: list[str] = Field(default_factory=list, max_length=20)
+    keep_unknown_groups: bool = False
+
+
+class MenuTreeRead(BaseModel):
+    branches: list[MenuBranchRow]
+    deny_markers: list[str]
+    extra_group_paths: list[str]
+    keep_unknown_groups: bool
+
+
+class CopyLinksResult(BaseModel):
+    """Итог переноса сопоставления с одного ресторана на другой."""
+
+    copied: int
+    skipped: int

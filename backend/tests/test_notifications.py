@@ -268,3 +268,34 @@ async def test_sgorayushchie_bally_ne_bespokoyat_iz_za_meloch(
 
     # У свежего гостя баллов нет вовсе — в выборку он попасть не должен
     assert guest.id not in {row.id for row in found}
+
+
+async def test_pravilo_seti_primenyaetsya(session: AsyncSession, tenant, restaurant):
+    """Правило без ресторана — общее для сети, и оно должно находиться.
+
+    Сравнение с NULL через IN его не находило: тексты, заданные в админке
+    для всей сети, молча не применялись, и гость получал заготовку из кода.
+    """
+    from sqlalchemy import delete
+
+    # У точки может остаться своё правило от соседнего теста, а оно главнее
+    await session.execute(
+        delete(NotificationRule).where(
+            NotificationRule.tenant_id == tenant.id,
+            NotificationRule.event == OrderStatus.READY.value,
+            NotificationRule.restaurant_id == restaurant.id,
+        )
+    )
+    await _set_rule(
+        session,
+        tenant,
+        None,
+        OrderStatus.READY,
+        title="Общий заголовок",
+        body="Общий текст",
+    )
+
+    rule = await push_service.rule_for(session, tenant.id, restaurant.id, OrderStatus.READY)
+
+    assert rule is not None
+    assert rule[1] == "Общий заголовок"

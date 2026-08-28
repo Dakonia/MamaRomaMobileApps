@@ -87,20 +87,21 @@ async def order(session: AsyncSession, tenant, guest, restaurant, dish):
 async def mapped_dish(session: AsyncSession, tenant, dish):
     """Блюдо вместе с веткой кассы, в которой автоподбор его ищет.
 
-    Подбор доверяет только «своей» ветке дерева: товар с тем же названием из
-    заготовок или прошлогодних акций связывать нельзя.
+    Ветку задаём прямо здесь: дерево сети живёт в базе, и тест не должен
+    зависеть от того, как настроен боевой тенант.
     """
-    rows = await session.execute(
-        select(Dish, MenuCategory.name)
-        .join(MenuCategory, MenuCategory.id == Dish.category_id)
-        .where(Dish.tenant_id == tenant.id, Dish.is_active.is_(True))
-    )
-    for found, category in rows:
-        paths = iiko_bridge.MAMAROMA_CATEGORY_GROUP_PATH_PREFIXES.get(category)
-        if paths:
-            return found, paths[0]
+    category = await session.get(MenuCategory, dish.category_id)
+    was = category.iiko_group_paths
 
-    pytest.skip("в меню нет категории с настроенной веткой кассы")
+    path = "ТЕСТ КУХНЯ/ПРОВЕРКА"
+    category.iiko_group_paths = [path]
+    await session.commit()
+
+    yield dish, path
+
+    await session.rollback()
+    category.iiko_group_paths = was
+    await session.commit()
 
 
 async def _link(session: AsyncSession, tenant, restaurant, dish, product_id: str) -> IikoLink:
@@ -737,15 +738,19 @@ async def test_problema_na_kuhne_i_kurier_vidny(
 # ─────────────────────── номенклатура и сопоставление ───────────────────────
 
 
-async def test_nomenklatura_zamenyaetsya_celikom(session: AsyncSession, tenant, restaurant):
+async def test_nomenklatura_zamenyaetsya_celikom(
+    session: AsyncSession, tenant, restaurant, mapped_dish
+):
     """Касса — источник правды: чего в выгрузке нет, того нет и у нас."""
+    _, path = mapped_dish
+
     await iiko_bridge.apply_menu(
         session,
         tenant,
         restaurant.id,
         [
-            {"productId": "p1", "name": "Первое", "groupPath": "КУХНЯ/ПИЦЦА"},
-            {"productId": "p2", "name": "Второе", "groupPath": "КУХНЯ/ПИЦЦА"},
+            {"productId": "p1", "name": "Первое", "groupPath": path},
+            {"productId": "p2", "name": "Второе", "groupPath": path},
         ],
     )
     await session.commit()
@@ -754,7 +759,7 @@ async def test_nomenklatura_zamenyaetsya_celikom(session: AsyncSession, tenant, 
         session,
         tenant,
         restaurant.id,
-        [{"productId": "p2", "name": "Второе", "groupPath": "КУХНЯ/ПИЦЦА"}],
+        [{"productId": "p2", "name": "Второе", "groupPath": path}],
     )
     await session.commit()
 
@@ -956,3 +961,212 @@ async def test_tovar_iz_chuzhoy_vetki_ne_svyazyvaetsya(
         delete(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id)
     )
     await session.commit()
+
+
+# ─────────────────────── дерево меню сети ───────────────────────
+
+
+async def test_tovary_vne_vetok_menyu_v_bazu_ne_popadayut(
+    session: AsyncSession, tenant, restaurant, mapped_dish
+):
+    """В справочнике точки тысячи заготовок и посуды — храним только меню."""
+    _, path = mapped_dish
+
+    saved = await iiko_bridge.apply_menu(
+        session,
+        tenant,
+        restaurant.id,
+        [
+            {"productId": "in-menu", "name": "Блюдо меню", "groupPath": path},
+            {"productId": "junk", "name": "п/ф заготовка", "groupPath": "ЗАКУСКИ (ЗАГОТОВКИ)"},
+            {"productId": "dishes", "name": "Тарелка", "groupPath": "ПОСУДА"},
+        ],
+    )
+    await session.commit()
+
+    codes = sorted(
+        row.product_id
+        for row in await session.scalars(
+            select(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id)
+        )
+    )
+
+    assert saved == 1
+    assert codes == ["in-menu"]
+
+    await session.execute(delete(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id))
+    await session.commit()
+
+
+async def test_musornye_metki_otsekayut_vetku_celikom(
+    session: AsyncSession, tenant, restaurant, mapped_dish
+):
+    """Ветка внутри меню, но помечена как старая — блюда оттуда не берём."""
+    from app.models.integration import IikoMenuSetup
+
+    _, path = mapped_dish
+
+    setup = await session.scalar(
+        select(IikoMenuSetup).where(IikoMenuSetup.tenant_id == tenant.id)
+    )
+    if setup is None:
+        setup = IikoMenuSetup(tenant_id=tenant.id)
+        session.add(setup)
+
+    was = setup.deny_markers or []
+    setup.deny_markers = ["Я СТАРОЕ"]
+    await session.commit()
+
+    await iiko_bridge.apply_menu(
+        session,
+        tenant,
+        restaurant.id,
+        [
+            {"productId": "fresh", "name": "Свежее", "groupPath": path},
+            {"productId": "old", "name": "Старое", "groupPath": path + "/Я СТАРОЕ"},
+        ],
+    )
+    await session.commit()
+
+    codes = sorted(
+        row.product_id
+        for row in await session.scalars(
+            select(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id)
+        )
+    )
+    assert codes == ["fresh"]
+
+    setup.deny_markers = was
+    await session.execute(delete(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id))
+    await session.commit()
+
+
+async def test_mozhno_zabirat_vsyu_nomenklaturu_celikom(
+    session: AsyncSession, tenant, restaurant
+):
+    """Переключатель на случай, когда дерево ещё не разобрали.
+
+    Тогда в базу едет весь справочник точки — неудобно, но ничего не теряется.
+    """
+    from app.models.integration import IikoMenuSetup
+
+    setup = await session.scalar(
+        select(IikoMenuSetup).where(IikoMenuSetup.tenant_id == tenant.id)
+    )
+    if setup is None:
+        setup = IikoMenuSetup(tenant_id=tenant.id)
+        session.add(setup)
+
+    was = setup.keep_unknown_groups
+    setup.keep_unknown_groups = True
+    await session.commit()
+
+    saved = await iiko_bridge.apply_menu(
+        session,
+        tenant,
+        restaurant.id,
+        [{"productId": "any", "name": "Что угодно", "groupPath": "НЕИЗВЕСТНАЯ ВЕТКА"}],
+    )
+    await session.commit()
+
+    assert saved == 1
+
+    setup.keep_unknown_groups = was
+    await session.execute(delete(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id))
+    await session.commit()
+
+
+@pytest.fixture
+async def changed_rule(session: AsyncSession, tenant):
+    """Правило про правку состава, которое тест может менять как хочет.
+
+    Убирается всегда: иначе следующий прогон получит чужой текст и упадёт
+    там, где ошибки нет.
+    """
+    from app.models.notification import NotificationRule
+    from app.services import push as push_service
+
+    await session.execute(
+        delete(NotificationRule).where(
+            NotificationRule.tenant_id == tenant.id,
+            NotificationRule.event == push_service.ORDER_CHANGED,
+        )
+    )
+    await session.commit()
+
+    yield NotificationRule
+
+    await session.rollback()
+    await session.execute(
+        delete(NotificationRule).where(
+            NotificationRule.tenant_id == tenant.id,
+            NotificationRule.event == push_service.ORDER_CHANGED,
+        )
+    )
+    await session.commit()
+
+
+async def test_pravka_sostava_uvedomlyaet_gostya_odin_raz(
+    session: AsyncSession, tenant, restaurant, dish, order, no_push, changed_rule
+):
+    """Ресторан убрал блюдо — гость узнаёт об этом сразу, но один раз.
+
+    Касса шлёт тот же срез каждые полминуты, и без защиты гостя будило бы
+    уведомление за уведомлением.
+    """
+    await _link(session, tenant, restaurant, dish, "code-here")
+
+    row = {
+        "orderId": str(order.id),
+        "status": "OnWay",
+        "items": [{"productId": "another-code", "name": "Другое блюдо", "amount": 1}],
+    }
+
+    await iiko_bridge.apply_delivery_status(session, tenant, restaurant.id, [row])
+    await session.commit()
+    await iiko_bridge.apply_delivery_status(session, tenant, restaurant.id, [row])
+    await session.commit()
+    await session.refresh(order)
+
+    assert order.iiko_items_changed_at is not None
+    changed = [push for push in no_push if "измен" in push["title"].lower()]
+    assert len(changed) == 1, "о правке состава сообщаем один раз"
+
+
+async def test_tekst_pro_pravku_sostava_mozhno_izmenit(
+    session: AsyncSession, tenant, restaurant, dish, order, no_push, changed_rule
+):
+    """Слова подбирает ресторан: правило редактируется в админке.
+
+    Заодно это проверка того, что правило сети вообще применяется: сравнение
+    с NULL через IN его не находило, и общие тексты молча не работали.
+    """
+    from app.services import push as push_service
+
+    session.add(
+        changed_rule(
+            tenant_id=tenant.id,
+            event=push_service.ORDER_CHANGED,
+            is_enabled=True,
+            title="Состав заказа {number} поправили",
+            body="Позвоним, если что-то важное",
+        )
+    )
+    await session.commit()
+
+    await _link(session, tenant, restaurant, dish, "code-here")
+    await iiko_bridge.apply_delivery_status(
+        session,
+        tenant,
+        restaurant.id,
+        [
+            {
+                "orderId": str(order.id),
+                "status": "OnWay",
+                "items": [{"productId": "another", "name": "Другое", "amount": 1}],
+            }
+        ],
+    )
+    await session.commit()
+
+    assert any(order.number in push["title"] for push in no_push)

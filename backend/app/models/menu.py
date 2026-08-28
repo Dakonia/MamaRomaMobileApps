@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Table, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base, ExternalSyncMixin, TenantMixin, TimestampMixin, UUIDMixin
@@ -25,6 +26,11 @@ class MenuCategory(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Ba
     extras: Mapped[list["DishExtra"]] = relationship(
         secondary="category_extra_links", lazy="selectin", order_by="DishExtra.name"
     )
+
+    # Ветки номенклатуры кассы, где искать блюда этой категории: «КУХНЯ/ПИЦЦА»
+    # и подобное. У каждой сети дерево своё, поэтому это данные, а не код.
+    # Пусто — ищем по всем разрешённым веткам сети
+    iiko_group_paths: Mapped[list[str]] = mapped_column(JSONB, default=list)
 
 
 class Dish(UUIDMixin, TenantMixin, TimestampMixin, ExternalSyncMixin, Base):

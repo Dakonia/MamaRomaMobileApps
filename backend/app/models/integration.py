@@ -165,9 +165,37 @@ class IikoProduct(UUIDMixin, TenantMixin, TimestampMixin, Base):
     # продаётся именно то, что нужного вида
     product_type: Mapped[str | None] = mapped_column(String(32), default=None)
 
+    # Цена по прайсу кассы в копейках. Нужна на экране сопоставления: у сети
+    # бывает пять «Маргарит» разного размера, и цена — единственное отличие
+    price_kopecks: Mapped[int] = mapped_column(default=0)
+
     is_active: Mapped[bool] = mapped_column(default=True)
 
     # У товара есть размеры — тогда в заказе обязателен ещё и код размера
     has_sizes: Mapped[bool] = mapped_column(default=False)
 
     seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class IikoMenuSetup(UUIDMixin, TenantMixin, TimestampMixin, Base):
+    """Как устроено дерево номенклатуры кассы у этой сети.
+
+    Один ресторан настраивают руками, дальше настройка работает на всю сеть:
+    в iiko chain товары заводят централизованно, и ветки у точек совпадают.
+    Ветки конкретных категорий лежат в самих категориях меню, а здесь общее —
+    что считать мусором и где искать добавки.
+    """
+
+    __tablename__ = "iiko_menu_setup"
+    __table_args__ = (UniqueConstraint("tenant_id", name="uq_iiko_menu_setup_tenant"),)
+
+    # Куски пути, по которым ветку целиком пропускаем: заготовки, посуда,
+    # прошлогодние акции. Сравниваем без учёта регистра
+    deny_markers: Mapped[list[str]] = mapped_column(JSONB, default=list)
+
+    # Где лежат модификаторы: добавки к блюдам сопоставляются отсюда
+    extra_group_paths: Mapped[list[str]] = mapped_column(JSONB, default=list)
+
+    # Забирать ли с кассы товары вне разрешённых веток. Выключено — в базу
+    # приложения попадает только меню, а не весь справочник точки
+    keep_unknown_groups: Mapped[bool] = mapped_column(default=False)

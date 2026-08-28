@@ -54,6 +54,7 @@ from app.schemas.admin import (
     CategoryAdminRead,
     CategoryPatch,
     CategoryWrite,
+    CopyLinksResult,
     DishAdminRead,
     DishExtraAdminRead,
     DishExtraPatch,
@@ -77,6 +78,9 @@ from app.schemas.admin import (
     LinkBatch,
     LinkRow,
     MatchResult,
+    MenuBranchRow,
+    MenuTreeRead,
+    MenuTreeWrite,
     OrderStatusWrite,
     ProductGroupRow,
     PromoCodePatch,
@@ -1603,8 +1607,18 @@ async def notification_rules(
             RuleRead(event=event.value, is_enabled=enabled, title=title, body=body)
         )
 
+    # События вне цепочки этапов: правка состава на кассе. Правятся там же,
+    # где шаги заказа — менеджеру всё равно, как это устроено внутри
+    for event_name, (enabled, title, body) in push_service.DEFAULT_EVENT_RULES.items():
+        if (None, event_name) in known:
+            continue
+        result.append(
+            RuleRead(event=event_name, is_enabled=enabled, title=title, body=body)
+        )
+
     # Порядок шагов заказа, а не алфавитный: менеджер читает их сверху вниз
     order = [event.value for event in push_service.DEFAULT_RULES]
+    order += list(push_service.DEFAULT_EVENT_RULES)
     result.sort(key=lambda row: order.index(row.event) if row.event in order else len(order))
     return result
 
@@ -2097,6 +2111,7 @@ async def iiko_products(
             group_name=row.group_name,
             group_path=row.group_path,
             product_type=row.product_type,
+            price_kopecks=row.price_kopecks,
             is_active=row.is_active,
             has_sizes=row.has_sizes,
         )
@@ -2124,6 +2139,7 @@ async def iiko_search(
             group_name=row.group_name,
             group_path=row.group_path,
             product_type=row.product_type,
+            price_kopecks=row.price_kopecks,
             is_active=row.is_active,
             has_sizes=row.has_sizes,
         )
@@ -2235,6 +2251,7 @@ async def iiko_links(
                         group_name=product.group_name,
                         group_path=product.group_path,
                         product_type=product.product_type,
+                        price_kopecks=product.price_kopecks,
                         is_active=product.is_active,
                         has_sizes=product.has_sizes,
                     )
@@ -2334,3 +2351,85 @@ async def iiko_retry(
 
     await session.commit()
     return SyncResult(applied=1)
+
+
+@router.get("/iiko/menu-tree", summary="Дерево номенклатуры сети")
+async def iiko_menu_tree(
+    session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> MenuTreeRead:
+    """Где искать блюда каждой категории и что считать мусором.
+
+    Настройка общая на сеть: в iiko chain товары заводят централизованно,
+    поэтому ветки у точек совпадают.
+    """
+    tree = await iiko_bridge.menu_tree(session, tenant)
+
+    rows = await session.execute(
+        select(
+            MenuCategory.id,
+            MenuCategory.name,
+            MenuCategory.iiko_group_paths,
+            func.count(Dish.id),
+        )
+        .outerjoin(Dish, (Dish.category_id == MenuCategory.id) & Dish.is_active.is_(True))
+        .where(MenuCategory.tenant_id == tenant.id, MenuCategory.is_active.is_(True))
+        .group_by(MenuCategory.id, MenuCategory.name, MenuCategory.iiko_group_paths)
+        .order_by(MenuCategory.sort_order, MenuCategory.name)
+    )
+
+    counted = await session.execute(
+        select(Dish.category_id, func.count())
+        .join(IikoLink, IikoLink.dish_id == Dish.id)
+        .where(IikoLink.tenant_id == tenant.id)
+        .group_by(Dish.category_id)
+    )
+    linked: dict[UUID, int] = {row[0]: row[1] for row in counted}
+
+    return MenuTreeRead(
+        branches=[
+            MenuBranchRow(
+                category_id=category_id,
+                name=name,
+                dishes=dishes,
+                linked=linked.get(category_id, 0),
+                iiko_group_paths=list(paths or []),
+            )
+            for category_id, name, paths, dishes in rows
+        ],
+        deny_markers=list(tree.deny_markers),
+        extra_group_paths=list(tree.extra_paths),
+        keep_unknown_groups=tree.keep_unknown_groups,
+    )
+
+
+@router.put("/iiko/menu-tree", summary="Сохранить дерево номенклатуры")
+async def iiko_save_menu_tree(
+    payload: MenuTreeWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> SyncResult:
+    saved = await iiko_bridge.save_menu_tree(
+        session,
+        tenant,
+        [branch.model_dump() for branch in payload.branches],
+        payload.deny_markers,
+        payload.extra_group_paths,
+        payload.keep_unknown_groups,
+    )
+    await session.commit()
+    return SyncResult(applied=saved)
+
+
+@router.post("/iiko/links/copy", summary="Перенести сопоставление на другую точку")
+async def iiko_copy_links(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+    source_id: Annotated[UUID, Query()],
+    target_id: Annotated[UUID, Query()],
+    overwrite: Annotated[bool, Query()] = False,
+) -> CopyLinksResult:
+    """Настроили одну точку — остальные получают то же самое одним нажатием."""
+    copied, skipped = await iiko_bridge.copy_links(
+        session, tenant, source_id, target_id, overwrite
+    )
+    await session.commit()
+    return CopyLinksResult(copied=copied, skipped=skipped)

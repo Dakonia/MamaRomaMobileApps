@@ -11,7 +11,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -39,6 +39,19 @@ DEFAULT_RULES: dict[OrderStatus, tuple[bool, str, str]] = {
         "Оцените заказ — это одно касание",
     ),
     OrderStatus.CANCELLED: (True, "Заказ отменён", "Загляните в приложение — расскажем почему"),
+}
+
+# Событие вне цепочки этапов: ресторан поправил состав заказа на кассе —
+# убрал блюдо, которое закончилось, или заменил его. Гость должен узнать
+# об этом до вручения, а не от курьера у двери
+ORDER_CHANGED = "items_changed"
+
+DEFAULT_EVENT_RULES: dict[str, tuple[bool, str, str]] = {
+    ORDER_CHANGED: (
+        True,
+        "Заказ изменили",
+        "Ресторан поправил состав — загляните в приложение",
+    ),
 }
 
 
@@ -146,7 +159,13 @@ async def rule_for(
             select(NotificationRule).where(
                 NotificationRule.tenant_id == tenant_id,
                 NotificationRule.event == event.value,
-                NotificationRule.restaurant_id.in_([restaurant_id, None]),
+                # Сравнение с NULL через IN не работает: строка правила сети
+                # (ресторан не задан) в такой выборке не находится вовсе,
+                # и общие тексты из админки молча не применялись
+                or_(
+                    NotificationRule.restaurant_id == restaurant_id,
+                    NotificationRule.restaurant_id.is_(None),
+                ),
             )
         )
     ).all()
@@ -160,6 +179,33 @@ async def rule_for(
         return rule.is_enabled, rule.title, rule.body
 
     return DEFAULT_RULES.get(event)
+
+
+async def rule_for_event(
+    session: AsyncSession, tenant_id: str, restaurant_id: UUID, event: str
+) -> tuple[bool, str, str] | None:
+    """То же, что rule_for, но для событий вне цепочки этапов заказа."""
+    rows = (
+        await session.scalars(
+            select(NotificationRule).where(
+                NotificationRule.tenant_id == tenant_id,
+                NotificationRule.event == event,
+                or_(
+                    NotificationRule.restaurant_id == restaurant_id,
+                    NotificationRule.restaurant_id.is_(None),
+                ),
+            )
+        )
+    ).all()
+
+    own = next((row for row in rows if row.restaurant_id == restaurant_id), None)
+    shared = next((row for row in rows if row.restaurant_id is None), None)
+    rule = own or shared
+
+    if rule is not None:
+        return rule.is_enabled, rule.title, rule.body
+
+    return DEFAULT_EVENT_RULES.get(event)
 
 
 def fill(text: str, order: Order, restaurant_name: str) -> str:
@@ -219,3 +265,32 @@ async def quiet_now(session: AsyncSession, tenant_id: str, zone: ZoneInfo) -> bo
         return quiet_from <= now < quiet_to
 
     return now >= quiet_from or now < quiet_to
+
+
+async def notify_event(session: AsyncSession, tenant_id: str, order: Order, event: str) -> int:
+    """Сообщает гостю о событии, которого нет в цепочке этапов.
+
+    Текст правится в админке там же, где шаги заказа: ресторану виднее,
+    какими словами объяснять правку состава.
+    """
+    rule = await rule_for_event(session, tenant_id, order.restaurant_id, event)
+    if rule is None:
+        return 0
+
+    enabled, title, body = rule
+    if not enabled:
+        return 0
+
+    restaurant = await session.get(Restaurant, order.restaurant_id)
+    name = restaurant.name if restaurant else ""
+
+    tokens = await tokens_for_guest(session, tenant_id, order.guest_id)
+
+    return await send(
+        session,
+        tenant_id,
+        tokens,
+        title=fill(title, order, name),
+        body=fill(body, order, name),
+        data={"screen": "order", "orderId": str(order.id)},
+    )

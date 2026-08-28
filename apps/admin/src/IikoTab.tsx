@@ -11,7 +11,7 @@ import {
 } from "./api";
 import { Badge, Button, c, Section, styles } from "./ui";
 
-type Pane = "bridges" | "links" | "queue";
+type Pane = "bridges" | "links" | "tree" | "queue";
 
 /** Сколько прошло с последней связи: точнее, чем дата, и читается быстрее. */
 function sinceLabel(iso: string | null): string {
@@ -32,6 +32,8 @@ function isOnline(iso: string | null): boolean {
 function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void }) {
   const queryClient = useQueryClient();
   const [shown, setShown] = useState<{ name: string; secret: string } | null>(null);
+  const [source, setSource] = useState("");
+  const [target, setTarget] = useState("");
 
   const bridges = useQuery({
     queryKey: ["iiko-bridges"],
@@ -54,7 +56,15 @@ function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] }),
   });
 
+  const copy = useMutation({
+    mutationFn: () => api.copyIikoLinks(source, target, false),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] }),
+  });
+
+  const ready = (bridges.data ?? []).filter((row) => row.linked_dishes > 0);
+
   return (
+    <>
     <Section title="Плагины по ресторанам">
       {shown ? (
         <div
@@ -184,6 +194,57 @@ function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void 
         </div>
       )}
     </Section>
+
+    {/* Перенос настройки: товары заводятся через iiko chain, коды у точек
+        совпадают, поэтому настроенный ресторан можно размножить */}
+    <Section title="Перенести сопоставление на другую точку">
+      <p style={{ marginTop: 0, color: c.textSecondary }}>
+        Берём связи блюд с настроенного ресторана и повторяем их на новом. Переносим
+        только те товары, которые есть в номенклатуре получателя — остальные пропускаем,
+        чтобы заказ не уехал с несуществующим кодом. Уже настроенное не трогаем.
+      </p>
+
+      <div style={{ display: "flex", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
+        <select style={styles.input} value={source} onChange={(event) => setSource(event.target.value)}>
+          <option value="">Откуда — настроенный ресторан</option>
+          {ready.map((row) => (
+            <option key={row.restaurant_id} value={row.restaurant_id}>
+              {row.restaurant_name} · {row.linked_dishes} блюд
+            </option>
+          ))}
+        </select>
+
+        <span style={{ color: c.textTertiary }}>→</span>
+
+        <select style={styles.input} value={target} onChange={(event) => setTarget(event.target.value)}>
+          <option value="">Куда</option>
+          {(bridges.data ?? [])
+            .filter((row) => row.restaurant_id !== source)
+            .map((row) => (
+              <option key={row.restaurant_id} value={row.restaurant_id}>
+                {row.restaurant_name} · связано {row.linked_dishes}
+              </option>
+            ))}
+        </select>
+
+        <Button
+          tone="brand"
+          onClick={() => {
+            if (source && target) copy.mutate();
+          }}
+        >
+          {copy.isPending ? "Переносим…" : "Перенести"}
+        </Button>
+      </div>
+
+      {copy.data ? (
+        <p style={{ color: c.textSecondary }}>
+          Перенесено {copy.data.copied}, пропущено {copy.data.skipped} — это позиции,
+          которых нет в номенклатуре получателя или которые там уже сопоставлены.
+        </p>
+      ) : null}
+    </Section>
+    </>
   );
 }
 
@@ -969,6 +1030,168 @@ function Queue() {
   );
 }
 
+
+/**
+ * Дерево номенклатуры сети: где искать блюда каждой категории.
+ *
+ * Настройка общая на всю сеть — в iiko chain товары заводят централизованно,
+ * и ветки у точек совпадают. Раньше это дерево лежало константами в коде,
+ * и новый ресторан с другим деревом требовал правки бэкенда.
+ */
+function Tree() {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [deny, setDeny] = useState<string | null>(null);
+  const [extras, setExtras] = useState<string | null>(null);
+  const [keepUnknown, setKeepUnknown] = useState<boolean | null>(null);
+
+  const tree = useQuery({ queryKey: ["iiko-menu-tree"], queryFn: api.menuTree });
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.saveMenuTree({
+        branches: (tree.data?.branches ?? []).map((branch) => ({
+          category_id: branch.category_id,
+          iiko_group_paths: split(
+            draft[branch.category_id] ?? branch.iiko_group_paths.join("\n"),
+          ),
+        })),
+        deny_markers: split(deny ?? (tree.data?.deny_markers ?? []).join("\n")),
+        extra_group_paths: split(extras ?? (tree.data?.extra_group_paths ?? []).join("\n")),
+        keep_unknown_groups: keepUnknown ?? tree.data?.keep_unknown_groups ?? false,
+      }),
+    onSuccess: () => {
+      setDraft({});
+      setDeny(null);
+      setExtras(null);
+      setKeepUnknown(null);
+      void queryClient.invalidateQueries({ queryKey: ["iiko-menu-tree"] });
+      void queryClient.invalidateQueries({ queryKey: ["iiko-groups"] });
+    },
+  });
+
+  if (tree.isPending) {
+    return (
+      <Section title="Дерево меню">
+        <p style={{ color: c.textSecondary }}>Загружаем…</p>
+      </Section>
+    );
+  }
+
+  const keep = keepUnknown ?? tree.data?.keep_unknown_groups ?? false;
+
+  return (
+    <>
+      <Section
+        title="Где искать блюда каждой категории"
+        action={
+          <Button tone="brand" onClick={() => save.mutate()}>
+            {save.isPending ? "Сохраняем…" : "Сохранить"}
+          </Button>
+        }
+      >
+        <p style={{ marginTop: 0, color: c.textSecondary }}>
+          Ветка — начало пути группы в кассе, например{" "}
+          <code>КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА</code>. По одной в строке. Настройка
+          общая на сеть: товары заводятся через iiko chain, и коды у точек совпадают.
+        </p>
+
+        <div style={styles.card}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Категория</th>
+                <th style={styles.th}>Связано</th>
+                <th style={styles.th}>Ветки кассы</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(tree.data?.branches ?? []).map((branch) => (
+                <tr key={branch.category_id}>
+                  <td style={styles.td}>{branch.name}</td>
+                  <td style={{ ...styles.td, whiteSpace: "nowrap", color: c.textSecondary }}>
+                    {branch.linked} из {branch.dishes}
+                  </td>
+                  <td style={styles.td}>
+                    <textarea
+                      rows={Math.max(2, branch.iiko_group_paths.length + 1)}
+                      style={{ ...styles.input, width: "100%", fontFamily: "inherit" }}
+                      value={draft[branch.category_id] ?? branch.iiko_group_paths.join("\n")}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          [branch.category_id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section title="Общие правила сети">
+        <div style={{ display: "flex", gap: spacing.xl, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 320px" }}>
+            <div style={{ marginBottom: spacing.xs }}>Мусорные метки</div>
+            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize, marginBottom: spacing.sm }}>
+              Ветку пропускаем целиком, если путь содержит такой кусок: старые акции,
+              заготовки, подложки. По одной в строке.
+            </div>
+            <textarea
+              rows={8}
+              style={{ ...styles.input, width: "100%", fontFamily: "inherit" }}
+              value={deny ?? (tree.data?.deny_markers ?? []).join("\n")}
+              onChange={(event) => setDeny(event.target.value)}
+            />
+          </div>
+
+          <div style={{ flex: "1 1 320px" }}>
+            <div style={{ marginBottom: spacing.xs }}>Ветки добавок</div>
+            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize, marginBottom: spacing.sm }}>
+              Где лежат модификаторы: соусы к пасте, тесто, сыр. Пусто — ищем
+              по всем веткам меню.
+            </div>
+            <textarea
+              rows={8}
+              style={{ ...styles.input, width: "100%", fontFamily: "inherit" }}
+              value={extras ?? (tree.data?.extra_group_paths ?? []).join("\n")}
+              onChange={(event) => setExtras(event.target.value)}
+            />
+          </div>
+        </div>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: spacing.sm,
+            marginTop: spacing.base,
+            color: keep ? c.warning : c.textSecondary,
+          }}
+        >
+          <input type="checkbox" checked={keep} onChange={() => setKeepUnknown(!keep)} />
+          Забирать с кассы вообще всё, включая ветки вне меню
+        </label>
+        <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
+          Нужно, только пока дерево не разобрано: иначе в базу приложения едет весь
+          справочник точки — десятки тысяч позиций вместе с посудой и заготовками.
+        </div>
+      </Section>
+    </>
+  );
+}
+
+/** Строки текстового поля в список: пустые и пробелы выкидываем. */
+function split(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 /**
  * Касса ресторана: плагины по точкам, сопоставление блюд и очередь заказов.
  *
@@ -983,6 +1206,7 @@ export function IikoTab() {
   const panes: { key: Pane; label: string }[] = [
     { key: "bridges", label: "Плагины" },
     { key: "links", label: "Сопоставление" },
+    { key: "tree", label: "Дерево меню" },
     { key: "queue", label: "Очередь" },
   ];
 
@@ -1011,6 +1235,7 @@ export function IikoTab() {
       {pane === "links" ? (
         <Links restaurantId={restaurantId} onRestaurantChange={setRestaurantId} />
       ) : null}
+      {pane === "tree" ? <Tree /> : null}
       {pane === "queue" ? <Queue /> : null}
     </>
   );

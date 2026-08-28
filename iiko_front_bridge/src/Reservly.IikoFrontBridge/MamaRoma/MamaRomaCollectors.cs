@@ -142,6 +142,7 @@ internal static class MenuCollector
                     MeasureUnit = product.MeasuringUnitName ?? string.Empty,
                     IsActive = product.IsActive,
                     Type = product.Type.ToString(),
+                    Price = ReadPrice(product),
                     HasSizes = HasSizes(product),
                 });
             }
@@ -180,6 +181,19 @@ internal static class MenuCollector
         {
             PluginDiagnostics.Error("MamaRoma Menu: не удалось получить номенклатуру.", exc);
             return Enumerable.Empty<IProduct>();
+        }
+    }
+
+    /// <summary>Цена по прайсу. Нет цены — ноль, это не повод пропускать товар.</summary>
+    private static decimal ReadPrice(IProduct product)
+    {
+        try
+        {
+            return product.Price;
+        }
+        catch
+        {
+            return 0m;
         }
     }
 

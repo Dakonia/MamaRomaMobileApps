@@ -187,6 +187,8 @@ export type IikoProduct = {
   group_path: string | null;
   /** Dish — блюдо, Goods — товар, Modifier — добавка. */
   product_type: string | null;
+  /** Цена по прайсу кассы в копейках: по ней различают размеры. */
+  price_kopecks: number;
   is_active: boolean;
   has_sizes: boolean;
 };
@@ -211,6 +213,21 @@ export type IikoLink = {
   size_id: string | null;
   modifier_group_id: string | null;
   suggestions: IikoProduct[];
+};
+
+export type MenuBranch = {
+  category_id: string;
+  name: string;
+  dishes: number;
+  linked: number;
+  iiko_group_paths: string[];
+};
+
+export type MenuTree = {
+  branches: MenuBranch[];
+  deny_markers: string[];
+  extra_group_paths: string[];
+  keep_unknown_groups: boolean;
 };
 
 export type Handoff = {
@@ -692,6 +709,25 @@ export const api = {
     request<{ matched: number; skipped: number }>(
       `/admin/iiko/links/auto?restaurant_id=${restaurantId}` +
         groups.map((name) => `&groups=${encodeURIComponent(name)}`).join(""),
+      { method: "POST" },
+    ),
+
+  menuTree: () => request<MenuTree>("/admin/iiko/menu-tree"),
+
+  saveMenuTree: (payload: {
+    branches: { category_id: string; iiko_group_paths: string[] }[];
+    deny_markers: string[];
+    extra_group_paths: string[];
+    keep_unknown_groups: boolean;
+  }) =>
+    request<{ applied: number }>("/admin/iiko/menu-tree", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  copyIikoLinks: (sourceId: string, targetId: string, overwrite: boolean) =>
+    request<{ copied: number; skipped: number }>(
+      `/admin/iiko/links/copy?source_id=${sourceId}&target_id=${targetId}&overwrite=${overwrite}`,
       { method: "POST" },
     ),
 

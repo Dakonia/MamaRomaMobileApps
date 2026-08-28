@@ -210,6 +210,10 @@ export default function OrderScreen() {
     data?.iiko_items_changed_at !== null &&
     data?.iiko_items_changed_at !== undefined;
 
+  // Сумма по факту кассы: после правки состава она отличается от той,
+  // что гость видел при оформлении, и молчать об этом нельзя
+  const iikoTotal = iikoItems.reduce((sum, item) => sum + (item.net_sum || 0), 0);
+
   useEffect(() => {
     if (!live) return;
 
@@ -645,6 +649,17 @@ export default function OrderScreen() {
                     <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textPrimary }]}>
                       {item.name} × {item.amount || 1}
                     </Text>
+                    {item.net_sum > 0 ? (
+                      <Text
+                        style={[
+                          theme.typography.bodyMedium,
+                          theme.tabularNums,
+                          { color: theme.colors.textPrimary },
+                        ]}
+                      >
+                        {formatPrice(Math.round(item.net_sum * 100))}
+                      </Text>
+                    ) : null}
                     {item.group_name ? (
                       <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
                         {item.group_name}
@@ -653,6 +668,34 @@ export default function OrderScreen() {
                   </View>
                 ))
               )}
+
+              {iikoTotal > 0 ? (
+                <View
+                  style={[
+                    styles.row,
+                    {
+                      gap: theme.spacing.md,
+                      padding: theme.spacing.base,
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      borderTopColor: theme.colors.divider,
+                      backgroundColor: theme.colors.surfaceSunken,
+                    },
+                  ]}
+                >
+                  <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.textSecondary }]}>
+                    К оплате по факту
+                  </Text>
+                  <Text
+                    style={[
+                      theme.typography.bodyMedium,
+                      theme.tabularNums,
+                      { color: theme.colors.textPrimary },
+                    ]}
+                  >
+                    {formatPrice(Math.round(iikoTotal * 100))}
+                  </Text>
+                </View>
+              ) : null}
             </Animated.View>
           ) : null}
 

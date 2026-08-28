@@ -11,6 +11,8 @@ const STEPS: Record<string, string> = {
   delivering: "Курьер выехал",
   completed: "Заказ доставлен",
   cancelled: "Заказ отменён",
+  // Событие вне цепочки: ресторан поправил состав прямо на кассе
+  items_changed: "Ресторан изменил состав заказа",
 };
 
 const HINT = "Доступные подстановки: {number} — номер заказа, {restaurant}, {time}";

@@ -7,6 +7,7 @@
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
@@ -24,10 +25,17 @@ from app.models.enums import (
     PaymentMethod,
     PaymentStatus,
 )
-from app.models.integration import IikoBridge, IikoLink, IikoOrderHandoff, IikoProduct
+from app.models.integration import (
+    IikoBridge,
+    IikoLink,
+    IikoMenuSetup,
+    IikoOrderHandoff,
+    IikoProduct,
+)
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishExtra, DishPrice, MenuCategory, StopListEntry
 from app.models.order import Order
+from app.services import push as push_service
 
 # Столько плагину даётся на то, чтобы завести заказ и отчитаться.
 # Не успел — заказ снова попадёт в выдачу, чтобы не потеряться навсегда
@@ -40,26 +48,11 @@ MAX_ATTEMPTS = 3
 SELLABLE_PRODUCT_TYPES = {"", "Dish", "Goods", "Modifier"}
 CUTLERY_FINGERPRINT_KEY = "__cutlery__"
 
-# Живые группы Mama Roma, найденные в iiko Большевиков. У точек могут быть
-# не все блюда, но дерево групп для сети должно быть единым.
-MAMAROMA_MENU_GROUP_PATH_PREFIXES = (
-    "КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА",
-    "КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ",
-    "КУХНЯ 2026/САЛАТЫ + ХОЛОДНЫЕ ЗАКУСКИ",
-    "КУХНЯ 2026/СУПЫ",
-    "КУХНЯ 2026/ПАСТЫ",
-    "КУХНЯ 2026/ГРИЛЬ",
-    "КУХНЯ 2026/ГОРЯЧИЕ БЛЮДА",
-    "КУХНЯ 2026/ГАРНИРЫ",
-    "КУХНЯ 2026/СОУС",
-    "КУХНЯ 2026/ФОКАЧЧА И БУЛОЧКИ",
-    "КУХНЯ 2026/ДЕСЕРТЫ",
-    "КУХНЯ 2026/ДЕТСКОЕ МЕНЮ М21+М3+М5",
-    "БАР/БЕЗАЛКОГОЛЬНЫЕ НАПИТКИ",
-    "МАГАЗИН ГУРМЕТТО",
-)
-
-MAMAROMA_DENY_GROUP_MARKERS = (
+# Значения по умолчанию для первой настройки сети. Дальше дерево живёт
+# в базе: ветки категорий — в самих категориях меню, мусорные метки — в
+# настройке сети. Здесь они лежат только чтобы новому тенанту было с чего
+# начать, а не чтобы кто-то правил код ради нового ресторана.
+DEFAULT_DENY_MARKERS = (
     "Я СТАРОЕ",
     "АКЦИИ",
     "С СОБОЙ",
@@ -69,30 +62,99 @@ MAMAROMA_DENY_GROUP_MARKERS = (
     "БИЗНЕС_ЛАНЧ_СТАРОЕ",
 )
 
-MAMAROMA_CATEGORY_GROUP_PATH_PREFIXES = {
-    "Пицца": ("КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА",),
-    "Салаты": ("КУХНЯ 2026/САЛАТЫ + ХОЛОДНЫЕ ЗАКУСКИ",),
-    "Закуски": ("КУХНЯ 2026/САЛАТЫ + ХОЛОДНЫЕ ЗАКУСКИ",),
-    "Супы": ("КУХНЯ 2026/СУПЫ",),
-    "Паста": ("КУХНЯ 2026/ПАСТЫ",),
-    "Ризотто": ("КУХНЯ 2026/ПАСТЫ",),
-    "Гриль": ("КУХНЯ 2026/ГРИЛЬ", "КУХНЯ 2026/ГОРЯЧИЕ БЛЮДА"),
-    "Горячее": ("КУХНЯ 2026/ГОРЯЧИЕ БЛЮДА",),
-    "Гарниры": ("КУХНЯ 2026/ГАРНИРЫ",),
-    "Соусы": ("КУХНЯ 2026/СОУС",),
-    "Хлеб": (
-        "КУХНЯ 2026/ФОКАЧЧА И БУЛОЧКИ",
-        "КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА",
-    ),
-    "Десерты": ("КУХНЯ 2026/ДЕСЕРТЫ",),
-    "Детское меню": ("КУХНЯ 2026/ДЕТСКОЕ МЕНЮ М21+М3+М5",),
-    "Напитки": ("БАР/БЕЗАЛКОГОЛЬНЫЕ НАПИТКИ",),
-    "Gourmetto": ("МАГАЗИН ГУРМЕТТО",),
-}
-
 
 class BridgeError(Exception):
     pass
+
+
+@dataclass(slots=True)
+class MenuTree:
+    """Дерево номенклатуры сети: где искать меню и что считать мусором."""
+
+    # Ветка кассы → название нашей категории. Пусто — сеть ещё не настроена
+    category_paths: dict[str, tuple[str, ...]]
+    deny_markers: tuple[str, ...]
+    extra_paths: tuple[str, ...]
+    keep_unknown_groups: bool
+
+    @property
+    def allowed(self) -> tuple[str, ...]:
+        """Все ветки, где вообще может лежать меню сети."""
+        found: list[str] = []
+        for paths in self.category_paths.values():
+            found.extend(paths)
+        found.extend(self.extra_paths)
+        return tuple(dict.fromkeys(found))
+
+    def is_denied(self, path: str) -> bool:
+        upper = path.upper()
+        return any(marker in upper for marker in self.deny_markers)
+
+    def in_menu(self, path: str) -> bool:
+        """Лежит ли ветка в меню сети. Дерево не настроено — берём всё."""
+        if self.is_denied(path):
+            return False
+        if not self.allowed:
+            return True
+        upper = path.upper()
+        return any(upper.startswith(prefix) for prefix in self.allowed)
+
+    def fits_category(self, category_name: str, path: str) -> bool:
+        """Годится ли товар этой ветки для блюда указанной категории."""
+        if self.is_denied(path):
+            return False
+
+        paths = self.category_paths.get(category_name.strip())
+        if not paths:
+            return self.in_menu(path)
+
+        upper = path.upper()
+        return any(upper.startswith(prefix) for prefix in paths)
+
+
+async def menu_tree(session: AsyncSession, tenant: Tenant) -> MenuTree:
+    """Собирает дерево сети из базы.
+
+    Ветки категорий лежат в самих категориях: так их видно там же, где меню,
+    и перенос на новый ресторан не требуется — в iiko chain коды общие.
+    """
+    setup = await session.scalar(
+        select(IikoMenuSetup).where(IikoMenuSetup.tenant_id == tenant.id)
+    )
+
+    rows = await session.execute(
+        select(MenuCategory.name, MenuCategory.iiko_group_paths).where(
+            MenuCategory.tenant_id == tenant.id
+        )
+    )
+
+    category_paths: dict[str, tuple[str, ...]] = {}
+    for name, paths in rows:
+        cleaned = tuple(str(path).strip().upper() for path in (paths or []) if str(path).strip())
+        if cleaned:
+            category_paths[name.strip()] = cleaned
+
+    markers = tuple(
+        str(marker).strip().upper()
+        # Пустой список у настроенной сети — осознанный выбор «мусорных меток
+        # нет», а NULL бывает у строк, заведённых мимо приложения
+        for marker in (
+            setup.deny_markers if setup and setup.deny_markers is not None else DEFAULT_DENY_MARKERS
+        )
+        if str(marker).strip()
+    )
+    extras = tuple(
+        str(path).strip().upper()
+        for path in ((setup.extra_group_paths or ()) if setup else ())
+        if str(path).strip()
+    )
+
+    return MenuTree(
+        category_paths=category_paths,
+        deny_markers=markers,
+        extra_paths=extras,
+        keep_unknown_groups=bool(setup.keep_unknown_groups) if setup else False,
+    )
 
 
 async def authenticate(
@@ -340,8 +402,14 @@ async def apply_menu(
     restaurant_id: UUID,
     products: list[dict[str, object]],
 ) -> int:
-    """Сохраняет выгруженную номенклатуру для экрана сопоставления."""
+    """Сохраняет выгруженную номенклатуру для экрана сопоставления.
+
+    В справочнике точки десятки тысяч позиций: заготовки, посуда, акции
+    прошлых лет. Храним только ветки меню сети — остальное не нужно ни для
+    сопоставления, ни для стоп-листа, а место и время занимает.
+    """
     now = datetime.now(UTC)
+    tree = await menu_tree(session, tenant)
 
     existing = {
         product.product_id: product
@@ -354,10 +422,17 @@ async def apply_menu(
     }
 
     seen: set[str] = set()
+    skipped = 0
     for raw in products:
         code = str(raw.get("productId") or "").strip()
         if not code:
             continue
+
+        path = str(raw.get("groupPath") or raw.get("groupName") or "")
+        if not tree.keep_unknown_groups and not tree.in_menu(path):
+            skipped += 1
+            continue
+
         seen.add(code)
 
         product = existing.get(code)
@@ -384,12 +459,17 @@ async def apply_menu(
             raw.get("measureUnit")
         )[:32]
         product.product_type = (str(raw.get("type") or "") or None) and str(raw.get("type"))[:32]
+        # Деньги держим в копейках: рубли с копейками приходят дробью
+        product.price_kopecks = round(_float(raw.get("price")) * 100)
         product.is_active = bool(raw.get("isActive", True))
         product.has_sizes = bool(raw.get("hasSizes", False))
         product.seen_at = now
 
     # Товары, которых в выгрузке больше нет, удаляем: номенклатура кассы —
     # источник правды, а не накопительный список
+    if skipped:
+        print(f"iiko: пропущено {skipped} товаров вне веток меню сети")
+
     stale = [code for code in existing if code not in seen]
     if stale:
         await session.execute(
@@ -783,8 +863,14 @@ async def _sync_iiko_details(
 
         next_changed_at = (order.iiko_items_changed_at or now) if items_changed else None
         if order.iiko_items_changed_at != next_changed_at:
+            # Сообщаем один раз — в момент, когда правка появилась. Дальше
+            # касса шлёт тот же срез каждые полминуты, и гостя это разбудило бы
+            became_changed = next_changed_at is not None and order.iiko_items_changed_at is None
             order.iiko_items_changed_at = next_changed_at
             changed = True
+
+            if became_changed:
+                await _notify_event(session, tenant, order, push_service.ORDER_CHANGED)
 
     if changed:
         order.iiko_status_updated_at = now
@@ -922,10 +1008,18 @@ def _parse_iiko_time(value: object) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+async def _notify_event(
+    session: AsyncSession, tenant: Tenant, order: Order, event: str
+) -> None:
+    """Событие вне цепочки этапов. Не дошло — правка всё равно сохранена."""
+    try:
+        await push_service.notify_event(session, tenant.id, order, event)
+    except Exception as error:
+        print(f"уведомление о заказе {order.number} не ушло: {error}")
+
+
 async def _notify(session: AsyncSession, tenant: Tenant, order: Order) -> None:
     """Уведомление гостю. Не дошло — статус всё равно остаётся смещённым."""
-    from app.services import push as push_service
-
     try:
         await push_service.notify_order(session, tenant.id, order)
     except Exception as error:
@@ -1099,6 +1193,8 @@ async def groups(
     В базе точки тысячи позиций: заготовки, посуда, акции прошлых лет. Меню,
     которое реально продаётся, лежит в нескольких группах — по ним и работаем.
     """
+    tree = await menu_tree(session, tenant)
+
     rows = await session.execute(
         select(IikoProduct.group_path, IikoProduct.group_name, func.count())
         .where(
@@ -1117,7 +1213,7 @@ async def groups(
             "name": name or path or "",
             "path": path or name or "",
             "products": total,
-            "is_preset": _is_mamaroma_menu_path(path or name or ""),
+            "is_preset": tree.in_menu(path or name or ""),
         }
         for path, name, total in rows
     ]
@@ -1245,6 +1341,7 @@ async def auto_match(
         if link.extra_id:
             linked_extras.add(link.extra_id)
 
+    tree = await menu_tree(session, tenant)
     matched = 0
     skipped = 0
 
@@ -1271,7 +1368,7 @@ async def auto_match(
             product.product_id
             for product in products
             if _normalize(product.name) == _normalize(dish.name)
-            and _is_mamaroma_category_path(
+            and tree.fits_category(
                 category_name, product.group_path or product.group_name or ""
             )
         ]
@@ -1307,20 +1404,132 @@ def _groups_clause(groups: list[str]) -> ColumnElement[bool]:
     return or_(IikoProduct.group_path.in_(groups), IikoProduct.group_name.in_(groups))
 
 
-def _is_mamaroma_menu_path(path: str) -> bool:
-    normalized = path.upper()
-    if any(marker in normalized for marker in MAMAROMA_DENY_GROUP_MARKERS):
-        return False
-    return any(normalized.startswith(prefix) for prefix in MAMAROMA_MENU_GROUP_PATH_PREFIXES)
 
 
-def _is_mamaroma_category_path(category_name: str, path: str) -> bool:
-    normalized = path.upper()
-    if any(marker in normalized for marker in MAMAROMA_DENY_GROUP_MARKERS):
-        return False
+# ─────────────────────── перенос настройки между точками ───────────────────────
 
-    prefixes = MAMAROMA_CATEGORY_GROUP_PATH_PREFIXES.get(category_name.strip())
-    if not prefixes:
-        return _is_mamaroma_menu_path(path)
 
-    return any(normalized.startswith(prefix) for prefix in prefixes)
+async def copy_links(
+    session: AsyncSession,
+    tenant: Tenant,
+    source_id: UUID,
+    target_id: UUID,
+    overwrite: bool = False,
+) -> tuple[int, int]:
+    """Переносит сопоставление с настроенной точки на новую.
+
+    В iiko chain товары заводят централизованно, поэтому коды у ресторанов
+    сети совпадают: настроили одну точку — остальные получают то же самое
+    одним нажатием. Переносим только то, что есть в номенклатуре получателя,
+    иначе заказ уедет с кодом, которого на этой кассе нет.
+    """
+    if source_id == target_id:
+        return 0, 0
+
+    known = set(
+        await session.scalars(
+            select(IikoProduct.product_id).where(
+                IikoProduct.tenant_id == tenant.id,
+                IikoProduct.restaurant_id == target_id,
+            )
+        )
+    )
+
+    existing = {
+        ("dish", link.dish_id) if link.dish_id else ("extra", link.extra_id): link
+        for link in await session.scalars(
+            select(IikoLink).where(
+                IikoLink.tenant_id == tenant.id, IikoLink.restaurant_id == target_id
+            )
+        )
+    }
+
+    copied = 0
+    skipped = 0
+
+    source_links = await session.scalars(
+        select(IikoLink).where(
+            IikoLink.tenant_id == tenant.id, IikoLink.restaurant_id == source_id
+        )
+    )
+
+    for link in source_links:
+        key = ("dish", link.dish_id) if link.dish_id else ("extra", link.extra_id)
+
+        # Номенклатура получателя ещё не пришла — переносим вслепую только
+        # если её нет вовсе, иначе бережём точку от несуществующих кодов
+        if known and link.product_id not in known:
+            skipped += 1
+            continue
+
+        current = existing.get(key)
+        if current is not None:
+            if not overwrite or current.product_id == link.product_id:
+                skipped += 1
+                continue
+
+            current.product_id = link.product_id
+            current.size_id = link.size_id
+            current.modifier_group_id = link.modifier_group_id
+            copied += 1
+            continue
+
+        session.add(
+            IikoLink(
+                tenant_id=tenant.id,
+                restaurant_id=target_id,
+                dish_id=link.dish_id,
+                extra_id=link.extra_id,
+                product_id=link.product_id,
+                size_id=link.size_id,
+                modifier_group_id=link.modifier_group_id,
+            )
+        )
+        copied += 1
+
+    return copied, skipped
+
+
+async def save_menu_tree(
+    session: AsyncSession,
+    tenant: Tenant,
+    branches: list[dict[str, object]],
+    deny_markers: list[str],
+    extra_group_paths: list[str],
+    keep_unknown_groups: bool,
+) -> int:
+    """Сохраняет дерево сети: ветки категорий и общие правила отбора."""
+    categories = {
+        category.id: category
+        for category in await session.scalars(
+            select(MenuCategory).where(MenuCategory.tenant_id == tenant.id)
+        )
+    }
+
+    saved = 0
+    for raw in branches:
+        category = categories.get(cast(UUID, raw.get("category_id")))
+        if category is None:
+            continue
+
+        paths = [
+            str(path).strip()
+            for path in cast(list[object], raw.get("iiko_group_paths") or [])
+            if str(path).strip()
+        ]
+        if category.iiko_group_paths != paths:
+            category.iiko_group_paths = paths
+            saved += 1
+
+    setup = await session.scalar(
+        select(IikoMenuSetup).where(IikoMenuSetup.tenant_id == tenant.id)
+    )
+    if setup is None:
+        setup = IikoMenuSetup(tenant_id=tenant.id)
+        session.add(setup)
+
+    setup.deny_markers = [str(marker).strip() for marker in deny_markers if str(marker).strip()]
+    setup.extra_group_paths = [str(path).strip() for path in extra_group_paths if str(path).strip()]
+    setup.keep_unknown_groups = keep_unknown_groups
+
+    return saved

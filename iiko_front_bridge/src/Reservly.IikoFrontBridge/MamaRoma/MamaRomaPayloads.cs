@@ -239,6 +239,13 @@ internal sealed class MenuProduct
     /// </summary>
     public string Type { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Цена по прайсу кассы, в рублях. Сопоставлять по названию мало: у сети
+    /// бывает пять «Маргарит» разного размера, и цена — единственное, чем они
+    /// отличаются на экране.
+    /// </summary>
+    public decimal Price { get; set; }
+
     /// <summary>Есть ли у товара размеры — тогда в заказе нужен ещё и код размера.</summary>
     public bool HasSizes { get; set; }
 }
