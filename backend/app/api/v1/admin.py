@@ -1970,6 +1970,7 @@ async def iiko_bridges(session: SessionDep, tenant: TenantDep, staff: StaffDep) 
 _EMPTY_COUNTERS = {
     "linked_dishes": 0,
     "linked_extras": 0,
+    "unlinked_dishes": 0,
     "products": 0,
     "pending_orders": 0,
     "failed_orders": 0,
@@ -1995,6 +1996,21 @@ async def _iiko_counters(session: SessionDep, tenant_id: str) -> dict[UUID, dict
     for restaurant_id, dishes, extras in links:
         slot(restaurant_id)["linked_dishes"] = dishes
         slot(restaurant_id)["linked_extras"] = extras
+
+    # Сколько блюд активного меню ещё без товара кассы: именно на них
+    # заказ гостя упрётся, и знать об этом надо заранее
+    total_dishes = await session.scalar(
+        select(func.count())
+        .select_from(Dish)
+        .join(MenuCategory, MenuCategory.id == Dish.category_id)
+        .where(
+            Dish.tenant_id == tenant_id,
+            Dish.is_active.is_(True),
+            MenuCategory.is_active.is_(True),
+        )
+    )
+    for row in counters.values():
+        row["unlinked_dishes"] = max(0, (total_dishes or 0) - row["linked_dishes"])
 
     products = await session.execute(
         select(IikoProduct.restaurant_id, func.count())

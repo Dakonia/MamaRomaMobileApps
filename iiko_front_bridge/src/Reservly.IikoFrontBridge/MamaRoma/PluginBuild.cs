@@ -6,5 +6,5 @@ namespace Reservly.IikoFrontBridge.MamaRoma;
 /// </summary>
 internal static class PluginBuild
 {
-    public const string Version = "0.5.12";
+    public const string Version = "0.5.13";
 }

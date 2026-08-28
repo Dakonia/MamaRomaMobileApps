@@ -149,6 +149,13 @@ function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void 
                     <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
                       в кассе {row.products} товаров
                     </div>
+                    {/* Несопоставленное блюдо — это заказ, который не уедет
+                        на кухню. Показываем это до того, как гость его сделает */}
+                    {row.is_registered && row.unlinked_dishes > 0 ? (
+                      <div style={{ color: c.danger, fontSize: typography.caption.fontSize }}>
+                        не связано {row.unlinked_dishes}
+                      </div>
+                    ) : null}
                   </td>
 
                   <td style={{ ...styles.td, fontVariantNumeric: "tabular-nums" }}>

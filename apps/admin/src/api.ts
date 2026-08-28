@@ -174,6 +174,8 @@ export type Bridge = {
   terminal_name: string | null;
   linked_dishes: number;
   linked_extras: number;
+  /** Сколько блюд активного меню ещё без товара кассы. */
+  unlinked_dishes: number;
   products: number;
   pending_orders: number;
   failed_orders: number;
@@ -212,6 +214,9 @@ export type IikoLink = {
   product_type: string | null;
   size_id: string | null;
   modifier_group_id: string | null;
+  /** Наша цена и цена кассы: расхождение выдаёт неверную связь. */
+  our_price_kopecks: number;
+  iiko_price_kopecks: number;
   suggestions: IikoProduct[];
 };
 

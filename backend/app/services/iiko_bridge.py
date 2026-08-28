@@ -63,6 +63,11 @@ DEFAULT_DENY_MARKERS = (
 )
 
 
+# Цена выше этой — заглушка кассы, а не деньги. Держим потолок, чтобы одна
+# такая позиция не роняла всю выгрузку номенклатуры
+MAX_PRICE_KOPECKS = 100_000_000
+
+
 class BridgeError(Exception):
     pass
 
@@ -459,8 +464,10 @@ async def apply_menu(
             raw.get("measureUnit")
         )[:32]
         product.product_type = (str(raw.get("type") or "") or None) and str(raw.get("type"))[:32]
-        # Деньги держим в копейках: рубли с копейками приходят дробью
-        product.price_kopecks = round(_float(raw.get("price")) * 100)
+        # Деньги держим в копейках: рубли с копейками приходят дробью.
+        # Потолок нужен от заглушек вроде «8 888 888 888 рублей»: такие цены
+        # ставят, чтобы товар нельзя было пробить, а падать на них нельзя
+        product.price_kopecks = min(round(_float(raw.get("price")) * 100), MAX_PRICE_KOPECKS)
         product.is_active = bool(raw.get("isActive", True))
         product.has_sizes = bool(raw.get("hasSizes", False))
         product.seen_at = now

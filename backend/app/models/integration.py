@@ -8,7 +8,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -166,8 +166,12 @@ class IikoProduct(UUIDMixin, TenantMixin, TimestampMixin, Base):
     product_type: Mapped[str | None] = mapped_column(String(32), default=None)
 
     # Цена по прайсу кассы в копейках. Нужна на экране сопоставления: у сети
-    # бывает пять «Маргарит» разного размера, и цена — единственное отличие
-    price_kopecks: Mapped[int] = mapped_column(default=0)
+    # бывает пять «Маргарит» разного размера, и цена — единственное отличие.
+    #
+    # Тип широкий намеренно: в кассе цену-заглушку ставят миллиардами
+    # (8 888 888 888 рублей), чтобы товар нельзя было продать, и обычное
+    # целое такое не вмещает — вся выгрузка падала на одной такой позиции
+    price_kopecks: Mapped[int] = mapped_column(BigInteger, default=0)
 
     is_active: Mapped[bool] = mapped_column(default=True)
 

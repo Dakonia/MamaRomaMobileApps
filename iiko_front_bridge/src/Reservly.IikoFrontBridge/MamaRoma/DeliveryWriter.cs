@@ -340,7 +340,9 @@ internal sealed class DeliveryWriter
         }
         if (!string.IsNullOrWhiteSpace(source.Building))
         {
-            address.Building = TrimTo(source.Building, 10);
+            // Поле в iiko короткое: «литер Д» уже не помещается целиком,
+            // поэтому пишем сжато — «лит.Д», «к.2», «стр.3»
+            address.Building = TrimTo(BuildingShort(source.Building), 10);
         }
 
         return address;
@@ -519,6 +521,78 @@ internal sealed class DeliveryWriter
         return string.Join(" ", normalized.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
     }
 
+    /// <summary>
+    /// Разбирает значение корпуса на слово и остаток: «литер Д» → («лит», «Д»),
+    /// «корпус 2» → («корп», «2»), «5» → («корп», «5»).
+    ///
+    /// В адресах сети встречается и корпус, и строение, и литера, а гость
+    /// пишет их как придётся: «лит. Д», «литера Д», «литД».
+    /// </summary>
+    private static (string word, string value) SplitBuilding(string raw)
+    {
+        var text = Trim(raw);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var lowered = text.ToLowerInvariant();
+
+        foreach (var known in BuildingWords)
+        {
+            if (!lowered.StartsWith(known.prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var rest = text.Substring(known.prefix.Length).TrimStart('.', ' ', '-', '№');
+            if (!string.IsNullOrWhiteSpace(rest))
+            {
+                return (known.word, rest.Trim());
+            }
+        }
+
+        return ("корп", text);
+    }
+
+    /// <summary>
+    /// Слова, которыми в адресах называют вторую часть дома. Порядок важен:
+    /// длинные написания идут первыми, иначе «литера Д» разберётся как
+    /// «литер» плюс «а Д».
+    /// </summary>
+    private static readonly (string prefix, string word)[] BuildingWords =
+    {
+        ("литера", "лит"),
+        ("литер", "лит"),
+        ("лит", "лит"),
+        ("строение", "стр"),
+        ("стр", "стр"),
+        ("корпус", "корп"),
+        ("корп", "корп"),
+        ("кор", "корп"),
+        ("к", "корп"),
+    };
+
+    /// <summary>«лит.Д», «к.2» — короткая запись для узкого поля кассы.</summary>
+    private static string BuildingShort(string raw)
+    {
+        var (word, value) = SplitBuilding(raw);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var shortWord = word == "корп" ? "к" : word;
+        return shortWord + "." + value;
+    }
+
+    /// <summary>«корп. 2», «лит. Д» — как это читает курьер в накладной.</summary>
+    private static string BuildingForHuman(string raw)
+    {
+        var (word, value) = SplitBuilding(raw);
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : word + ". " + value;
+    }
+
     /// <summary>«Санкт-Петербург, Невский пр., д. 28, корп. 2, стр. 1»</summary>
     private static string BuildLine1(PendingOrderAddress source)
     {
@@ -533,7 +607,9 @@ internal sealed class DeliveryWriter
         }
         if (!string.IsNullOrWhiteSpace(source.Building))
         {
-            parts.Add("корп. " + Trim(source.Building));
+            // «корп. литер Д» — бессмыслица на накладной: слово подбираем
+            // по самому значению, а если оно уже названо, не дублируем
+            parts.Add(BuildingForHuman(source.Building));
         }
         // Строения в iiko отдельным полем нет — дописываем в строку адреса
         if (!string.IsNullOrWhiteSpace(source.Construction))

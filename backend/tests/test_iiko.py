@@ -1170,3 +1170,39 @@ async def test_tekst_pro_pravku_sostava_mozhno_izmenit(
     await session.commit()
 
     assert any(order.number in push["title"] for push in no_push)
+
+
+async def test_cena_zaglushka_ne_ronyaet_vygruzku(
+    session: AsyncSession, tenant, restaurant, mapped_dish
+):
+    """В кассе цену-заглушку ставят миллиардами, чтобы товар не пробили.
+
+    Такая позиция роняла приём всей номенклатуры: число не влезало в колонку,
+    и вместе с ним терялась вся выгрузка точки.
+    """
+    _, path = mapped_dish
+
+    saved = await iiko_bridge.apply_menu(
+        session,
+        tenant,
+        restaurant.id,
+        [
+            {"productId": "sane", "name": "Обычное", "groupPath": path, "price": 590.5},
+            {"productId": "stub", "name": "Заглушка", "groupPath": path, "price": 8888888888},
+        ],
+    )
+    await session.commit()
+
+    rows = {
+        row.product_id: row.price_kopecks
+        for row in await session.scalars(
+            select(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id)
+        )
+    }
+
+    assert saved == 2
+    assert rows["sane"] == 59050
+    assert rows["stub"] == iiko_bridge.MAX_PRICE_KOPECKS
+
+    await session.execute(delete(IikoProduct).where(IikoProduct.restaurant_id == restaurant.id))
+    await session.commit()

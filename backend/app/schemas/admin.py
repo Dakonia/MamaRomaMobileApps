@@ -575,6 +575,8 @@ class BridgeRow(BaseModel):
     # Сколько блюд и добавок сопоставлено с товарами этой кассы
     linked_dishes: int
     linked_extras: int
+    # Блюда активного меню без товара кассы: с ними заказ на кухню не уедет
+    unlinked_dishes: int = 0
     products: int
     pending_orders: int
     failed_orders: int
