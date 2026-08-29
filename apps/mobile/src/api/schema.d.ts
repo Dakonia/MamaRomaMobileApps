@@ -2275,6 +2275,8 @@ export interface components {
             /** Covered */
             covered: boolean;
             restaurant?: components["schemas"]["RestaurantRead"] | null;
+            /** Zone Id */
+            zone_id?: string | null;
             /** Zone Name */
             zone_name?: string | null;
             /**

@@ -140,6 +140,7 @@ async def resolve_delivery(
     return DeliveryResolve(
         covered=not restaurant.is_paused,
         restaurant=RestaurantRead.model_validate(restaurant),
+        zone_id=zone.id,
         zone_name=zone.name,
         delivery_price_kopecks=zone.delivery_price_kopecks,
         min_order_kopecks=minimum,

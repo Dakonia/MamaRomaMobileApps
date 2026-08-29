@@ -116,6 +116,7 @@ class DeliveryResolve(BaseModel):
 
     covered: bool
     restaurant: RestaurantRead | None = None
+    zone_id: UUID | None = None
     zone_name: str | None = None
     delivery_price_kopecks: int = 0
     # Минимум именно на сегодня: в выходные он бывает выше

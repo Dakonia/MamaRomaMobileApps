@@ -1370,6 +1370,43 @@ textarea:focus-visible {
   width: min(520px, 100vw);
 }
 
+.detail-drawer.reservation-drawer,
+.detail-drawer.feedback-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: min(560px, calc(100vw - 54px));
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  box-shadow: var(--sh-3);
+}
+
+.detail-drawer.reservation-drawer .drawer-head,
+.detail-drawer.feedback-drawer .drawer-head {
+  flex: 0 0 auto;
+}
+
+.detail-drawer.reservation-drawer .drawer-body,
+.detail-drawer.feedback-drawer .drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.detail-drawer.reservation-drawer .drawer-foot,
+.detail-drawer.feedback-drawer .drawer-foot {
+  position: static;
+  flex: 0 0 auto;
+}
+
 .table-code {
   max-width: 124px;
   min-height: 24px;
@@ -3740,6 +3777,11 @@ textarea:focus-visible {
   }
 
   .dish-drawer-shell {
+    width: 100vw;
+  }
+
+  .detail-drawer.reservation-drawer,
+  .detail-drawer.feedback-drawer {
     width: 100vw;
   }
 

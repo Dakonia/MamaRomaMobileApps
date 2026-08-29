@@ -276,11 +276,6 @@ function DishDrawer({
                 </div>
               )}
             </div>
-            <div className="dish-preview-copy">
-              <span className="metric-label">Позиция меню</span>
-              <h3>{editorTitle}</h3>
-              <p>{draft.description?.trim() || draft.composition?.trim() || "Описание ещё не заполнено"}</p>
-            </div>
             <div className="dish-preview-facts">
               <span>
                 <small>Категория</small>

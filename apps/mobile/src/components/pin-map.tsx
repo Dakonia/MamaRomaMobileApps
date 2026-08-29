@@ -26,8 +26,10 @@ export type MapZone = {
 type Props = {
   style?: StyleProp<ViewStyle>;
   initialRegion: Region;
-  /** Куда сеть возит: рисуем поверх карты полупрозрачными пятнами. */
+  /** Куда сеть возит: рисуем поверх карты контурами. */
   zones?: MapZone[];
+  /** Зона, которая обслуживает точку под меткой: её выделяем заливкой. */
+  activeZoneId?: string | null;
   showsUserLocation?: boolean;
   onPanDrag?: () => void;
   onRegionChange?: (region: Region) => void;
@@ -90,7 +92,12 @@ function yandexPage(key: string, region: Region): string {
 
       var painted = null;
 
-      var paint = function (zones) {
+      /**
+       * Зоны рисуем контурами, а не пятнами: они накладываются друг на друга,
+       * и полупрозрачные заливки складывались в грязь, где ничего не разобрать.
+       * Заливку получает только та зона, которая обслуживает точку под меткой.
+       */
+      var paint = function (zones, activeId) {
         if (painted) { map.geoObjects.remove(painted); }
         painted = new ymaps.GeoObjectCollection();
 
@@ -103,10 +110,12 @@ function yandexPage(key: string, region: Region): string {
             ring.push([zone.outline[p][1], zone.outline[p][0]]);
           }
 
+          var active = zone.id === activeId;
+
           painted.add(new ymaps.Polygon([ring], { hintContent: zone.name }, {
-            fillColor: zone.color + '26',
-            strokeColor: zone.color + 'B3',
-            strokeWidth: 2,
+            fillColor: active ? zone.color + '2E' : zone.color + '0D',
+            strokeColor: active ? zone.color : zone.color + '66',
+            strokeWidth: active ? 3 : 1,
             // Зоны под пальцем не мешают: карту двигают, а не тыкают в них
             interactivityModel: 'default#transparent',
           }));
@@ -121,7 +130,7 @@ function yandexPage(key: string, region: Region): string {
           if (data.type === 'move') {
             map.setCenter([data.latitude, data.longitude], data.zoom, { duration: data.duration });
           } else if (data.type === 'zones') {
-            paint(data.zones);
+            paint(data.zones, data.activeId);
           }
         } catch (error) {}
       };
@@ -137,7 +146,7 @@ function yandexPage(key: string, region: Region): string {
  * работал бы в Expo Go, а JS API одинаково живёт на обеих платформах.
  */
 export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
-  { style, initialRegion, zones, onPanDrag, onRegionChange, onRegionChangeComplete },
+  { style, initialRegion, zones, activeZoneId, onPanDrag, onRegionChange, onRegionChangeComplete },
   ref,
 ) {
   const web = useRef<WebView>(null);
@@ -149,8 +158,10 @@ export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
   // и повторяем после загрузки страницы: до неё сообщение упало бы в пустоту
   const sendZones = useCallback(() => {
     if (!loaded.current || zones === undefined) return;
-    web.current?.postMessage(JSON.stringify({ type: 'zones', zones }));
-  }, [zones]);
+    web.current?.postMessage(
+      JSON.stringify({ type: 'zones', zones, activeId: activeZoneId ?? null }),
+    );
+  }, [activeZoneId, zones]);
 
   useEffect(sendZones, [sendZones]);
 

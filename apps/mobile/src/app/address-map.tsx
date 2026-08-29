@@ -303,6 +303,7 @@ export default function AddressMapScreen() {
           outline: zone.outline,
           color: zone.color,
         }))}
+        activeZoneId={delivery?.zone_id ?? null}
         showsUserLocation
         onPanDrag={() => {
           lift.value = withSpring(1, { damping: 16, stiffness: 260 });
