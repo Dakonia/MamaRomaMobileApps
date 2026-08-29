@@ -28,8 +28,9 @@ import { useTheme } from '@/theme/theme-provider';
 // гость видел в карточке чужой адрес, принимая его за свой
 const FALLBACK = { latitude: 59.9386, longitude: 30.3141 };
 
-// Дольше этого геопозицию не ждём: лучше показать центр города, чем пустой экран
-const LOCATE_MS = 2_500;
+// Дольше этого пустой экран не держим: показываем центр города и продолжаем
+// ждать телефон в фоне — придёт позже, карта сама доедет
+const LOCATE_MS = 4_000;
 const SPAN = { latitudeDelta: 0.004, longitudeDelta: 0.004 };
 
 /** Метров между точками — грубо, но для «сдвинулись ли мы» достаточно. */
@@ -70,8 +71,25 @@ export default function AddressMapScreen() {
     if (start !== null) return;
 
     let alive = true;
+    let shown = false;
+
     const settle = (point: { latitude: number; longitude: number }, mine = true) => {
       if (!alive) return;
+
+      // Карта уже открыта на запасной точке — не перерисовываем её заново,
+      // а плавно доезжаем до гостя и спрашиваем адрес там
+      if (shown) {
+        if (!mine) return;
+
+        const here = { ...point, ...SPAN };
+        setReal(true);
+        lastAsked.current = here;
+        map.current?.animateToRegion(here, 600);
+        void resolve(here);
+        return;
+      }
+
+      shown = true;
       setReal(mine);
       setStart({ ...point, ...SPAN });
     };
@@ -123,14 +141,14 @@ export default function AddressMapScreen() {
     staleTime: 60 * 60_000,
   });
 
-  const activeZone = (zones.data ?? []).find((zone) => zone.id === delivery?.zone_id) ?? null;
-
   const map = useRef<React.ComponentRef<typeof PinMap>>(null);
   const lastAsked = useRef<Region | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [found, setFound] = useState<AddressSuggestion | null>(null);
   const [delivery, setDelivery] = useState<DeliveryResolve | null>(null);
+  // Зона под меткой: её подсвечиваем на карте её же цветом из админки
+  const activeZone = (zones.data ?? []).find((zone) => zone.id === delivery?.zone_id) ?? null;
   const [resolving, setResolving] = useState(false);
   // Высоту нижней карточки меряем: адрес бывает в одну строку, бывает в три,
   // и кнопка геолокации должна стоять над ней в любом случае

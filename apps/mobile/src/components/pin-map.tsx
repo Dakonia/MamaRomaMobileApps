@@ -119,7 +119,7 @@ function yandexPage(key: string, region: Region): string {
           painted.add(new ymaps.Polygon([ringOf(coverage[i])], {}, {
             fillColor: data.color + '12',
             strokeColor: data.color,
-            strokeWidth: 3,
+            strokeWidth: 2,
             interactivityModel: 'default#transparent',
           }));
         }
