@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -25,6 +26,10 @@ app = FastAPI(
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     lifespan=lifespan,
 )
+
+# Меню сети — это триста килобайт JSON на каждое обновление. В сжатом виде их
+# около сорока: на телефоне разница между «моргнуло» и «висит секунду»
+app.add_middleware(GZipMiddleware, minimum_size=1_000)
 
 app.add_middleware(
     CORSMiddleware,

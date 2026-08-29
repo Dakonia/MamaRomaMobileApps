@@ -1,6 +1,9 @@
+import { onlineManager } from '@tanstack/react-query';
+import { usePathname } from 'expo-router';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { RefreshControl } from 'react-native';
 
+import { queryClient } from '@/lib/query-client';
 import { useRefreshing } from '@/store/refreshing';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -18,6 +21,7 @@ const PATIENCE_MS = 15_000;
 export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
   const theme = useTheme();
   const id = useId();
+  const screen = usePathname();
   const [refreshing, setRefreshing] = useState(false);
 
   // Чтобы обещание, отставшее от жизни экрана, не включало значок заново
@@ -45,7 +49,22 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
     // Страховка от запроса, который не вернётся никогда
     timer.current = setTimeout(() => {
       if (__DEV__) {
-        console.warn(`Обновление длится дольше ${PATIENCE_MS / 1000} с — значок убран`);
+        // Кто именно не отвечает: без этого причину приходится угадывать.
+        // paused — запрос стоит, потому что React Query считает нас офлайн,
+        // fetching — ушёл и не вернулся
+        const busyQueries = queryClient
+          .getQueryCache()
+          .getAll()
+          .filter((query) => query.state.fetchStatus !== 'idle')
+          .map((query) => `${JSON.stringify(query.queryKey)} — ${query.state.fetchStatus}`);
+
+        console.warn(
+          [
+            `Обновление на ${screen} висит дольше ${PATIENCE_MS / 1000} с`,
+            `сеть: ${onlineManager.isOnline() ? 'онлайн' : 'офлайн'}`,
+            busyQueries.length > 0 ? `застряли: ${busyQueries.join(', ')}` : 'застрявших запросов нет',
+          ].join('. '),
+        );
       }
       finish();
     }, PATIENCE_MS);
@@ -54,7 +73,7 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
       .then(reload)
       .catch(() => undefined)
       .finally(finish);
-  }, [finish, id, offset, reload]);
+  }, [finish, id, offset, reload, screen]);
 
   // Экран закрыли посреди обновления — запись о нём убираем сами
   useEffect(() => {

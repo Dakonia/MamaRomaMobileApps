@@ -15,7 +15,7 @@ import {
   Trash2,
   Utensils,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import {
@@ -157,12 +157,27 @@ function categoryName(categoryById: Map<string, Category>, id: string): string {
   return categoryById.get(id)?.name ?? "Без категории";
 }
 
-function Metric({ label, note, value }: { label: string; note: string; value: string }) {
+function Metric({
+  icon,
+  label,
+  note,
+  tone = "accent",
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  note: string;
+  tone?: "accent" | "ok" | "warn" | "bad";
+  value: string;
+}) {
   return (
-    <div className="metric-card">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
-      <div className="metric-note">{note}</div>
+    <div className="metric-card metric-card-rich" data-tone={tone}>
+      <div className="metric-icon">{icon}</div>
+      <div className="min-w-0">
+        <div className="metric-label">{label}</div>
+        <div className="metric-value">{value}</div>
+        <div className="metric-note">{note}</div>
+      </div>
     </div>
   );
 }
@@ -173,6 +188,16 @@ function DishThumb({ dish }: { dish: Dish }) {
       {dish.image_url ? <img src={mediaUrl(dish.image_url) ?? undefined} alt="" /> : <ImageOff size={16} aria-hidden />}
     </div>
   );
+}
+
+function portionText(dish: Dish): string {
+  if (dish.weight_grams) return `${dish.weight_grams} г`;
+  if (dish.volume_ml) return `${dish.volume_ml} мл`;
+  return "Порция не задана";
+}
+
+function dishDetailsText(dish: Dish): string {
+  return dish.description?.trim() || dish.composition?.trim() || "Описание не заполнено";
 }
 
 function DishDrawer({
@@ -526,10 +551,16 @@ export function MenuTab() {
     () => new Map((categories.data ?? []).map((category) => [category.id, category])),
     [categories.data],
   );
+  const categoryList = categories.data ?? [];
+  const dishList = dishes.data ?? [];
+  const selectedCategory = filter ? categoryById.get(filter) ?? null : null;
+  const activeCategories = categoryList.filter((category) => category.is_active).length;
+  const popularCategories = categoryList.filter((category) => category.show_in_popular).length;
+  const stopDishIds = useMemo(() => new Set((stopList.data ?? []).map((entry) => entry.dish_id)), [stopList.data]);
 
   const rows = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("ru-RU");
-    return [...(dishes.data ?? [])]
+    return [...dishList]
       .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ru-RU"))
       .filter((dish) => {
         const text = `${dish.name} ${dish.description ?? ""} ${dish.composition ?? ""} ${categoryName(
@@ -538,11 +569,12 @@ export function MenuTab() {
         )}`.toLocaleLowerCase("ru-RU");
         return (!filter || dish.category_id === filter) && text.includes(needle);
       });
-  }, [categoryById, dishes.data, filter, search]);
+  }, [categoryById, dishList, filter, search]);
 
-  const selected = selectedId ? (dishes.data ?? []).find((dish) => dish.id === selectedId) ?? null : null;
-  const activeCount = (dishes.data ?? []).filter((dish) => dish.is_active).length;
-  const noPhoto = (dishes.data ?? []).filter((dish) => !dish.image_url).length;
+  const selected = selectedId ? dishList.find((dish) => dish.id === selectedId) ?? null : null;
+  const activeCount = dishList.filter((dish) => dish.is_active).length;
+  const hiddenCount = dishList.length - activeCount;
+  const noPhoto = dishList.filter((dish) => !dish.image_url).length;
   const stopCount = stopList.data?.length ?? 0;
 
   const dishColumns = useMemo(
@@ -555,26 +587,36 @@ export function MenuTab() {
             return (
               <div className="dish-row-title">
                 <DishThumb dish={dish} />
-                <div className="min-w-0">
-                  <div className="row-main">{info.getValue()}</div>
-                  <div className="row-sub">
-                    {dish.weight_grams ? `${dish.weight_grams} г` : dish.volume_ml ? `${dish.volume_ml} мл` : "Порция не задана"}
-                    {dish.calories ? ` · ${dish.calories} ккал` : ""}
+                <div className="dish-row-copy">
+                  <div className="dish-row-head">
+                    <span className="row-main">{info.getValue()}</span>
+                    {!dish.image_url ? <Badge text="без фото" tone="muted" /> : null}
+                  </div>
+                  <div className="dish-row-meta">
+                    <span>{categoryName(categoryById, dish.category_id)}</span>
+                    <span>{dishDetailsText(dish)}</span>
                   </div>
                 </div>
               </div>
             );
           },
         }),
-        dishColumn.accessor("category_id", {
-          header: "Категория",
-          cell: (info) => categoryName(categoryById, info.getValue()),
-        }),
         dishColumn.accessor("price_kopecks", {
-          header: "Цена",
+          header: "Цена / порция",
           meta: { align: "right" },
           sortFn: "basic",
-          cell: (info) => <span className="mono">{formatPrice(info.getValue())}</span>,
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <div className="dish-price-cell">
+                <span className="mono">{formatPrice(info.getValue())}</span>
+                <span className="row-sub">
+                  {portionText(dish)}
+                  {dish.calories ? ` · ${dish.calories} ккал` : ""}
+                </span>
+              </div>
+            );
+          },
         }),
         dishColumn.display({
           id: "flags",
@@ -583,21 +625,30 @@ export function MenuTab() {
             const dish = info.row.original;
             return (
               <div className="chips-line">
-                {dish.is_new ? <Badge text="new" tone="accent" /> : null}
+                {dish.is_new ? <Badge text="новинка" tone="accent" /> : null}
                 {dish.is_spicy ? <Badge text="острое" tone="warn" /> : null}
-                {dish.is_vegetarian ? <Badge text="veg" tone="ok" /> : null}
-                {!dish.image_url ? <Badge text="без фото" tone="muted" /> : null}
+                {dish.is_vegetarian ? <Badge text="вегетарианское" tone="ok" /> : null}
+                {!dish.is_new && !dish.is_spicy && !dish.is_vegetarian ? (
+                  <span className="row-muted">нет</span>
+                ) : null}
               </div>
             );
           },
         }),
         dishColumn.accessor("is_active", {
-          header: "Статус",
-          cell: (info) =>
-            info.getValue() ? <Badge text="в продаже" tone="ok" /> : <Badge text="снято" tone="muted" />,
+          header: "Витрина",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <div className="status-stack">
+                {info.getValue() ? <Badge text="в продаже" tone="ok" /> : <Badge text="снято" tone="muted" />}
+                {stopDishIds.has(dish.id) ? <Badge text="в стоп-листе" tone="warn" /> : null}
+              </div>
+            );
+          },
         }),
         dishColumn.accessor("sort_order", {
-          header: "Порядок",
+          header: "Сортировка",
           meta: { align: "right" },
           sortFn: "basic",
           cell: (info) => <span className="mono">{info.getValue()}</span>,
@@ -610,8 +661,7 @@ export function MenuTab() {
             const dish = info.row.original;
             return (
               <div className="cell-actions">
-                <IconButton
-                  label="Править"
+                <Button
                   size="xs"
                   variant="ghost"
                   onClick={(event) => {
@@ -621,9 +671,9 @@ export function MenuTab() {
                   }}
                 >
                   <Edit3 size={14} aria-hidden />
-                </IconButton>
-                <IconButton
-                  label={dish.is_active ? "Снять с продажи" : "Вернуть в продажу"}
+                  Детали
+                </Button>
+                <Button
                   size="xs"
                   variant="ghost"
                   onClick={(event) => {
@@ -635,7 +685,8 @@ export function MenuTab() {
                   }}
                 >
                   {dish.is_active ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
-                </IconButton>
+                  {dish.is_active ? "Снять" : "В продажу"}
+                </Button>
                 <IconButton
                   label="Удалить"
                   size="xs"
@@ -652,7 +703,7 @@ export function MenuTab() {
           },
         }),
       ]),
-    [categoryById, saveDish],
+    [categoryById, saveDish, stopDishIds],
   );
 
   const stopColumns = useMemo(
@@ -691,7 +742,7 @@ export function MenuTab() {
         title="Меню"
         action={
           <Button
-            disabled={(categories.data ?? []).length === 0}
+            disabled={categoryList.length === 0}
             onClick={() => {
               setCreating(true);
               setSelectedId(null);
@@ -704,14 +755,37 @@ export function MenuTab() {
         description="Категории, блюда, карточки для приложения и стоп-лист по ресторанам."
       >
         <div className="metric-strip">
-          <Metric label="Блюд" note="в каталоге" value={String(dishes.data?.length ?? 0)} />
-          <Metric label="В продаже" note="видны гостям" value={String(activeCount)} />
-          <Metric label="Без фото" note="нужно оформить" value={String(noPhoto)} />
-          <Metric label="Стоп-лист" note="по точкам" value={String(stopCount)} />
+          <Metric
+            icon={<Utensils size={17} aria-hidden />}
+            label="Блюд"
+            note={`${activeCount} в продаже, ${hiddenCount} снято`}
+            value={String(dishList.length)}
+          />
+          <Metric
+            icon={<Eye size={17} aria-hidden />}
+            label="Категорий"
+            note={`${activeCategories} опубликовано, ${popularCategories} в подборке`}
+            tone="ok"
+            value={String(categoryList.length)}
+          />
+          <Metric
+            icon={<ImageOff size={17} aria-hidden />}
+            label="Без фото"
+            note="карточки требуют оформления"
+            tone={noPhoto > 0 ? "warn" : "ok"}
+            value={String(noPhoto)}
+          />
+          <Metric
+            icon={<Flame size={17} aria-hidden />}
+            label="Стоп-лист"
+            note="позиции скрыты по ресторанам"
+            tone={stopCount > 0 ? "bad" : "ok"}
+            value={String(stopCount)}
+          />
         </div>
       </Section>
 
-      <Section title="Категории">
+      <Section title="Категории меню">
         <div className="surface-toolbar">
           <label className="field">
             <span className="field-label">Новая категория</span>
@@ -742,54 +816,78 @@ export function MenuTab() {
           </div>
         ) : (
           <div className="category-grid">
-            {(categories.data ?? []).map((category) => (
+            {categoryList.map((category) => (
               <div key={category.id} className="category-card" data-active={filter === category.id}>
-                <button className="category-main" type="button" onClick={() => setFilter(category.id)}>
-                  <span className="row-main">{category.name}</span>
-                  <span className="row-sub">
-                    {category.dishes_count} блюд · порядок {category.sort_order}
+                <button
+                  aria-pressed={filter === category.id}
+                  className="category-main"
+                  type="button"
+                  onClick={() => setFilter((current) => (current === category.id ? null : category.id))}
+                >
+                  <span className="category-title-row">
+                    <span className="row-main">{category.name}</span>
+                    {filter === category.id ? <Badge text="фильтр" tone="accent" /> : null}
                   </span>
-                  <span className="chips-line">
-                    {category.is_active ? <Badge text="видна" tone="ok" /> : <Badge text="скрыта" tone="muted" />}
-                    {category.show_in_popular ? (
-                      <Badge text="часто заказывают" tone="accent" />
+                  <span className="category-stats-row">
+                    <span>
+                      <strong>{category.dishes_count}</strong>
+                      <span> блюд</span>
+                    </span>
+                    <span>
+                      <strong>{category.sort_order}</strong>
+                      <span> порядок</span>
+                    </span>
+                  </span>
+                  <span className="category-status-row">
+                    {category.is_active ? (
+                      <Badge text="опубликована" tone="ok" />
                     ) : (
-                      <Badge text="не в хитах" tone="muted" />
+                      <Badge text="скрыта в меню" tone="muted" />
+                    )}
+                    {category.show_in_popular ? (
+                      <Badge text="в часто заказывают" tone="accent" />
+                    ) : (
+                      <Badge text="не в подборке" tone="muted" />
                     )}
                   </span>
                 </button>
-                <div className="cell-actions">
-                  <IconButton
-                    label={category.show_in_popular ? "Убрать из популярных" : "Добавить в популярные"}
+                <div className="category-action-row">
+                  <Button
                     size="xs"
                     variant="ghost"
-                    onClick={() =>
+                    onClick={(event) => {
+                      event.stopPropagation();
                       togglePopular.mutate({
                         category,
                         show_in_popular: !category.show_in_popular,
-                      })
-                    }
+                      });
+                    }}
                   >
                     {category.show_in_popular ? <StarOff size={14} aria-hidden /> : <Star size={14} aria-hidden />}
-                  </IconButton>
-                  <IconButton
-                    label={category.is_active ? "Скрыть категорию" : "Показать категорию"}
+                    {category.show_in_popular ? "Убрать из подборки" : "В подборку"}
+                  </Button>
+                  <Button
                     size="xs"
                     variant="ghost"
-                    onClick={() =>
+                    onClick={(event) => {
+                      event.stopPropagation();
                       toggleCategory.mutate({
                         category,
                         is_active: !category.is_active,
-                      })
-                    }
+                      });
+                    }}
                   >
                     {category.is_active ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
-                  </IconButton>
+                    {category.is_active ? "Скрыть" : "Показать"}
+                  </Button>
                   <IconButton
                     label="Удалить категорию"
                     size="xs"
                     variant="danger"
-                    onClick={() => setDeleteCategoryTarget(category)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setDeleteCategoryTarget(category);
+                    }}
                   >
                     <Trash2 size={14} aria-hidden />
                   </IconButton>
@@ -814,6 +912,19 @@ export function MenuTab() {
               />
             </span>
           </label>
+          {selectedCategory ? (
+            <div className="active-filter-pill">
+              <span className="row-muted">Категория</span>
+              <span className="row-main">{selectedCategory.name}</span>
+              <Button size="xs" variant="ghost" onClick={() => setFilter(null)}>
+                Сбросить
+              </Button>
+            </div>
+          ) : (
+            <span className="toolbar-note">
+              Показано {rows.length} из {dishList.length}
+            </span>
+          )}
           <span className="toolbar-spacer" />
           <DensityToggle density={density} onChange={setDensity} />
         </div>
