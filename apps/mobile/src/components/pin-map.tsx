@@ -112,23 +112,26 @@ function yandexPage(key: string, region: Region): string {
           return ring;
         };
 
+        // Граница покрытия — сплошная и в полную силу: на сером фоне карты
+        // бледная линия терялась среди дорог
         var coverage = data.coverage || [];
         for (var i = 0; i < coverage.length; i += 1) {
           painted.add(new ymaps.Polygon([ringOf(coverage[i])], {}, {
-            fillColor: data.color + '14',
-            strokeColor: data.color + '80',
-            strokeWidth: 2,
+            fillColor: data.color + '12',
+            strokeColor: data.color,
+            strokeWidth: 3,
             interactivityModel: 'default#transparent',
           }));
         }
 
         if (data.zone) {
+          // Зона под меткой заметно плотнее общей границы: её видно сразу
           painted.add(new ymaps.Polygon([ringOf(data.zone.outline)], {
             hintContent: data.zone.name,
           }, {
-            fillColor: data.zone.color + '33',
+            fillColor: data.zone.color + '40',
             strokeColor: data.zone.color,
-            strokeWidth: 3,
+            strokeWidth: 5,
             interactivityModel: 'default#transparent',
           }));
         }
