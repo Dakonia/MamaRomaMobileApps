@@ -37,9 +37,16 @@ def contains(outline: list[list[float]], longitude: float, latitude: float) -> b
     return inside
 
 
-# Насколько упрощаем общий контур: около двадцати метров. На карте разницы не
-# видно, а точек становится втрое меньше
-SIMPLIFY = 0.0002
+# Насколько упрощаем общий контур: около тридцати метров. На карте разницы не
+# видно, а точек становится вдвое меньше
+SIMPLIFY = 0.0003
+
+# Зоны рисовали руками, и между соседними остаются щели в десятки метров. Из-за
+# них объединение получалось дырявым, а граница — рваной, с заходами внутрь.
+# Раздуваем контур на сотню метров и сдуваем обратно: щели заплывают, силуэт
+# становится цельным. Это только для показа — возим ли по адресу, решает
+# проверка по самим зонам, а не эта картинка
+SMOOTH = 0.0008
 
 
 def coverage(outlines: list[list[list[float]]]) -> list[list[list[float]]]:
@@ -56,10 +63,13 @@ def coverage(outlines: list[list[list[float]]]) -> list[list[list[float]]]:
 
     # buffer(0) чинит контуры, которые сами себя пересекают: такие в базе
     # попадаются после ручного рисования, и объединение на них падает
-    merged = unary_union([shape.buffer(0) for shape in shapes]).simplify(SIMPLIFY)
+    merged = unary_union([shape.buffer(0) for shape in shapes])
+    smoothed = merged.buffer(SMOOTH).buffer(-SMOOTH).simplify(SIMPLIFY)
 
-    parts = merged.geoms if isinstance(merged, MultiPolygon) else [merged]
+    parts = smoothed.geoms if isinstance(smoothed, MultiPolygon) else [smoothed]
 
+    # Дыры внутри не показываем: после сглаживания остаются только клочки в
+    # пару гектаров — следы ручного рисования, а не районы без доставки
     return [
         [[round(x, 6), round(y, 6)] for x, y in part.exterior.coords]
         for part in parts

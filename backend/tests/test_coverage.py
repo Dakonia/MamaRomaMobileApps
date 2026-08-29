@@ -4,6 +4,8 @@
 кусков в ней быть не должно.
 """
 
+import pytest
+
 from app.services.delivery import coverage
 
 # Два перекрывающихся квадрата и один отдельный, далеко в стороне
@@ -13,14 +15,18 @@ FAR = [[10.0, 10.0], [11.0, 10.0], [11.0, 11.0], [10.0, 11.0]]
 
 
 def test_sosednie_zony_slivayutsya_v_odnu():
-    """Перекрытие исчезает: вместо двух контуров получается один."""
+    """Перекрытие исчезает: вместо двух контуров получается один.
+
+    Границу перед показом сглаживают, поэтому крайние точки сходятся с
+    исходными не до знака, а до метра — этого достаточно.
+    """
     result = coverage([LEFT, RIGHT])
 
     assert len(result) == 1
 
     longitudes = [point[0] for point in result[0]]
-    assert min(longitudes) == 0.0
-    assert max(longitudes) == 3.0
+    assert min(longitudes) == pytest.approx(0.0, abs=0.001)
+    assert max(longitudes) == pytest.approx(3.0, abs=0.001)
 
 
 def test_dalekaya_zona_ostaetsya_otdelnym_kuskom():
