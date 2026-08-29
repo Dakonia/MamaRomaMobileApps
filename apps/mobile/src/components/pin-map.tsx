@@ -149,6 +149,9 @@ function yandexPage(key: string, region: Region): string {
 
       document.addEventListener('message', function (event) { apply(event.data); });
       window.addEventListener('message', function (event) { apply(event.data); });
+
+      // Слушатели на месте — теперь приложению есть кому отвечать
+      post('ready', 0, 0, 0);
     });`,
   );
 }
@@ -217,10 +220,6 @@ export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
         domStorageEnabled
         scrollEnabled={false}
         setSupportMultipleWindows={false}
-        onLoadEnd={() => {
-          loaded.current = true;
-          sendZones();
-        }}
         onMessage={(event) => {
           try {
             const data = JSON.parse(event.nativeEvent.data) as {
@@ -237,7 +236,10 @@ export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
               longitudeDelta: data.span,
             };
 
-            if (data.type === 'drag') onPanDrag?.();
+            if (data.type === 'ready') {
+              loaded.current = true;
+              sendZones();
+            } else if (data.type === 'drag') onPanDrag?.();
             else if (data.type === 'idle') onRegionChangeComplete?.(region);
             else onRegionChange?.(region);
           } catch {
