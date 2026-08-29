@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -15,9 +15,19 @@ export type PinMapHandle = {
   animateToRegion: (region: Region, duration?: number) => void;
 };
 
+/** Зона доставки для отрисовки: контур как в GeoJSON и цвет из админки. */
+export type MapZone = {
+  id: string;
+  name: string;
+  outline: number[][];
+  color: string;
+};
+
 type Props = {
   style?: StyleProp<ViewStyle>;
   initialRegion: Region;
+  /** Куда сеть возит: рисуем поверх карты полупрозрачными пятнами. */
+  zones?: MapZone[];
   showsUserLocation?: boolean;
   onPanDrag?: () => void;
   onRegionChange?: (region: Region) => void;
@@ -78,11 +88,40 @@ function yandexPage(key: string, region: Region): string {
       map.events.add('actionend', function () { send('idle'); });
       send('idle');
 
+      var painted = null;
+
+      var paint = function (zones) {
+        if (painted) { map.geoObjects.remove(painted); }
+        painted = new ymaps.GeoObjectCollection();
+
+        for (var i = 0; i < zones.length; i += 1) {
+          var zone = zones[i];
+          var ring = [];
+
+          // В базе точки лежат как в GeoJSON — долгота первой, а карте нужна широта
+          for (var p = 0; p < zone.outline.length; p += 1) {
+            ring.push([zone.outline[p][1], zone.outline[p][0]]);
+          }
+
+          painted.add(new ymaps.Polygon([ring], { hintContent: zone.name }, {
+            fillColor: zone.color + '26',
+            strokeColor: zone.color + 'B3',
+            strokeWidth: 2,
+            // Зоны под пальцем не мешают: карту двигают, а не тыкают в них
+            interactivityModel: 'default#transparent',
+          }));
+        }
+
+        map.geoObjects.add(painted);
+      };
+
       var apply = function (raw) {
         try {
           var data = JSON.parse(raw);
           if (data.type === 'move') {
             map.setCenter([data.latitude, data.longitude], data.zoom, { duration: data.duration });
+          } else if (data.type === 'zones') {
+            paint(data.zones);
           }
         } catch (error) {}
       };
@@ -98,12 +137,22 @@ function yandexPage(key: string, region: Region): string {
  * работал бы в Expo Go, а JS API одинаково живёт на обеих платформах.
  */
 export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
-  { style, initialRegion, onPanDrag, onRegionChange, onRegionChangeComplete },
+  { style, initialRegion, zones, onPanDrag, onRegionChange, onRegionChangeComplete },
   ref,
 ) {
   const web = useRef<WebView>(null);
+  const loaded = useRef(false);
 
   const html = useMemo(() => yandexPage(yandexMapsKey, initialRegion), [initialRegion]);
+
+  // Зоны приезжают с сервера позже самой карты, поэтому шлём их отдельно —
+  // и повторяем после загрузки страницы: до неё сообщение упало бы в пустоту
+  const sendZones = useCallback(() => {
+    if (!loaded.current || zones === undefined) return;
+    web.current?.postMessage(JSON.stringify({ type: 'zones', zones }));
+  }, [zones]);
+
+  useEffect(sendZones, [sendZones]);
 
   useImperativeHandle(ref, () => ({
     animateToRegion: (region, duration = 400) => {
@@ -130,6 +179,10 @@ export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
         domStorageEnabled
         scrollEnabled={false}
         setSupportMultipleWindows={false}
+        onLoadEnd={() => {
+          loaded.current = true;
+          sendZones();
+        }}
         onMessage={(event) => {
           try {
             const data = JSON.parse(event.nativeEvent.data) as {

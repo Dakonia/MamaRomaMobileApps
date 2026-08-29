@@ -98,6 +98,19 @@ class MenuRead(BaseModel):
     categories: list[MenuCategoryRead]
 
 
+class DeliveryZoneRead(BaseModel):
+    """Контур зоны для карты: гость должен видеть, куда мы возим."""
+
+    id: UUID
+    name: str
+    # Точки как в GeoJSON: [[долгота, широта], ...]
+    outline: list[list[float]]
+    color: str
+    delivery_price_kopecks: int = 0
+    min_order_kopecks: int = 0
+    delivery_minutes: int | None = None
+
+
 class DeliveryResolve(BaseModel):
     """Кто везёт на этот адрес и на каких условиях."""
 

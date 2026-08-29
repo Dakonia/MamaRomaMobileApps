@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -22,9 +23,13 @@ import { Grabber } from '@/components/screen-header';
 import { useAddressDraft } from '@/store/address-draft';
 import { useTheme } from '@/theme/theme-provider';
 
-// Дворцовая площадь: карта должна открыться где-то осмысленно, даже если о госте
-// мы пока ничего не знаем
+// Центр города: сюда встаём, только если геопозиция недоступна и гость не
+// пришёл с готовыми координатами. Раньше карта всегда открывалась здесь, и
+// гость видел в карточке чужой адрес, принимая его за свой
 const FALLBACK = { latitude: 59.9386, longitude: 30.3141 };
+
+// Дольше этого геопозицию не ждём: лучше показать центр города, чем пустой экран
+const LOCATE_MS = 2_500;
 const SPAN = { latitudeDelta: 0.004, longitudeDelta: 0.004 };
 
 /** Метров между точками — грубо, но для «сдвинулись ли мы» достаточно. */
@@ -46,11 +51,71 @@ export default function AddressMapScreen() {
   }>();
   const pick = useAddressDraft((state) => state.pick);
 
-  const start = {
-    latitude: Number(params.latitude) || FALLBACK.latitude,
-    longitude: Number(params.longitude) || FALLBACK.longitude,
-    ...SPAN,
-  };
+  /**
+   * Откуда открыть карту. Пока не знаем — не открываем вовсе: показать чужую
+   * точку и подписать её адресом хуже, чем подождать полсекунды.
+   */
+  const [real, setReal] = useState(Boolean(params.latitude && params.longitude));
+  const [start, setStart] = useState<Region | null>(
+    params.latitude && params.longitude
+      ? {
+          latitude: Number(params.latitude),
+          longitude: Number(params.longitude),
+          ...SPAN,
+        }
+      : null,
+  );
+
+  useEffect(() => {
+    if (start !== null) return;
+
+    let alive = true;
+    const settle = (point: { latitude: number; longitude: number }, mine = true) => {
+      if (!alive) return;
+      setReal(mine);
+      setStart({ ...point, ...SPAN });
+    };
+
+    // Не дождались телефона — открываем центр города, но без адреса под меткой
+    const patience = setTimeout(() => settle(FALLBACK, false), LOCATE_MS);
+
+    void (async () => {
+      try {
+        const granted = await Location.requestForegroundPermissionsAsync();
+        if (!granted.granted) {
+          setFailure('Доступ к геопозиции закрыт — найдите дом на карте руками');
+          settle(FALLBACK, false);
+          return;
+        }
+
+        const position =
+          (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 })) ??
+          (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+
+        if (position) {
+          settle({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        } else {
+          settle(FALLBACK, false);
+        }
+      } catch {
+        settle(FALLBACK, false);
+      } finally {
+        clearTimeout(patience);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      clearTimeout(patience);
+    };
+  }, [start]);
+
+  // Куда сеть возит: показываем контуры прямо на карте
+  const zones = useQuery({
+    queryKey: ['delivery-zones'],
+    queryFn: () => api.deliveryZones(),
+    staleTime: 60 * 60_000,
+  });
 
   const map = useRef<React.ComponentRef<typeof PinMap>>(null);
   const lastAsked = useRef<Region | null>(null);
@@ -103,51 +168,14 @@ export default function AddressMapScreen() {
     [],
   );
 
-  // Открываемся там, где гость: адрес доставки почти всегда рядом с ним.
-  // Пришли с уже выбранной точкой — показываем её и никого не спрашиваем.
+  // Точка известна и она настоящая — сразу спрашиваем адрес под меткой.
+  // Для центра города не спрашиваем: это не адрес гостя, а заглушка
   useEffect(() => {
-    if (params.latitude) {
-      lastAsked.current = start;
-      void resolve(start);
-      return;
-    }
+    if (start === null || !real || lastAsked.current !== null) return;
 
-    let cancelled = false;
-
-    void (async () => {
-      setResolving(true);
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') throw new Error('нет доступа');
-
-        const position =
-          (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 })) ??
-          (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-
-        if (cancelled) return;
-
-        const here = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          ...SPAN,
-        };
-        lastAsked.current = here;
-        map.current?.animateToRegion(here, 600);
-        await resolve(here);
-      } catch {
-        if (cancelled) return;
-        // Без геопозиции просто стоим в центре города — карту всё равно можно двигать
-        lastAsked.current = start;
-        await resolve(start);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // Разовый запуск: дальше адрес пересчитывается по движению карты
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    lastAsked.current = start;
+    void resolve(start);
+  }, [real, resolve, start]);
 
   useEffect(
     () => () => {
@@ -246,12 +274,35 @@ export default function AddressMapScreen() {
     );
   }
 
+  if (start === null) {
+    return (
+      <View
+        style={[
+          styles.root,
+          styles.circle,
+          { backgroundColor: theme.colors.background, gap: theme.spacing.md },
+        ]}
+      >
+        <ActivityIndicator color={theme.colors.brand} />
+        <Text style={[theme.typography.body, { color: theme.colors.textSecondary }]}>
+          Определяем, где вы
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       <PinMap
         ref={map}
         style={StyleSheet.absoluteFill}
         initialRegion={start}
+        zones={(zones.data ?? []).map((zone) => ({
+          id: zone.id,
+          name: zone.name,
+          outline: zone.outline,
+          color: zone.color,
+        }))}
         showsUserLocation
         onPanDrag={() => {
           lift.value = withSpring(1, { damping: 16, stiffness: 260 });

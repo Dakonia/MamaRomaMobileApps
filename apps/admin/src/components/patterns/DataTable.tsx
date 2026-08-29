@@ -62,13 +62,26 @@ export function DensityToggle({
   onChange: (density: TableDensity) => void;
 }) {
   return (
-    <div className="density-toggle" aria-label="Плотность таблицы">
-      <button data-active={density === "compact"} type="button" onClick={() => onChange("compact")}>
-        Компактно
-      </button>
-      <button data-active={density === "regular"} type="button" onClick={() => onChange("regular")}>
-        Обычно
-      </button>
+    <div className="density-control">
+      <span className="density-label">Строки таблицы</span>
+      <div className="density-toggle" aria-label="Высота строк таблицы">
+        <button
+          data-active={density === "compact"}
+          title="Меньше высота строк, больше данных на экране"
+          type="button"
+          onClick={() => onChange("compact")}
+        >
+          Компактно
+        </button>
+        <button
+          data-active={density === "regular"}
+          title="Выше строки, легче читать длинные значения"
+          type="button"
+          onClick={() => onChange("regular")}
+        >
+          Обычно
+        </button>
+      </div>
     </div>
   );
 }

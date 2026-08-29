@@ -29,6 +29,7 @@ export type AddressUpdate = components['schemas']['AddressUpdate'];
 export type GuestUpdate = components['schemas']['GuestUpdate'];
 export type Promotion = components['schemas']['PromotionRead'];
 export type DeliveryResolve = components['schemas']['DeliveryResolve'];
+export type DeliveryZone = components['schemas']['DeliveryZoneRead'];
 export type GuestSummary = components['schemas']['GuestSummary'];
 export type Message = components['schemas']['MessageRead'];
 export type FavouriteDish = components['schemas']['FavouriteDish'];
@@ -254,6 +255,10 @@ export const api = {
         city_id: cityId,
       })}`,
     ),
+
+  // Контуры зон для карты: гость видит, куда мы возим, ещё до выбора адреса
+  deliveryZones: (cityId?: string) =>
+    request<DeliveryZone[]>(`/api/v1/delivery/zones${query({ city_id: cityId })}`),
 
   locateAddress: (latitude: number, longitude: number) =>
     request<AddressSuggestion | null>(

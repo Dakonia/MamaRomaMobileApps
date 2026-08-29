@@ -7,8 +7,15 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from app.api.deps import SessionDep, TenantDep
-from app.models.geo import City, Restaurant
-from app.schemas.menu import CityRead, DeliveryResolve, DishRead, MenuRead, RestaurantRead
+from app.models.geo import City, DeliveryZone, Restaurant
+from app.schemas.menu import (
+    CityRead,
+    DeliveryResolve,
+    DeliveryZoneRead,
+    DishRead,
+    MenuRead,
+    RestaurantRead,
+)
 from app.services import delivery as delivery_service
 from app.services import menu as menu_service
 
@@ -69,6 +76,39 @@ async def get_menu(
     restaurant_id: Annotated[UUID | None, Query()] = None,
 ) -> MenuRead:
     return await menu_service.get_menu(session, tenant.id, restaurant_id)
+
+
+@router.get("/delivery/zones", summary="Контуры зон доставки для карты")
+async def delivery_zones(
+    session: SessionDep,
+    tenant: TenantDep,
+    city_id: Annotated[UUID | None, Query()] = None,
+) -> list[DeliveryZoneRead]:
+    """Куда сеть возит. Показываем на карте выбора адреса, чтобы гость не гадал.
+
+    Отдаём весь город целиком: зон немного, а с ними карта отвечает на вопрос
+    «а ко мне приедете?» до того, как гость его задаст.
+    """
+    query = select(DeliveryZone).where(
+        DeliveryZone.tenant_id == tenant.id, DeliveryZone.is_active.is_(True)
+    )
+    if city_id is not None:
+        query = query.where(DeliveryZone.city_id == city_id)
+
+    zones = await session.scalars(query.order_by(DeliveryZone.sort_order))
+
+    return [
+        DeliveryZoneRead(
+            id=zone.id,
+            name=zone.name,
+            outline=zone.outline,
+            color=zone.color,
+            delivery_price_kopecks=zone.delivery_price_kopecks,
+            min_order_kopecks=zone.min_order_kopecks,
+            delivery_minutes=zone.delivery_minutes,
+        )
+        for zone in zones
+    ]
 
 
 @router.get("/delivery/resolve", summary="Кто везёт на этот адрес")

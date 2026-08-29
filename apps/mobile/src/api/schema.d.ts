@@ -385,6 +385,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/delivery/zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Контуры зон доставки для карты
+         * @description Куда сеть возит. Показываем на карте выбора адреса, чтобы гость не гадал.
+         *
+         *     Отдаём весь город целиком: зон немного, а с ними карта отвечает на вопрос
+         *     «а ко мне приедете?» до того, как гость его задаст.
+         */
+        get: operations["delivery_zones_api_v1_delivery_zones_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/delivery/resolve": {
         parameters: {
             query?: never;
@@ -2428,6 +2451,35 @@ export interface components {
             items?: components["schemas"]["DeliveryStatusItemIn"][];
         };
         /**
+         * DeliveryZoneRead
+         * @description Контур зоны для карты: гость должен видеть, куда мы возим.
+         */
+        DeliveryZoneRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Outline */
+            outline: number[][];
+            /** Color */
+            color: string;
+            /**
+             * Delivery Price Kopecks
+             * @default 0
+             */
+            delivery_price_kopecks: number;
+            /**
+             * Min Order Kopecks
+             * @default 0
+             */
+            min_order_kopecks: number;
+            /** Delivery Minutes */
+            delivery_minutes?: number | null;
+        };
+        /**
          * DevicePlatform
          * @enum {string}
          */
@@ -2768,6 +2820,16 @@ export interface components {
             guest_name: string | null;
             /** Guest Phone */
             guest_phone: string;
+            /**
+             * Guest Deleted
+             * @default false
+             */
+            guest_deleted: boolean;
+            /**
+             * Contact Erased
+             * @default false
+             */
+            contact_erased: boolean;
             /** Rating */
             rating: number;
             /** Tags */
@@ -5598,6 +5660,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MenuRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delivery_zones_api_v1_delivery_zones_get: {
+        parameters: {
+            query?: {
+                city_id?: string | null;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryZoneRead"][];
                 };
             };
             /** @description Validation Error */

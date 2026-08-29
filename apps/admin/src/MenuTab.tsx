@@ -14,6 +14,7 @@ import {
   StarOff,
   Trash2,
   Utensils,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -30,7 +31,6 @@ import {
 } from "./api";
 import { ConfirmDialog } from "./components/patterns/ConfirmDialog";
 import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
-import { DetailDrawer } from "./components/patterns/DetailDrawer";
 import { Badge, Button, IconButton, Section, Select } from "./ui";
 
 const dishColumn = createAdminColumnHelper<Dish>();
@@ -239,42 +239,66 @@ function DishDrawer({
   };
 
   const canSave = draft.name.trim().length >= 2 && draft.price_kopecks > 0 && draft.category_id.length > 0;
+  const currentCategory = categories.find((category) => category.id === draft.category_id);
+  const editorTitle = draft.name.trim() || "Новое блюдо";
+  const draftPortion = draft.weight_grams
+    ? `${draft.weight_grams} г`
+    : draft.volume_ml
+      ? `${draft.volume_ml} мл`
+      : "Порция не задана";
 
   return (
-    <DetailDrawer
-      badge={draft.is_active ? <Badge text="в продаже" tone="ok" /> : <Badge text="снято" tone="muted" />}
-      footer={
-        <>
-          <Button disabled={pending || uploading} variant="ghost" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button
-            disabled={pending || uploading || !canSave}
-            onClick={() => onSubmit(normalizeDraft(draft))}
-          >
-            {pending ? "Сохраняем..." : "Сохранить"}
-          </Button>
-        </>
-      }
-      subtitle={dish ? "Правка карточки блюда" : "Создание позиции меню"}
-      title={dish?.name ?? "Новое блюдо"}
-      onClose={onClose}
-    >
-      <div className="drawer-form">
-        <section className="drawer-section">
-          <h3 className="drawer-section-title">Фото</h3>
-          <div className="dish-preview">
-            {draft.image_url ? (
-              <img src={mediaUrl(draft.image_url) ?? undefined} alt="" />
-            ) : (
-              <div className="dish-preview-empty">
-                <Utensils size={24} aria-hidden />
-              </div>
-            )}
-            <div className="drawer-section">
+    <>
+      <div className="drawer-overlay dish-editor-overlay" onClick={onClose} />
+      <aside className="dish-drawer-shell" aria-label="Редактор блюда">
+        <header className="dish-drawer-head">
+          <div className="dish-drawer-title-block">
+            <span className="metric-label">Блюда и меню</span>
+            <h2>{dish ? "Редактор блюда" : "Новое блюдо"}</h2>
+            <div className="dish-drawer-subline">
+              {draft.is_active ? <Badge text="в продаже" tone="ok" /> : <Badge text="снято" tone="muted" />}
+              <span>{currentCategory ? currentCategory.name : "Категория не выбрана"}</span>
+            </div>
+          </div>
+          <IconButton label="Закрыть редактор" size="sm" variant="quiet" onClick={onClose}>
+            <X size={17} aria-hidden />
+          </IconButton>
+        </header>
+
+        <div className="dish-drawer-body">
+          <aside className="dish-preview-panel">
+            <div className="dish-editor-media">
+              {draft.image_url ? (
+                <img src={mediaUrl(draft.image_url) ?? undefined} alt="" />
+              ) : (
+                <div className="dish-preview-empty">
+                  <Utensils size={26} aria-hidden />
+                </div>
+              )}
+            </div>
+            <div className="dish-preview-copy">
+              <span className="metric-label">Позиция меню</span>
+              <h3>{editorTitle}</h3>
+              <p>{draft.description?.trim() || draft.composition?.trim() || "Описание ещё не заполнено"}</p>
+            </div>
+            <div className="dish-preview-facts">
+              <span>
+                <small>Категория</small>
+                <strong>{currentCategory?.name ?? "Не выбрана"}</strong>
+              </span>
+              <span>
+                <small>Цена</small>
+                <strong>{formatPrice(draft.price_kopecks)}</strong>
+              </span>
+              <span>
+                <small>Порция</small>
+                <strong>{draftPortion}</strong>
+              </span>
+            </div>
+            <div className="dish-editor-actions">
               <label className="upload-button">
                 <ImageUp size={15} aria-hidden />
-                {uploading ? "Загружаем..." : "Загрузить"}
+                {uploading ? "Загружаем..." : "Загрузить фото"}
                 <input
                   accept="image/jpeg,image/png,image/webp"
                   disabled={uploading}
@@ -287,169 +311,204 @@ function DishDrawer({
               </label>
               {draft.image_url ? (
                 <Button size="xs" variant="ghost" onClick={() => set("image_url", null)}>
-                  Убрать фото
+                  Убрать
                 </Button>
               ) : null}
-              <div className="row-sub">Квадратное фото блюда лучше читается в карточках меню.</div>
             </div>
-          </div>
-        </section>
+          </aside>
 
-        <section className="drawer-section">
-          <h3 className="drawer-section-title">Основное</h3>
-          <div className="drawer-form-grid">
-            <label className="field" data-wide="true">
-              <span className="field-label">Название</span>
-              <input className="input" value={draft.name} onChange={(event) => set("name", event.target.value)} />
-            </label>
-            <div className="field">
-              <span className="field-label">Категория</span>
-              <Select
-                value={draft.category_id}
-                options={categories.map((category) => ({ label: category.name, value: category.id }))}
-                onChange={(value) => set("category_id", value)}
-              />
-            </div>
-            <label className="field">
-              <span className="field-label">Цена, ₽</span>
-              <input
-                className="input"
-                inputMode="numeric"
-                value={draft.price_kopecks === 0 ? "" : Math.round(draft.price_kopecks / 100)}
-                onChange={(event) => set("price_kopecks", rubToKopecks(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Порядок</span>
-              <input
-                className="input"
-                inputMode="numeric"
-                value={draft.sort_order}
-                onChange={(event) => set("sort_order", intNullable(event.target.value) ?? 0)}
-              />
-            </label>
-            <label className="inline-check">
-              <input
-                checked={draft.is_active}
-                type="checkbox"
-                onChange={(event) => set("is_active", event.target.checked)}
-              />
-              В продаже
-            </label>
-          </div>
-        </section>
+          <main className="dish-form-panel">
+            <section className="dish-form-section">
+              <div className="dish-form-section-head">
+                <h3>Основное</h3>
+              </div>
+              <div className="dish-form-grid">
+                <label className="field dish-field-wide">
+                  <span className="field-label">Название</span>
+                  <input className="input" value={draft.name} onChange={(event) => set("name", event.target.value)} />
+                </label>
+                <div className="field">
+                  <span className="field-label">Категория</span>
+                  <Select
+                    value={draft.category_id}
+                    options={categories.map((category) => ({ label: category.name, value: category.id }))}
+                    onChange={(value) => set("category_id", value)}
+                  />
+                </div>
+                <label className="field">
+                  <span className="field-label">Цена, ₽</span>
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    value={draft.price_kopecks === 0 ? "" : Math.round(draft.price_kopecks / 100)}
+                    onChange={(event) => set("price_kopecks", rubToKopecks(event.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Сортировка</span>
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    value={draft.sort_order}
+                    onChange={(event) => set("sort_order", intNullable(event.target.value) ?? 0)}
+                  />
+                </label>
+                <label className="dish-toggle-card" data-active={draft.is_active}>
+                  <input
+                    checked={draft.is_active}
+                    type="checkbox"
+                    onChange={(event) => set("is_active", event.target.checked)}
+                  />
+                  <span className="dish-toggle-icon">
+                    {draft.is_active ? <Eye size={16} aria-hidden /> : <EyeOff size={16} aria-hidden />}
+                  </span>
+                  <span className="dish-toggle-copy">
+                    <span>Витрина</span>
+                    <strong>{draft.is_active ? "В продаже" : "Снято с продажи"}</strong>
+                  </span>
+                </label>
+              </div>
+            </section>
 
-        <section className="drawer-section">
-          <h3 className="drawer-section-title">Порция и КБЖУ</h3>
-          <div className="drawer-form-grid">
-            <label className="field">
-              <span className="field-label">Вес, г</span>
-              <input
-                className="input"
-                inputMode="numeric"
-                value={draft.weight_grams ?? ""}
-                onChange={(event) => set("weight_grams", intNullable(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Объём, мл</span>
-              <input
-                className="input"
-                inputMode="numeric"
-                value={draft.volume_ml ?? ""}
-                onChange={(event) => set("volume_ml", intNullable(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Калории</span>
-              <input
-                className="input"
-                inputMode="numeric"
-                value={draft.calories ?? ""}
-                onChange={(event) => set("calories", intNullable(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Белки, г</span>
-              <input
-                className="input"
-                inputMode="decimal"
-                value={draft.proteins_g ?? ""}
-                onChange={(event) => set("proteins_g", decimalNullable(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Жиры, г</span>
-              <input
-                className="input"
-                inputMode="decimal"
-                value={draft.fats_g ?? ""}
-                onChange={(event) => set("fats_g", decimalNullable(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Углеводы, г</span>
-              <input
-                className="input"
-                inputMode="decimal"
-                value={draft.carbs_g ?? ""}
-                onChange={(event) => set("carbs_g", decimalNullable(event.target.value))}
-              />
-            </label>
-          </div>
-        </section>
+            <section className="dish-form-section">
+              <div className="dish-form-section-head">
+                <h3>Порция и КБЖУ</h3>
+              </div>
+              <div className="dish-nutrition-grid">
+                <label className="field">
+                  <span className="field-label">Вес, г</span>
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    value={draft.weight_grams ?? ""}
+                    onChange={(event) => set("weight_grams", intNullable(event.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Объём, мл</span>
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    value={draft.volume_ml ?? ""}
+                    onChange={(event) => set("volume_ml", intNullable(event.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Калории</span>
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    value={draft.calories ?? ""}
+                    onChange={(event) => set("calories", intNullable(event.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Белки, г</span>
+                  <input
+                    className="input"
+                    inputMode="decimal"
+                    value={draft.proteins_g ?? ""}
+                    onChange={(event) => set("proteins_g", decimalNullable(event.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Жиры, г</span>
+                  <input
+                    className="input"
+                    inputMode="decimal"
+                    value={draft.fats_g ?? ""}
+                    onChange={(event) => set("fats_g", decimalNullable(event.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Углеводы, г</span>
+                  <input
+                    className="input"
+                    inputMode="decimal"
+                    value={draft.carbs_g ?? ""}
+                    onChange={(event) => set("carbs_g", decimalNullable(event.target.value))}
+                  />
+                </label>
+              </div>
+            </section>
 
-        <section className="drawer-section">
-          <h3 className="drawer-section-title">Метки</h3>
-          <div className="checkbox-grid">
-            <label className="inline-check">
-              <input
-                checked={draft.is_new}
-                type="checkbox"
-                onChange={(event) => set("is_new", event.target.checked)}
-              />
-              Новинка
-            </label>
-            <label className="inline-check">
-              <input
-                checked={draft.is_spicy}
-                type="checkbox"
-                onChange={(event) => set("is_spicy", event.target.checked)}
-              />
-              Острое
-            </label>
-            <label className="inline-check">
-              <input
-                checked={draft.is_vegetarian}
-                type="checkbox"
-                onChange={(event) => set("is_vegetarian", event.target.checked)}
-              />
-              Вегетарианское
-            </label>
-          </div>
-        </section>
+            <section className="dish-form-section">
+              <div className="dish-form-section-head">
+                <h3>Метки</h3>
+              </div>
+              <div className="dish-flag-grid">
+                <label className="dish-flag-card" data-checked={draft.is_new}>
+                  <input
+                    checked={draft.is_new}
+                    type="checkbox"
+                    onChange={(event) => set("is_new", event.target.checked)}
+                  />
+                  <span className="dish-flag-icon">
+                    <Star size={15} aria-hidden />
+                  </span>
+                  <span>Новинка</span>
+                </label>
+                <label className="dish-flag-card" data-checked={draft.is_spicy}>
+                  <input
+                    checked={draft.is_spicy}
+                    type="checkbox"
+                    onChange={(event) => set("is_spicy", event.target.checked)}
+                  />
+                  <span className="dish-flag-icon">
+                    <Flame size={15} aria-hidden />
+                  </span>
+                  <span>Острое</span>
+                </label>
+                <label className="dish-flag-card" data-checked={draft.is_vegetarian}>
+                  <input
+                    checked={draft.is_vegetarian}
+                    type="checkbox"
+                    onChange={(event) => set("is_vegetarian", event.target.checked)}
+                  />
+                  <span className="dish-flag-icon">
+                    <Leaf size={15} aria-hidden />
+                  </span>
+                  <span>Вегетарианское</span>
+                </label>
+              </div>
+            </section>
 
-        <section className="drawer-section">
-          <h3 className="drawer-section-title">Описание</h3>
-          <label className="field">
-            <span className="field-label">Для гостя</span>
-            <textarea
-              className="textarea"
-              value={draft.description ?? ""}
-              onChange={(event) => set("description", event.target.value || null)}
-            />
-          </label>
-          <label className="field">
-            <span className="field-label">Состав</span>
-            <textarea
-              className="textarea"
-              value={draft.composition ?? ""}
-              onChange={(event) => set("composition", event.target.value || null)}
-            />
-          </label>
-        </section>
-      </div>
-    </DetailDrawer>
+            <section className="dish-form-section">
+              <div className="dish-form-section-head">
+                <h3>Описание</h3>
+              </div>
+              <div className="dish-description-grid">
+                <label className="field">
+                  <span className="field-label">Для гостя</span>
+                  <textarea
+                    className="textarea"
+                    value={draft.description ?? ""}
+                    onChange={(event) => set("description", event.target.value || null)}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Состав</span>
+                  <textarea
+                    className="textarea"
+                    value={draft.composition ?? ""}
+                    onChange={(event) => set("composition", event.target.value || null)}
+                  />
+                </label>
+              </div>
+            </section>
+          </main>
+        </div>
+
+        <footer className="dish-drawer-foot">
+          <Button disabled={pending || uploading} variant="ghost" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button disabled={pending || uploading || !canSave} onClick={() => onSubmit(normalizeDraft(draft))}>
+            {pending ? "Сохраняем..." : "Сохранить"}
+          </Button>
+        </footer>
+      </aside>
+    </>
   );
 }
 
@@ -475,12 +534,12 @@ export function MenuTab() {
   };
 
   const saveDish = useMutation({
-    mutationFn: ({ draft, id }: { draft: DishDraft; id: string | null }) =>
+    mutationFn: ({ draft, id }: { draft: DishDraft; focusAfterSave?: boolean; id: string | null }) =>
       id === null ? api.createDish(draft) : api.updateDish(id, draft),
     onError: (error) => toast.error(errorMessage(error)),
-    onSuccess: (dish) => {
+    onSuccess: (dish, variables) => {
       setCreating(false);
-      setSelectedId(dish.id);
+      if (variables.focusAfterSave !== false) setSelectedId(dish.id);
       refresh();
       toast.success("Блюдо сохранено");
     },
@@ -546,6 +605,16 @@ export function MenuTab() {
       toast.success("Блюдо вернули в меню");
     },
   });
+
+  const closeDishPanel = () => {
+    setCreating(false);
+    setSelectedId(null);
+  };
+
+  const setCategoryFilter = (categoryId: string | null) => {
+    closeDishPanel();
+    setFilter((current) => (current === categoryId ? null : categoryId));
+  };
 
   const categoryById = useMemo(
     () => new Map((categories.data ?? []).map((category) => [category.id, category])),
@@ -671,7 +740,7 @@ export function MenuTab() {
                   }}
                 >
                   <Edit3 size={14} aria-hidden />
-                  Детали
+                  Редактировать
                 </Button>
                 <Button
                   size="xs"
@@ -679,6 +748,7 @@ export function MenuTab() {
                   onClick={(event) => {
                     event.stopPropagation();
                     saveDish.mutate({
+                      focusAfterSave: false,
                       id: dish.id,
                       draft: normalizeDraft({ ...toDraft(dish), is_active: !dish.is_active }),
                     });
@@ -804,7 +874,7 @@ export function MenuTab() {
             Добавить
           </Button>
           <span className="toolbar-spacer" />
-          <Button variant={filter === null ? "primary" : "ghost"} onClick={() => setFilter(null)}>
+          <Button variant={filter === null ? "primary" : "ghost"} onClick={() => setCategoryFilter(null)}>
             Все блюда
           </Button>
         </div>
@@ -822,7 +892,7 @@ export function MenuTab() {
                   aria-pressed={filter === category.id}
                   className="category-main"
                   type="button"
-                  onClick={() => setFilter((current) => (current === category.id ? null : category.id))}
+                  onClick={() => setCategoryFilter(category.id)}
                 >
                   <span className="category-title-row">
                     <span className="row-main">{category.name}</span>
@@ -830,12 +900,12 @@ export function MenuTab() {
                   </span>
                   <span className="category-stats-row">
                     <span>
+                      <span className="category-stat-label">Блюд</span>
                       <strong>{category.dishes_count}</strong>
-                      <span> блюд</span>
                     </span>
                     <span>
+                      <span className="category-stat-label">Сортировка</span>
                       <strong>{category.sort_order}</strong>
-                      <span> порядок</span>
                     </span>
                   </span>
                   <span className="category-status-row">
@@ -857,6 +927,7 @@ export function MenuTab() {
                     variant="ghost"
                     onClick={(event) => {
                       event.stopPropagation();
+                      closeDishPanel();
                       togglePopular.mutate({
                         category,
                         show_in_popular: !category.show_in_popular,
@@ -871,6 +942,7 @@ export function MenuTab() {
                     variant="ghost"
                     onClick={(event) => {
                       event.stopPropagation();
+                      closeDishPanel();
                       toggleCategory.mutate({
                         category,
                         is_active: !category.is_active,
@@ -886,6 +958,7 @@ export function MenuTab() {
                     variant="danger"
                     onClick={(event) => {
                       event.stopPropagation();
+                      closeDishPanel();
                       setDeleteCategoryTarget(category);
                     }}
                   >
@@ -916,7 +989,7 @@ export function MenuTab() {
             <div className="active-filter-pill">
               <span className="row-muted">Категория</span>
               <span className="row-main">{selectedCategory.name}</span>
-              <Button size="xs" variant="ghost" onClick={() => setFilter(null)}>
+              <Button size="xs" variant="ghost" onClick={() => setCategoryFilter(null)}>
                 Сбросить
               </Button>
             </div>
@@ -983,7 +1056,7 @@ export function MenuTab() {
             setCreating(false);
             setSelectedId(null);
           }}
-          onSubmit={(draft) => saveDish.mutate({ draft, id: creating ? null : selected?.id ?? null })}
+          onSubmit={(draft) => saveDish.mutate({ draft, focusAfterSave: true, id: creating ? null : selected?.id ?? null })}
         />
       ) : null}
 
