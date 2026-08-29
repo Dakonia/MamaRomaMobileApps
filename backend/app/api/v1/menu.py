@@ -111,6 +111,23 @@ async def delivery_zones(
     ]
 
 
+@router.get("/delivery/coverage", summary="Общая граница доставки")
+async def delivery_coverage(
+    session: SessionDep,
+    tenant: TenantDep,
+    city_id: Annotated[UUID | None, Query()] = None,
+) -> list[list[list[float]]]:
+    """Внешний контур всех зон одним силуэтом — для карты выбора адреса."""
+    query = select(DeliveryZone.outline).where(
+        DeliveryZone.tenant_id == tenant.id, DeliveryZone.is_active.is_(True)
+    )
+    if city_id is not None:
+        query = query.where(DeliveryZone.city_id == city_id)
+
+    outlines = list(await session.scalars(query))
+    return delivery_service.coverage(outlines)
+
+
 @router.get("/delivery/resolve", summary="Кто везёт на этот адрес")
 async def resolve_delivery(
     session: SessionDep,

@@ -26,10 +26,12 @@ export type MapZone = {
 type Props = {
   style?: StyleProp<ViewStyle>;
   initialRegion: Region;
-  /** Куда сеть возит: рисуем поверх карты контурами. */
-  zones?: MapZone[];
-  /** Зона, которая обслуживает точку под меткой: её выделяем заливкой. */
-  activeZoneId?: string | null;
+  /** Общая граница доставки: внешний силуэт всех зон, слитых воедино. */
+  coverage?: number[][][];
+  /** Цвет этой границы — берём из темы приложения. */
+  coverageColor?: string;
+  /** Зона под меткой: только её показываем отдельно, поверх общей границы. */
+  activeZone?: MapZone | null;
   showsUserLocation?: boolean;
   onPanDrag?: () => void;
   onRegionChange?: (region: Region) => void;
@@ -93,30 +95,40 @@ function yandexPage(key: string, region: Region): string {
       var painted = null;
 
       /**
-       * Зоны рисуем контурами, а не пятнами: они накладываются друг на друга,
-       * и полупрозрачные заливки складывались в грязь, где ничего не разобрать.
-       * Заливку получает только та зона, которая обслуживает точку под меткой.
+       * Сначала общая граница: один силуэт вместо двадцати шести контуров,
+       * которые накладывались друг на друга и превращались в паутину. Разбивку
+       * по зонам показываем только под меткой — там она и нужна.
        */
-      var paint = function (zones, activeId) {
+      var paint = function (data) {
         if (painted) { map.geoObjects.remove(painted); }
         painted = new ymaps.GeoObjectCollection();
 
-        for (var i = 0; i < zones.length; i += 1) {
-          var zone = zones[i];
+        var ringOf = function (outline) {
           var ring = [];
-
           // В базе точки лежат как в GeoJSON — долгота первой, а карте нужна широта
-          for (var p = 0; p < zone.outline.length; p += 1) {
-            ring.push([zone.outline[p][1], zone.outline[p][0]]);
+          for (var p = 0; p < outline.length; p += 1) {
+            ring.push([outline[p][1], outline[p][0]]);
           }
+          return ring;
+        };
 
-          var active = zone.id === activeId;
+        var coverage = data.coverage || [];
+        for (var i = 0; i < coverage.length; i += 1) {
+          painted.add(new ymaps.Polygon([ringOf(coverage[i])], {}, {
+            fillColor: data.color + '14',
+            strokeColor: data.color + '80',
+            strokeWidth: 2,
+            interactivityModel: 'default#transparent',
+          }));
+        }
 
-          painted.add(new ymaps.Polygon([ring], { hintContent: zone.name }, {
-            fillColor: active ? zone.color + '2E' : zone.color + '0D',
-            strokeColor: active ? zone.color : zone.color + '66',
-            strokeWidth: active ? 3 : 1,
-            // Зоны под пальцем не мешают: карту двигают, а не тыкают в них
+        if (data.zone) {
+          painted.add(new ymaps.Polygon([ringOf(data.zone.outline)], {
+            hintContent: data.zone.name,
+          }, {
+            fillColor: data.zone.color + '33',
+            strokeColor: data.zone.color,
+            strokeWidth: 3,
             interactivityModel: 'default#transparent',
           }));
         }
@@ -130,7 +142,7 @@ function yandexPage(key: string, region: Region): string {
           if (data.type === 'move') {
             map.setCenter([data.latitude, data.longitude], data.zoom, { duration: data.duration });
           } else if (data.type === 'zones') {
-            paint(data.zones, data.activeId);
+            paint(data);
           }
         } catch (error) {}
       };
@@ -146,7 +158,16 @@ function yandexPage(key: string, region: Region): string {
  * работал бы в Expo Go, а JS API одинаково живёт на обеих платформах.
  */
 export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
-  { style, initialRegion, zones, activeZoneId, onPanDrag, onRegionChange, onRegionChangeComplete },
+  {
+    style,
+    initialRegion,
+    coverage,
+    coverageColor = '#C0392B',
+    activeZone,
+    onPanDrag,
+    onRegionChange,
+    onRegionChangeComplete,
+  },
   ref,
 ) {
   const web = useRef<WebView>(null);
@@ -157,11 +178,17 @@ export const PinMap = forwardRef<PinMapHandle, Props>(function PinMap(
   // Зоны приезжают с сервера позже самой карты, поэтому шлём их отдельно —
   // и повторяем после загрузки страницы: до неё сообщение упало бы в пустоту
   const sendZones = useCallback(() => {
-    if (!loaded.current || zones === undefined) return;
+    if (!loaded.current || coverage === undefined) return;
+
     web.current?.postMessage(
-      JSON.stringify({ type: 'zones', zones, activeId: activeZoneId ?? null }),
+      JSON.stringify({
+        type: 'zones',
+        coverage,
+        color: coverageColor,
+        zone: activeZone ?? null,
+      }),
     );
-  }, [activeZoneId, zones]);
+  }, [activeZone, coverage, coverageColor]);
 
   useEffect(sendZones, [sendZones]);
 

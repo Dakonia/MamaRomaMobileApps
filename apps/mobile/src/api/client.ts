@@ -256,7 +256,11 @@ export const api = {
       })}`,
     ),
 
-  // Контуры зон для карты: гость видит, куда мы возим, ещё до выбора адреса
+  // Внешняя граница всех зон одним силуэтом — основа карты выбора адреса
+  deliveryCoverage: (cityId?: string) =>
+    request<number[][][]>(`/api/v1/delivery/coverage${query({ city_id: cityId })}`),
+
+  // Контуры зон по отдельности: нужны, чтобы выделить ту, что под меткой
   deliveryZones: (cityId?: string) =>
     request<DeliveryZone[]>(`/api/v1/delivery/zones${query({ city_id: cityId })}`),
 

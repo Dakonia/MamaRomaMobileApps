@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from shapely.geometry import MultiPolygon, Polygon
+from shapely.ops import unary_union
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +35,36 @@ def contains(outline: list[list[float]], longitude: float, latitude: float) -> b
                 inside = not inside
 
     return inside
+
+
+# Насколько упрощаем общий контур: около двадцати метров. На карте разницы не
+# видно, а точек становится втрое меньше
+SIMPLIFY = 0.0002
+
+
+def coverage(outlines: list[list[list[float]]]) -> list[list[list[float]]]:
+    """Общая граница доставки: все зоны, слитые в один силуэт.
+
+    Зоны накладываются друг на друга, и по отдельности их контуры на карте
+    превращаются в паутину. Гостю сперва нужен один вопрос — возите ли сюда
+    вообще, — поэтому показываем внешнюю границу, а разбивку по зонам уже под
+    меткой.
+    """
+    shapes = [Polygon(outline) for outline in outlines if len(outline) >= 3]
+    if not shapes:
+        return []
+
+    # buffer(0) чинит контуры, которые сами себя пересекают: такие в базе
+    # попадаются после ручного рисования, и объединение на них падает
+    merged = unary_union([shape.buffer(0) for shape in shapes]).simplify(SIMPLIFY)
+
+    parts = merged.geoms if isinstance(merged, MultiPolygon) else [merged]
+
+    return [
+        [[round(x, 6), round(y, 6)] for x, y in part.exterior.coords]
+        for part in parts
+        if not part.is_empty
+    ]
 
 
 async def resolve(

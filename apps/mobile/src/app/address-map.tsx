@@ -110,12 +110,20 @@ export default function AddressMapScreen() {
     };
   }, [start]);
 
-  // Куда сеть возит: показываем контуры прямо на карте
+  // Куда сеть возит: общий силуэт на карте и разбивка по зонам под меткой
+  const coverage = useQuery({
+    queryKey: ['delivery-coverage'],
+    queryFn: () => api.deliveryCoverage(),
+    staleTime: 60 * 60_000,
+  });
+
   const zones = useQuery({
     queryKey: ['delivery-zones'],
     queryFn: () => api.deliveryZones(),
     staleTime: 60 * 60_000,
   });
+
+  const activeZone = (zones.data ?? []).find((zone) => zone.id === delivery?.zone_id) ?? null;
 
   const map = useRef<React.ComponentRef<typeof PinMap>>(null);
   const lastAsked = useRef<Region | null>(null);
@@ -297,13 +305,16 @@ export default function AddressMapScreen() {
         ref={map}
         style={StyleSheet.absoluteFill}
         initialRegion={start}
-        zones={(zones.data ?? []).map((zone) => ({
-          id: zone.id,
-          name: zone.name,
-          outline: zone.outline,
-          color: zone.color,
-        }))}
-        activeZoneId={delivery?.zone_id ?? null}
+        coverage={coverage.data ?? []}
+        coverageColor={theme.colors.brand}
+        activeZone={
+          activeZone && {
+            id: activeZone.id,
+            name: activeZone.name,
+            outline: activeZone.outline,
+            color: activeZone.color,
+          }
+        }
         showsUserLocation
         onPanDrag={() => {
           lift.value = withSpring(1, { damping: 16, stiffness: 260 });

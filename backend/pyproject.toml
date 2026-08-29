@@ -18,6 +18,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "pillow>=12.3.0",
     "blurhash-python>=1.2.2",
+    "shapely>=2.1.2",
 ]
 
 [dependency-groups]
@@ -64,5 +65,5 @@ testpaths = ["tests"]
 
 # У blurhash нет описаний типов, а сам он крошечный и стабильный
 [[tool.mypy.overrides]]
-module = ["blurhash"]
+module = ["blurhash", "shapely.*"]
 ignore_missing_imports = true
