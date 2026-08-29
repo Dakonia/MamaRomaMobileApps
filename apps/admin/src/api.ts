@@ -515,15 +515,20 @@ export type GuestCard = {
   points: GuestPoints[];
 };
 
+export type ReservationStatus = "requested" | "confirmed" | "seated" | "completed" | "cancelled" | "no_show";
+
 export type Reservation = {
   id: string;
-  status: string;
+  status: ReservationStatus;
+  restaurant_id: string;
   restaurant_name: string;
   reserved_at: string;
+  duration_minutes: number;
   guests_count: number;
   contact_name: string | null;
   contact_phone: string;
   comment: string | null;
+  created_at: string;
 };
 
 export const api = {
@@ -851,33 +856,18 @@ export const api = {
   dropSyncChange: (runId: string, changeId: string) =>
     request<void>(`/admin/sync/${runId}/changes/${changeId}`, { method: "DELETE" }),
 
-  reservations: () => request<Reservation[]>("/admin/reservations"),
-  setReservationStatus: (id: string, status: string) =>
+  reservations: (activeOnly = true) => request<Reservation[]>(`/admin/reservations?active_only=${activeOnly}`),
+  setReservationStatus: (id: string, status: ReservationStatus) =>
     request<Reservation>(`/admin/reservations/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
 };
 
-export function formatPrice(kopecks: number): string {
-  return `${String(Math.round(kopecks / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} ₽`;
-}
-
-export function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`;
-}
-
-export function formatDateTime(iso: string): string {
-  const date = new Date(iso);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 /** Ссылки на фото хранятся относительными — дописываем адрес сервера. */
 export function mediaUrl(path: string | null): string | null {
   if (!path) return null;
   return path.startsWith("http") ? path : `${API_URL}${path}`;
 }
+
+export { formatDate, formatDateTime, formatPrice } from "./lib/format";

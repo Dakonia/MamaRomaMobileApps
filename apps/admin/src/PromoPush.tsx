@@ -1,225 +1,161 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Bell, Send } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
-import { api, ApiError, mediaUrl, type City, type Promotion, type Reach } from "./api";
-import { Button, c, radius, spacing, styles, typography } from "./ui";
+import { api, ApiError, mediaUrl, type City, type Promotion } from "./api";
+import { DetailDrawer } from "./components/patterns/DetailDrawer";
+import { Badge, Button, Select } from "./ui";
 
-/** Из акции получается готовое уведомление: заголовок и первая фраза описания. */
-function draftFrom(promo: Promotion): { title: string; body: string } {
+function draftFrom(promo: Promotion): { body: string; title: string } {
   const text = (promo.description ?? "").replace(/\s+/g, " ").trim();
   const firstSentence = text.split(/(?<=[.!?])\s/)[0] ?? "";
 
   return {
-    title: promo.title.slice(0, 120),
     body: (firstSentence || text).slice(0, 240) || "Подробности — в приложении",
+    title: promo.title.slice(0, 120),
   };
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
+
 type Props = {
-  promo: Promotion;
   cities: City[];
   onClose: () => void;
+  promo: Promotion;
 };
 
-/**
- * Отправка акции уведомлением прямо из списка акций.
- *
- * Так менеджеру не приходится переписывать текст в другом разделе: акция уже
- * есть, остаётся выбрать, кому написать, а нажатие в уведомлении откроет
- * именно её карточку.
- */
 export function PromoPush({ promo, cities, onClose }: Props) {
-  const start = draftFrom(promo);
-
-  const [title, setTitle] = useState(start.title);
-  const [body, setBody] = useState(start.body);
+  const initial = useMemo(() => draftFrom(promo), [promo]);
+  const [title, setTitle] = useState(initial.title);
+  const [body, setBody] = useState(initial.body);
   const [city, setCity] = useState("");
-  const [reach, setReach] = useState<Reach | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [campaignId, setCampaignId] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const audience = city ? { cities: [city] } : {};
+  const audience = useMemo(() => (city ? { cities: [city] } : {}), [city]);
+  const reach = useQuery({
+    queryKey: ["promo-push-audience", promo.id, audience],
+    queryFn: () => api.campaignAudience(audience),
+  });
 
-  useEffect(() => {
-    let alive = true;
-    void api
-      .campaignAudience(audience)
-      .then((result) => alive && setReach(result))
-      .catch(() => alive && setReach(null));
-
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city]);
-
-  const send = async (force: boolean) => {
+  const send = async (force = false) => {
     setBusy(true);
-    setFailure(null);
     setNote(null);
 
     try {
-      const campaign = await api.createCampaign({
-        name: `Акция: ${promo.title}`,
-        title,
-        body,
-        image_url: promo.image_url,
-        target: { screen: "promo", id: promo.id },
-        audience,
-        scheduled_at: null,
-      });
+      const campaign =
+        campaignId === null
+          ? await api.createCampaign({
+              audience,
+              body: body.trim(),
+              image_url: promo.image_url,
+              name: `Акция: ${promo.title}`,
+              scheduled_at: null,
+              target: { screen: "promo", id: promo.id },
+              title: title.trim(),
+            })
+          : { id: campaignId };
 
       const sent = await api.sendCampaign(campaign.id, force);
       if (sent.error) {
+        setCampaignId(sent.id);
         setNote(sent.error);
+        toast.warning(sent.error);
         return;
       }
 
+      toast.success("Уведомление отправлено");
       onClose();
     } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось отправить");
+      toast.error(errorMessage(error));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={sheet} onClick={(event) => event.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", gap: spacing.md }}>
-          <div>
-            <div style={{ fontSize: typography.h3.fontSize, fontWeight: 600 }}>
-              Отправить акцию уведомлением
-            </div>
-            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-              Нажатие откроет карточку «{promo.title}» в приложении
-            </div>
-          </div>
-          <span style={{ flex: 1 }} />
-          <Button tone="quiet" onClick={onClose}>
-            Закрыть
+    <DetailDrawer
+      badge={promo.label ? <Badge text={promo.label} tone="warn" /> : undefined}
+      footer={
+        <>
+          <Button disabled={busy} variant="ghost" onClick={onClose}>
+            Отмена
           </Button>
-        </div>
-
-        <label style={field}>
-          <span style={label}>Заголовок</span>
-          <input style={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} />
-        </label>
-
-        <label style={field}>
-          <span style={label}>Текст</span>
-          <input style={styles.input} value={body} onChange={(e) => setBody(e.target.value)} />
-        </label>
-
-        <label style={field}>
-          <span style={label}>Кому</span>
-          <select style={styles.input} value={city} onChange={(e) => setCity(e.target.value)}>
-            <option value="">Всем гостям</option>
-            {cities.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* Так уведомление увидят на телефоне: картинка акции идёт справа */}
-        <div style={preview}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{title || "Заголовок"}</div>
-            <div style={{ fontSize: 13, color: c.textSecondary }}>{body || "Текст"}</div>
-          </div>
-
-          {promo.image_url ? (
-            <img
-              src={mediaUrl(promo.image_url) ?? undefined}
-              alt=""
-              style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover" }}
-            />
-          ) : null}
-        </div>
-
-        {promo.image_url ? (
-          <div style={{ fontSize: 12, color: c.textTertiary }}>
-            Картинку акции покажем в уведомлении на Android. На iPhone она видна, если потянуть
-            уведомление вниз
-          </div>
-        ) : null}
-
-        {note ? (
-          <div style={{ ...warn, display: "flex", alignItems: "center", gap: spacing.md }}>
-            <span style={{ flex: 1 }}>{note}</span>
-            <Button tone="quiet" onClick={() => void send(true)}>
+          {note ? (
+            <Button disabled={busy || title.trim().length < 2} variant="ghost" onClick={() => void send(true)}>
               Отправить всё равно
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+          <Button disabled={busy || title.trim().length < 2} onClick={() => void send(false)}>
+            <Send size={15} aria-hidden />
+            {busy ? "Отправляем..." : "Отправить"}
+          </Button>
+        </>
+      }
+      subtitle={`Нажатие откроет акцию «${promo.title}»`}
+      title="Отправить акцию"
+      onClose={onClose}
+    >
+      <div className="drawer-form">
+        {note ? <div className="alert-band">{note}</div> : null}
 
-        {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
-
-        <div style={{ display: "flex", alignItems: "center", gap: spacing.md }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{reach?.count ?? "…"}</div>
-            <div style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-              {reach
-                ? `получат · всего гостей ${reach.guests}, с уведомлениями ${reach.with_push}`
-                : "считаем охват"}
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Сообщение</h3>
+          <div className="drawer-form-grid">
+            <label className="field" data-wide="true">
+              <span className="field-label">Заголовок</span>
+              <input className="input" value={title} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+            <label className="field" data-wide="true">
+              <span className="field-label">Текст</span>
+              <textarea className="textarea" value={body} onChange={(event) => setBody(event.target.value)} />
+            </label>
+            <div className="field">
+              <span className="field-label">Кому</span>
+              <Select
+                value={city}
+                options={[
+                  { label: "Всем гостям", value: "" },
+                  ...cities.map((item) => ({ label: item.name, value: item.id })),
+                ]}
+                onChange={setCity}
+              />
             </div>
           </div>
+        </section>
 
-          <span style={{ flex: 1 }} />
-
-          <Button onClick={() => void send(false)} disabled={busy || title.trim().length < 2}>
-            {busy ? "Отправляем…" : "Отправить"}
-          </Button>
+        <div className="reach-card">
+          <div>
+            <div className="metric-label">Охват</div>
+            <div className="metric-value">{reach.data?.count ?? "..."}</div>
+          </div>
+          <div className="row-sub">
+            {reach.data
+              ? `Всего гостей ${reach.data.guests}, push включён у ${reach.data.with_push}`
+              : "Считаем аудиторию"}
+          </div>
         </div>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Предпросмотр</h3>
+          <div className="push-preview">
+            <div className="push-icon">
+              <Bell size={16} aria-hidden />
+            </div>
+            <div className="min-w-0">
+              <div className="row-main">{title || "Заголовок"}</div>
+              <div className="row-sub">{body || "Текст уведомления"}</div>
+            </div>
+            {promo.image_url ? (
+              <img className="push-media" src={mediaUrl(promo.image_url) ?? undefined} alt="" />
+            ) : null}
+          </div>
+        </section>
       </div>
-    </div>
+    </DetailDrawer>
   );
 }
-
-const overlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: c.scrim,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: spacing.xl,
-  zIndex: 40,
-};
-
-const sheet: React.CSSProperties = {
-  background: c.surface,
-  borderRadius: radius.lg,
-  border: `1px solid ${c.border}`,
-  padding: spacing.lg,
-  width: "min(620px, 100%)",
-  display: "flex",
-  flexDirection: "column",
-  gap: spacing.md,
-  boxShadow: "0 24px 60px rgba(22, 27, 38, 0.24)",
-};
-
-const field: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
-
-const label: React.CSSProperties = {
-  fontSize: typography.caption.fontSize,
-  color: c.textTertiary,
-};
-
-const preview: React.CSSProperties = {
-  background: c.surfaceSunken,
-  borderRadius: radius.md,
-  padding: spacing.md,
-  display: "flex",
-  gap: spacing.md,
-  alignItems: "center",
-};
-
-const warn: React.CSSProperties = {
-  background: c.warningSubtle,
-  color: c.warning,
-  borderRadius: radius.md,
-  padding: spacing.md,
-};

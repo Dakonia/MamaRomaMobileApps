@@ -1,26 +1,29 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { api, ApiError, type AdminRestaurant, type City, type Zone } from "./api";
 import { ZoneMap } from "./ZoneMap";
 import { zoneColors } from "./theme";
-import { Button, c, radius, spacing, styles, typography } from "./ui";
+import { Button, Select } from "./ui";
 
 type Point = [number, number];
 
 type Props = {
-  /** Зона на правку или null, если рисуем новую. */
-  zone: Zone | null;
-  restaurants: AdminRestaurant[];
   cities: City[];
   onClose: () => void;
   onSaved: () => void;
+  restaurants: AdminRestaurant[];
+  zone: Zone | null;
 };
 
-/**
- * Окно правки зоны: слева карта с контуром, справа — к какому ресторану зона
- * относится и как называется. Всё остальное (цены, минимумы) правится прямо
- * в таблице, здесь только то, ради чего открывали карту.
- */
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Не удалось сохранить зону";
+}
+
+function colorIndex(color: string): number {
+  return Math.max(zoneColors.findIndex((option) => option.toUpperCase() === color.toUpperCase()), 0);
+}
+
 export function ZoneEditor({ zone, restaurants, cities, onClose, onSaved }: Props) {
   const [outline, setOutline] = useState<Point[]>((zone?.outline as Point[]) ?? []);
   const [name, setName] = useState(zone?.name ?? "");
@@ -34,7 +37,7 @@ export function ZoneEditor({ zone, restaurants, cities, onClose, onSaved }: Prop
     setName(zone?.name ?? "");
     setRestaurantId(zone?.restaurant_id ?? restaurants[0]?.id ?? "");
     setColor(zone?.color ?? zoneColors[0]);
-  }, [zone, restaurants]);
+  }, [restaurants, zone]);
 
   const restaurant = restaurants.find((item) => item.id === restaurantId) ?? null;
 
@@ -47,175 +50,108 @@ export function ZoneEditor({ zone, restaurants, cities, onClose, onSaved }: Prop
       setFailure("У зоны должно быть название");
       return;
     }
+    if (!restaurantId) {
+      setFailure("Выберите ресторан");
+      return;
+    }
 
     setBusy(true);
     setFailure(null);
 
     try {
       if (zone) {
-        await api.updateZone(zone.id, { name: name.trim(), color, outline, restaurant_id: restaurantId });
+        await api.updateZone(zone.id, { color, name: name.trim(), outline, restaurant_id: restaurantId });
       } else {
         await api.createZone({
           city_id: restaurant?.city_id ?? cities[0]?.id ?? "",
-          restaurant_id: restaurantId,
-          name: name.trim(),
           color,
-          outline,
+          delivery_minutes: null,
           delivery_price_kopecks: 0,
           min_order_kopecks: 0,
-          delivery_minutes: null,
+          name: name.trim(),
+          outline,
+          restaurant_id: restaurantId,
         });
       }
 
+      toast.success("Контур сохранён");
       onSaved();
-      onClose();
     } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось сохранить зону");
+      setFailure(errorMessage(error));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={sheet} onClick={(event) => event.stopPropagation()}>
-        <div style={head}>
+    <>
+      <div className="command-overlay" onClick={onClose} />
+      <section aria-modal="true" className="zone-editor-dialog" role="dialog">
+        <div className="zone-editor-head">
           <div>
-            <div style={{ fontSize: typography.h3.fontSize, fontWeight: 600 }}>
-              {zone ? "Контур зоны" : "Новая зона"}
-            </div>
-            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-              {outline.length} точек · обслуживает {restaurant?.name ?? "—"}
+            <h2 className="drawer-title">{zone ? "Контур зоны" : "Новая зона"}</h2>
+            <div className="row-sub">
+              {outline.length} точек · обслуживает {restaurant?.name ?? "ресторан не выбран"}
             </div>
           </div>
-
-          <span style={{ flex: 1 }} />
-
-          <Button tone="quiet" onClick={onClose}>
+          <span className="toolbar-spacer" />
+          <Button disabled={busy} variant="ghost" onClick={onClose}>
             Закрыть
           </Button>
-          <Button onClick={() => void save()} disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить"}
+          <Button disabled={busy} onClick={() => void save()}>
+            {busy ? "Сохраняем..." : "Сохранить"}
           </Button>
         </div>
 
-        <div style={{ display: "flex", gap: spacing.lg, alignItems: "flex-start" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <ZoneMap
-              outline={outline}
-              color={color}
-              center={restaurant}
-              onChange={setOutline}
-            />
-          </div>
+        <div className="zone-editor-body">
+          <ZoneMap center={restaurant} color={color} outline={outline} onChange={setOutline} />
 
-          <div style={{ width: 260, display: "flex", flexDirection: "column", gap: spacing.base }}>
-            <label style={field}>
-              <span style={label}>Название</span>
+          <aside className="zone-editor-side">
+            <label className="field">
+              <span className="field-label">Название</span>
               <input
-                style={styles.input}
+                className="input"
+                placeholder="Например, Петергоф и Стрельна"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Например, Петергоф и Стрельна"
               />
             </label>
 
-            <label style={field}>
-              <span style={label}>Ресторан</span>
-              <select
-                style={styles.input}
+            <div className="field">
+              <span className="field-label">Ресторан</span>
+              <Select
                 value={restaurantId}
-                onChange={(event) => setRestaurantId(event.target.value)}
-              >
-                {restaurants.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={restaurants.map((item) => ({ label: item.name, value: item.id }))}
+                onChange={setRestaurantId}
+              />
+            </div>
 
-            <div style={field}>
-              <span style={label}>Цвет на карте</span>
-              <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
+            <div className="field">
+              <span className="field-label">Цвет на карте</span>
+              <div className="zone-swatch-grid">
                 {zoneColors.map((option) => (
                   <button
                     key={option}
+                    aria-label={`Цвет ${option}`}
+                    className="zone-swatch"
+                    data-active={option === color}
+                    data-color-index={colorIndex(option)}
                     type="button"
                     onClick={() => setColor(option)}
-                    aria-label={`Цвет ${option}`}
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: radius.sm,
-                      background: option,
-                      cursor: "pointer",
-                      border:
-                        option === color ? `2px solid ${c.textPrimary}` : `1px solid ${c.border}`,
-                    }}
                   />
                 ))}
               </div>
             </div>
 
-            <div
-              style={{
-                background: c.surfaceSunken,
-                borderRadius: radius.md,
-                padding: spacing.md,
-                color: c.textSecondary,
-                fontSize: typography.caption.fontSize,
-                lineHeight: 1.5,
-              }}
-            >
-              Контур замыкается сам — последнюю точку с первой соединять не нужно. Если зоны
-              перекрываются, адрес достаётся той, что выше в списке.
+            <div className="info-band">
+              Контур замыкается сам. Двойной клик добавляет точку, перетаскивание двигает её,
+              клик по точке удаляет.
             </div>
 
-            {failure ? (
-              <div style={{ color: c.danger, fontSize: typography.caption.fontSize }}>{failure}</div>
-            ) : null}
-          </div>
+            {failure ? <div className="form-error">{failure}</div> : null}
+          </aside>
         </div>
-      </div>
-    </div>
+      </section>
+    </>
   );
 }
-
-const overlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: c.scrim,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: spacing.xl,
-  zIndex: 40,
-};
-
-const sheet: React.CSSProperties = {
-  background: c.surface,
-  borderRadius: radius.lg,
-  border: `1px solid ${c.border}`,
-  padding: spacing.lg,
-  width: "min(1080px, 100%)",
-  maxHeight: "90vh",
-  overflow: "auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: spacing.lg,
-  boxShadow: "0 24px 60px rgba(22, 27, 38, 0.24)",
-};
-
-const head: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: spacing.md,
-};
-
-const field: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
-
-const label: React.CSSProperties = {
-  fontSize: typography.caption.fontSize,
-  color: c.textTertiary,
-};

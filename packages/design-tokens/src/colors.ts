@@ -1,3 +1,17 @@
+/**
+ * ЦВЕТА. Устроены в два этажа, и это важно понимать.
+ *
+ * ЭТАЖ 1 — palette: просто набор оттенков с номерами, как в краске.
+ *          Чем больше число, тем темнее. В экранах НЕ используется.
+ * ЭТАЖ 2 — lightColors / darkColors ниже: названия по назначению.
+ *          Вот их и берут экраны — поэтому тёмная тема получается сама.
+ */
+
+/**
+ * Палитра-сырьё. Обратите внимание на sand: это не чистый серый,
+ * в него подмешан тёплый тон. Чистый серый рядом с фотографиями еды
+ * выглядит мертвенно.
+ */
 export const palette = {
   terracotta: {
     50: "#FDF3F1",
@@ -50,7 +64,16 @@ export const palette = {
   },
 } as const;
 
+/**
+ * СПИСОК ВСЕХ НАЗВАНИЙ ЦВЕТА.
+ *
+ * Добавляете свой цвет — впишите имя сюда, потом задайте значение
+ * в lightColors И в darkColors. Пропустите тёмную тему — проект
+ * не соберётся: TypeScript требует, чтобы оба набора были полными.
+ * Именно поэтому тёмная тема здесь сделана целиком, а не наполовину.
+ */
 export interface ColorScheme {
+  // ДЕЙСТВИЕ: кнопки, цены, активная вкладка, счётчик корзины
   brand: string;
   brandPressed: string;
   brandSubtle: string;
@@ -100,7 +123,16 @@ export interface ColorScheme {
   scrim: string;
 }
 
+/**
+ * СВЕТЛАЯ ТЕМА — основная. Приложение открывается в ней по умолчанию:
+ * таким сделан бренд, и от настроек телефона это не зависит
+ * (см. apps/mobile/src/store/appearance.ts).
+ */
 export const lightColors: ColorScheme = {
+  // ФИРМЕННЫЙ ЦВЕТ. Поменяете здесь — перекрасятся все кнопки, цены
+  // и активная вкладка. Не забудьте про darkColors ниже.
+  // Цвет заставки и иконки приложения живёт отдельно —
+  // в packages/tenants/data/mamaroma.json → branding
   brand: palette.terracotta[500],
   brandPressed: palette.terracotta[600],
   brandSubtle: palette.terracotta[50],
@@ -114,21 +146,24 @@ export const lightColors: ColorScheme = {
   highlightSubtle: palette.saffron[100],
   onHighlight: palette.sand[0],
 
+  // Тёмная витрина в шапке главного экрана
   hero: palette.sand[900],
   heroRaised: "rgba(255, 255, 255, 0.12)",
   onHero: palette.sand[0],
   onHeroMuted: palette.sand[300],
 
-  background: palette.sand[0],
+  background: palette.sand[0], // фон экрана
+  // Поле списка меню: чуть теплее карточек, иначе белое на белом сливается
+  // и край карточки держится на одной тени
   backgroundAlt: palette.sand[50],
-  surface: palette.sand[0],
+  surface: palette.sand[0], // карточки и панели
   surfaceRaised: palette.sand[0],
   surfaceSunken: palette.sand[100],
   overlay: "rgba(26, 22, 20, 0.55)",
 
-  textPrimary: palette.sand[900],
-  textSecondary: palette.sand[600],
-  textTertiary: palette.sand[500],
+  textPrimary: palette.sand[900], // основной текст
+  textSecondary: palette.sand[600], // состав блюда, подписи
+  textTertiary: palette.sand[500], // самое бледное: вес, объём, неактивные вкладки
   textInverse: palette.sand[0],
   textOnBrand: palette.sand[0],
 
@@ -148,6 +183,10 @@ export const lightColors: ColorScheme = {
   scrim: "rgba(255, 255, 255, 0.86)",
 };
 
+/**
+ * ТЁМНАЯ ТЕМА. Значения подобраны вручную, а НЕ получены инверсией светлой —
+ * иначе кнопка перестала бы читаться как кнопка. Два примера ниже.
+ */
 export const darkColors: ColorScheme = {
   // В тёмной теме светлая терракота выглядит розовой, поэтому берём более
   // насыщенный тон и белый текст поверх — кнопка читается как кнопка

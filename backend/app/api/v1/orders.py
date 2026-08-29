@@ -14,9 +14,11 @@ from app.schemas.order import (
     CheckoutPreviewRequest,
     FeedbackRead,
     FeedbackWrite,
+    OrderChangeRead,
     OrderCreate,
     OrderRead,
 )
+from app.services import iiko_bridge
 from app.services import order as order_service
 
 router = APIRouter(prefix="/orders", tags=["Заказы"])
@@ -82,7 +84,23 @@ async def show(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
     rated = await _rated(session, [order.id])
-    return order_service.to_read(order, order.id in rated)
+    read = order_service.to_read(order, order.id in rated)
+
+    # Что ресторан поменял в составе: считаем только здесь — в списке заказов
+    # это лишние запросы, а карточку гость открывает по одной
+    read.changes = [
+        OrderChangeRead(
+            name=row.name,
+            state=row.state,
+            quantity=row.quantity,
+            was_quantity=row.was_quantity,
+            total_kopecks=row.total_kopecks,
+            image_url=row.image_url,
+        )
+        for row in await iiko_bridge.describe_changes(session, tenant, order)
+    ]
+
+    return read
 
 
 @router.post(

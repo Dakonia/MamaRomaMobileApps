@@ -401,6 +401,19 @@ export default function MenuScreen() {
   );
 
   const subtotal = cartSubtotal(cart.items);
+  /**
+   * ШИРИНА КАРТОЧКИ БЛЮДА = сколько осталось от экрана, поделить на колонки.
+   *
+   *   width                  — ширина экрана телефона
+   *   screenPadding * 2      — поля слева и справа, по 16
+   *   spacing.md             — один промежуток между колонками, 12
+   *   / 2                    — ДВЕ КОЛОНКИ
+   *
+   * Три колонки: промежутков станет два, а делить надо на три —
+   *   (width - theme.layout.screenPadding * 2 - theme.spacing.md * 2) / 3
+   * Заодно уменьшите numberOfLines в dish-card.tsx с 2 до 1:
+   * в узкую карточку название и состав по две строки не влезут.
+   */
   const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
 
   const jumpTo = async (categoryId: string) => {

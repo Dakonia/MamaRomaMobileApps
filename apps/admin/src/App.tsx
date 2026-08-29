@@ -1,68 +1,215 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-
 import {
-  api,
-  ApiError,
-  formatDateTime,
-  formatPrice,
-  getToken,
-  setToken,
-  tenant,
-} from "./api";
-import { GuestsTab } from "./GuestsTab";
-import { MenuTab } from "./MenuTab";
-import { PromosTab } from "./PromosTab";
-import { RestaurantsTab } from "./RestaurantsTab";
-import { ExtrasTab } from "./ExtrasTab";
-import { PromoCodesTab } from "./PromoCodesTab";
-import { NotificationsTab } from "./NotificationsTab";
-import { FeedbackTab } from "./FeedbackTab";
-import { IikoTab } from "./IikoTab";
-import { SyncTab } from "./SyncTab";
-import { ZonesTab } from "./ZonesTab";
-import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
+  Navigate,
+  RouterProvider,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LockKeyhole, Store } from "lucide-react";
+import { Suspense, lazy, useState, type ReactNode } from "react";
 
-type Tab =
-  | "notifications"
-  | "menu"
-  | "orders"
-  | "reservations"
-  | "promos"
-  | "restaurants"
-  | "zones"
-  | "guests"
-  | "extras"
-  | "promo-codes"
-  | "feedback"
-  | "iiko"
-  | "sync";
+import { OrdersPage } from "./app/orders/OrdersPage";
+import { AdminLayout } from "./components/layout/AdminLayout";
+import { api, getToken, setToken, tenant, type ApiError } from "./api";
+import { AdminSessionProvider } from "./lib/admin-session";
+import { Button } from "./ui";
 
-const ORDER_FLOW: Record<string, { label: string; next: { status: string; label: string }[] }> = {
-  created: { label: "Оформлен", next: [{ status: "accepted", label: "Принять" }] },
-  paid: { label: "Оплачен", next: [{ status: "accepted", label: "Принять" }] },
-  accepted: { label: "Принят", next: [{ status: "cooking", label: "Готовим" }] },
-  cooking: { label: "Готовится", next: [{ status: "ready", label: "Готов" }] },
-  ready: {
-    label: "Готов",
-    next: [
-      { status: "delivering", label: "Курьер забрал" },
-      { status: "completed", label: "Выдан" },
-    ],
-  },
-  delivering: { label: "В пути", next: [{ status: "completed", label: "Доставлен" }] },
-  completed: { label: "Выполнен", next: [] },
-  cancelled: { label: "Отменён", next: [] },
-};
+const ReservationsPage = lazy(() =>
+  import("./app/reservations/ReservationsPage").then((module) => ({ default: module.ReservationsPage })),
+);
+const ExtrasTab = lazy(() => import("./ExtrasTab").then((module) => ({ default: module.ExtrasTab })));
+const FeedbackTab = lazy(() => import("./FeedbackTab").then((module) => ({ default: module.FeedbackTab })));
+const GuestsTab = lazy(() => import("./GuestsTab").then((module) => ({ default: module.GuestsTab })));
+const IikoTab = lazy(() => import("./IikoTab").then((module) => ({ default: module.IikoTab })));
+const MenuTab = lazy(() => import("./MenuTab").then((module) => ({ default: module.MenuTab })));
+const NotificationsTab = lazy(() =>
+  import("./NotificationsTab").then((module) => ({ default: module.NotificationsTab })),
+);
+const PromoCodesTab = lazy(() => import("./PromoCodesTab").then((module) => ({ default: module.PromoCodesTab })));
+const PromosTab = lazy(() => import("./PromosTab").then((module) => ({ default: module.PromosTab })));
+const RestaurantsTab = lazy(() => import("./RestaurantsTab").then((module) => ({ default: module.RestaurantsTab })));
+const SyncTab = lazy(() => import("./SyncTab").then((module) => ({ default: module.SyncTab })));
+const ZonesTab = lazy(() => import("./ZonesTab").then((module) => ({ default: module.ZonesTab })));
 
-const RESERVATION_LABEL: Record<string, string> = {
-  requested: "Ждёт подтверждения",
-  confirmed: "Подтверждена",
-  seated: "Гость за столом",
-  completed: "Завершена",
-  cancelled: "Отменена",
-  no_show: "Не пришёл",
-};
+const rootRoute = createRootRoute({
+  component: AdminLayout,
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: () => <Navigate replace to="/orders" />,
+});
+
+const ordersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/orders",
+  component: OrdersPage,
+});
+
+function LegacyScreen({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<RouteSkeleton />}>
+      <div className="legacy-wrap page-stack">{children}</div>
+    </Suspense>
+  );
+}
+
+function RouteSkeleton() {
+  return (
+    <div className="page-stack">
+      <div className="skeleton skeleton-row" />
+      <div className="skeleton skeleton-card" />
+      <div className="skeleton skeleton-card" />
+    </div>
+  );
+}
+
+const reservationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reservations",
+  component: () => (
+    <LegacyScreen>
+      <ReservationsPage />
+    </LegacyScreen>
+  ),
+});
+
+const feedbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/feedback",
+  component: () => (
+    <LegacyScreen>
+      <FeedbackTab />
+    </LegacyScreen>
+  ),
+});
+
+const menuRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/menu",
+  component: () => (
+    <LegacyScreen>
+      <MenuTab />
+    </LegacyScreen>
+  ),
+});
+
+const extrasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/extras",
+  component: () => (
+    <LegacyScreen>
+      <ExtrasTab />
+    </LegacyScreen>
+  ),
+});
+
+const promosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/promos",
+  component: () => (
+    <LegacyScreen>
+      <PromosTab />
+    </LegacyScreen>
+  ),
+});
+
+const promoCodesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/promo-codes",
+  component: () => (
+    <LegacyScreen>
+      <PromoCodesTab />
+    </LegacyScreen>
+  ),
+});
+
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/notifications",
+  component: () => (
+    <LegacyScreen>
+      <NotificationsTab />
+    </LegacyScreen>
+  ),
+});
+
+const guestsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/guests",
+  component: () => (
+    <LegacyScreen>
+      <GuestsTab />
+    </LegacyScreen>
+  ),
+});
+
+const restaurantsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/restaurants",
+  component: () => (
+    <LegacyScreen>
+      <RestaurantsTab />
+    </LegacyScreen>
+  ),
+});
+
+const zonesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/zones",
+  component: () => (
+    <LegacyScreen>
+      <ZonesTab />
+    </LegacyScreen>
+  ),
+});
+
+const iikoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/iiko",
+  component: () => (
+    <LegacyScreen>
+      <IikoTab />
+    </LegacyScreen>
+  ),
+});
+
+const syncRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sync",
+  component: () => (
+    <LegacyScreen>
+      <SyncTab />
+    </LegacyScreen>
+  ),
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  ordersRoute,
+  reservationsRoute,
+  feedbackRoute,
+  menuRoute,
+  extrasRoute,
+  promosRoute,
+  promoCodesRoute,
+  notificationsRoute,
+  guestsRoute,
+  restaurantsRoute,
+  zonesRoute,
+  iikoRoute,
+  syncRoute,
+]);
+
+const router = createRouter({ routeTree });
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
 
 function Login({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState("");
@@ -79,240 +226,75 @@ function Login({ onDone }: { onDone: () => void }) {
   });
 
   return (
-    <div
-      style={{
-        ...styles.page,
-        display: "grid",
-        placeItems: "center",
-        padding: spacing.xl,
-      }}
-    >
+    <main className="login-shell">
       <form
+        className="login-card"
         onSubmit={(event) => {
           event.preventDefault();
           setFailure(null);
           login.mutate();
         }}
-        style={{
-          ...styles.card,
-          padding: spacing.xxl,
-          width: "min(380px, 100%)",
-          display: "flex",
-          flexDirection: "column",
-          gap: spacing.base,
-        }}
       >
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: "'Comfortaa', sans-serif",
-            fontSize: typography.h1.fontSize,
-            color: c.brand,
-          }}
-        >
-          {tenant.branding.displayName}
-        </h1>
-        <p style={{ margin: 0, color: c.textSecondary }}>Панель управления рестораном</p>
+        <div className="login-brand">
+          <div className="login-mark">
+            <Store size={18} aria-hidden />
+          </div>
+          <div>
+            <h1 className="login-title">{tenant.branding.displayName}</h1>
+            <p className="login-copy">Панель управления рестораном</p>
+          </div>
+        </div>
 
-        <input
-          style={styles.input}
-          type="email"
-          value={email}
-          placeholder="Почта"
-          autoComplete="username"
-          onChange={(event) => setEmail(event.target.value)}
-        />
-        <input
-          style={styles.input}
-          type="password"
-          value={password}
-          placeholder="Пароль"
-          autoComplete="current-password"
-          onChange={(event) => setPassword(event.target.value)}
-        />
+        <label className="field">
+          <span className="field-label">Почта</span>
+          <input
+            autoComplete="username"
+            className="input"
+            placeholder="name@mamaroma.ru"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
 
-        {failure ? <span style={{ color: c.danger }}>{failure}</span> : null}
+        <label className="field">
+          <span className="field-label">Пароль</span>
+          <input
+            autoComplete="current-password"
+            className="input"
+            placeholder="Введите пароль"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
 
-        <Button onClick={() => login.mutate()} disabled={login.isPending}>
-          {login.isPending ? "Входим…" : "Войти"}
+        {failure ? <div className="form-error">{failure}</div> : null}
+
+        <Button disabled={login.isPending} type="submit">
+          <LockKeyhole size={15} aria-hidden />
+          {login.isPending ? "Входим..." : "Войти"}
         </Button>
       </form>
-    </div>
+    </main>
   );
 }
 
-function OrdersTab() {
-  const queryClient = useQueryClient();
-  const orders = useQuery({ queryKey: ["orders"], queryFn: api.orders, refetchInterval: 15_000 });
-
-  const setStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => api.setOrderStatus(id, status),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["orders"] }),
-  });
-
-  if ((orders.data ?? []).length === 0) {
-    return <p style={{ color: c.textSecondary }}>Активных заказов нет.</p>;
-  }
-
+function SessionSkeleton() {
   return (
-    <Section title="Активные заказы">
-      <div style={{ display: "flex", flexDirection: "column", gap: spacing.md }}>
-        {(orders.data ?? []).map((order) => {
-          const flow = ORDER_FLOW[order.status] ?? { label: order.status, next: [] };
-
-          return (
-            <div key={order.id} style={{ ...styles.card, padding: spacing.base }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: spacing.base }}>
-                <div>
-                  <strong>№ {order.number}</strong>{" "}
-                  <Badge text={flow.label} tone={order.status === "completed" ? "ok" : "warn"} />
-                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                    {order.restaurant_name} · {order.type === "delivery" ? "доставка" : "самовывоз"} ·{" "}
-                    {formatDateTime(order.created_at)}
-                  </div>
-                  {order.address_text ? (
-                    <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                      {order.address_text}
-                    </div>
-                  ) : null}
-                </div>
-                <strong>{formatPrice(order.total_kopecks)}</strong>
-              </div>
-
-              <ul style={{ margin: `${spacing.sm}px 0`, paddingLeft: spacing.lg, color: c.textSecondary }}>
-                {order.items.map((item) => (
-                  <li key={item.id}>
-                    {item.name} × {item.quantity}
-                  </li>
-                ))}
-              </ul>
-
-              <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
-                {flow.next.map((step) => (
-                  <Button
-                    key={step.status}
-                    onClick={() => setStatus.mutate({ id: order.id, status: step.status })}
-                  >
-                    {step.label}
-                  </Button>
-                ))}
-                <Button
-                  tone="danger"
-                  onClick={() => setStatus.mutate({ id: order.id, status: "cancelled" })}
-                >
-                  Отменить
-                </Button>
-
-                {/* Пока нет интеграции с iiko, статус ставим руками — в том
-                    числе назад, если нажали лишнего */}
-                <select
-                  style={{ ...styles.input, width: 190, marginLeft: "auto" }}
-                  value={order.status}
-                  onChange={(event) =>
-                    setStatus.mutate({ id: order.id, status: event.target.value })
-                  }
-                >
-                  {Object.entries(ORDER_FLOW).map(([status, item]) => (
-                    <option key={status} value={status}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          );
-        })}
+    <main className="login-shell">
+      <div className="login-card">
+        <div className="skeleton skeleton-row" />
+        <div className="skeleton skeleton-row" />
+        <div className="skeleton skeleton-row" />
       </div>
-    </Section>
-  );
-}
-
-function ReservationsTab() {
-  const queryClient = useQueryClient();
-  const reservations = useQuery({
-    queryKey: ["reservations"],
-    queryFn: api.reservations,
-    refetchInterval: 30_000,
-  });
-
-  const setStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      api.setReservationStatus(id, status),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["reservations"] }),
-  });
-
-  if ((reservations.data ?? []).length === 0) {
-    return <p style={{ color: c.textSecondary }}>Активных броней нет.</p>;
-  }
-
-  return (
-    <Section title="Брони">
-      <div style={styles.card}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Когда</th>
-              <th style={styles.th}>Гость</th>
-              <th style={styles.th}>Ресторан</th>
-              <th style={styles.th}>Статус</th>
-              <th style={styles.th} />
-            </tr>
-          </thead>
-          <tbody>
-            {(reservations.data ?? []).map((item) => (
-              <tr key={item.id}>
-                <td style={styles.td}>
-                  <strong>{formatDateTime(item.reserved_at)}</strong>
-                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                    {item.guests_count} гост.
-                  </div>
-                </td>
-                <td style={styles.td}>
-                  {item.contact_name ?? "—"}
-                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                    {item.contact_phone}
-                  </div>
-                  {item.comment ? (
-                    <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                      {item.comment}
-                    </div>
-                  ) : null}
-                </td>
-                <td style={{ ...styles.td, color: c.textSecondary }}>{item.restaurant_name}</td>
-                <td style={styles.td}>
-                  <Badge
-                    text={RESERVATION_LABEL[item.status] ?? item.status}
-                    tone={item.status === "confirmed" ? "ok" : "warn"}
-                  />
-                </td>
-                <td style={styles.td}>
-                  <div style={{ display: "flex", gap: spacing.sm }}>
-                    {item.status === "requested" ? (
-                      <Button onClick={() => setStatus.mutate({ id: item.id, status: "confirmed" })}>
-                        Подтвердить
-                      </Button>
-                    ) : null}
-                    <Button
-                      tone="danger"
-                      onClick={() => setStatus.mutate({ id: item.id, status: "cancelled" })}
-                    >
-                      Отменить
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Section>
+    </main>
   );
 }
 
 export default function App() {
   const queryClient = useQueryClient();
   const [authorized, setAuthorized] = useState(getToken() !== null);
-  const [tab, setTab] = useState<Tab>("orders");
 
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, enabled: authorized, retry: false });
 
@@ -320,8 +302,6 @@ export default function App() {
     return (
       <Login
         onDone={() => {
-          // Со старым токеном запрос профиля уже упал, и его ошибка лежит в кэше.
-          // Без сброса свежий вход не показывал бы ничего, кроме той же формы
           queryClient.removeQueries({ queryKey: ["me"] });
           setAuthorized(true);
         }}
@@ -329,68 +309,22 @@ export default function App() {
     );
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "orders", label: "Заказы" },
-    { key: "reservations", label: "Брони" },
-    { key: "menu", label: "Меню" },
-    { key: "promos", label: "Акции" },
-    { key: "restaurants", label: "Рестораны" },
-    { key: "zones", label: "Зоны" },
-    { key: "extras", label: "Добавки" },
-    { key: "promo-codes", label: "Промокоды" },
-    { key: "guests", label: "Гости" },
-    { key: "feedback", label: "Отзывы" },
-    { key: "notifications", label: "Уведомления" },
-    { key: "iiko", label: "Касса" },
-    { key: "sync", label: "Обновление" },
-  ];
+  if (me.isPending) {
+    return <SessionSkeleton />;
+  }
 
   return (
-    <div style={styles.page}>
-      <header style={styles.header}>
-        <strong style={{ fontFamily: "'Comfortaa', sans-serif", color: c.brand }}>
-          {tenant.branding.displayName}
-        </strong>
-
-        <nav style={{ display: "flex", gap: spacing.sm, flex: 1 }}>
-          {tabs.map((item) => (
-            <Button
-              key={item.key}
-              tone={tab === item.key ? "brand" : "quiet"}
-              onClick={() => setTab(item.key)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </nav>
-
-        <span style={{ color: c.textSecondary }}>{me.data?.name}</span>
-        <Button
-          tone="quiet"
-          onClick={() => {
-            setToken(null);
-            setAuthorized(false);
-          }}
-        >
-          Выйти
-        </Button>
-      </header>
-
-      <main style={styles.content}>
-        {tab === "orders" ? <OrdersTab /> : null}
-        {tab === "reservations" ? <ReservationsTab /> : null}
-        {tab === "menu" ? <MenuTab /> : null}
-        {tab === "promos" ? <PromosTab /> : null}
-        {tab === "restaurants" ? <RestaurantsTab /> : null}
-        {tab === "zones" ? <ZonesTab /> : null}
-        {tab === "guests" ? <GuestsTab /> : null}
-        {tab === "extras" ? <ExtrasTab /> : null}
-        {tab === "promo-codes" ? <PromoCodesTab /> : null}
-        {tab === "feedback" ? <FeedbackTab /> : null}
-        {tab === "notifications" ? <NotificationsTab /> : null}
-        {tab === "iiko" ? <IikoTab /> : null}
-        {tab === "sync" ? <SyncTab /> : null}
-      </main>
-    </div>
+    <AdminSessionProvider
+      value={{
+        staff: me.data,
+        logout: () => {
+          setToken(null);
+          setAuthorized(false);
+          queryClient.clear();
+        },
+      }}
+    >
+      <RouterProvider router={router} />
+    </AdminSessionProvider>
   );
 }

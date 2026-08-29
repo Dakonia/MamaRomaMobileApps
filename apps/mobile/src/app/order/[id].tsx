@@ -205,14 +205,35 @@ export default function OrderScreen() {
   }, [cancelled, progress, stage]);
 
   const live = data !== undefined && !['completed', 'cancelled'].includes(data.status);
-  const iikoItems = data?.iiko_items ?? [];
-  const iikoItemsChanged =
-    data?.iiko_items_changed_at !== null &&
-    data?.iiko_items_changed_at !== undefined;
+  /**
+   * Состав одним списком. Пока ресторан ничего не трогал — это позиции заказа.
+   * Как только тронул, сервер присылает их же с пометками: что сняли, что
+   * добавили, где изменилось количество. Двух списков рядом больше нет —
+   * гость сличал их глазами и не понимал, что поменялось
+   */
+  const changed = (data?.changes ?? []).length > 0;
 
-  // Сумма по факту кассы: после правки состава она отличается от той,
-  // что гость видел при оформлении, и молчать об этом нельзя
-  const iikoTotal = iikoItems.reduce((sum, item) => sum + (item.net_sum || 0), 0);
+  const lines = changed
+    ? (data?.changes ?? []).map((row, index) => ({
+        key: `${row.name}-${index}`,
+        name: row.name,
+        quantity: row.quantity,
+        totalKopecks: row.total_kopecks,
+        imageUrl: row.image_url ?? null,
+        extras: [] as string[],
+        state: row.state,
+        wasQuantity: row.was_quantity ?? null,
+      }))
+    : (data?.items ?? []).map((item) => ({
+        key: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        totalKopecks: item.total_kopecks,
+        imageUrl: item.image_url ?? null,
+        extras: item.extras.map((extra) => extra.name),
+        state: 'kept',
+        wasQuantity: null as number | null,
+      }));
 
   useEffect(() => {
     if (!live) return;
@@ -537,167 +558,137 @@ export default function OrderScreen() {
               },
             ]}
           >
-            {data.items.map((item, index) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.row,
-                  {
-                    gap: theme.spacing.md,
-                    padding: theme.spacing.sm,
-                    borderTopWidth: index > 0 ? StyleSheet.hairlineWidth : 0,
-                    borderTopColor: theme.colors.divider,
-                  },
-                ]}
-              >
-                <View
-                  style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: theme.radius.md,
-                    overflow: 'hidden',
-                    backgroundColor: theme.colors.surfaceSunken,
-                  }}
-                >
-                  {item.image_url ? (
-                    <Image
-                      source={{ uri: mediaUrl(item.image_url) ?? '' }}
-                      style={StyleSheet.absoluteFill}
-                      contentFit="cover"
-                    />
-                  ) : null}
-                </View>
-
-                <View style={styles.grow}>
-                  <Text style={[theme.typography.body, { color: theme.colors.textPrimary }]}>
-                    {item.name} × {item.quantity}
-                  </Text>
-                  {item.extras.length > 0 ? (
-                    <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>
-                      + {item.extras.map((extra) => extra.name).join(', ')}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <Text style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}>
-                  {formatPrice(item.total_kopecks)}
-                </Text>
-              </View>
-            ))}
-          </Animated.View>
-
-          {iikoItemsChanged ? (
-            <Animated.View
-              entering={FadeIn.delay(700).duration(320)}
-              style={[
-                theme.elevation.card,
-                {
-                  borderRadius: theme.radius.xl,
-                  backgroundColor: theme.colors.surface,
-                  overflow: 'hidden',
-                },
-              ]}
-            >
+            {/* Ресторан правил состав — говорим об этом одной строкой,
+                а не отдельной карточкой внизу */}
+            {changed ? (
               <View
                 style={[
                   styles.row,
                   {
-                    gap: theme.spacing.md,
-                    padding: theme.spacing.base,
-                    backgroundColor: theme.colors.accentSubtle,
+                    gap: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingBottom: theme.spacing.sm,
                   },
                 ]}
               >
-                <Ionicons name="sync-outline" size={18} color={theme.colors.accent} />
-                <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.accent }]}>
-                  Состав обновлён рестораном
+                <Ionicons name="sync-outline" size={15} color={theme.colors.accent} />
+                <Text style={[theme.typography.caption, { color: theme.colors.accent }]}>
+                  Состав изменил ресторан
                 </Text>
               </View>
+            ) : null}
 
-              {iikoItems.length === 0 ? (
+            {lines.map((line, index) => {
+              const gone = line.state === 'removed';
+              const fresh = line.state === 'added';
+              const less = line.state === 'changed';
+
+              return (
                 <View
+                  key={line.key}
                   style={[
                     styles.row,
                     {
                       gap: theme.spacing.md,
-                      paddingHorizontal: theme.spacing.base,
-                      paddingVertical: theme.spacing.sm,
-                      borderTopWidth: StyleSheet.hairlineWidth,
+                      padding: theme.spacing.sm,
+                      borderTopWidth: index > 0 ? StyleSheet.hairlineWidth : 0,
                       borderTopColor: theme.colors.divider,
+                      // Снятое блюдо гаснет целиком: видно, что его не будет
+                      opacity: gone ? 0.45 : 1,
                     },
                   ]}
                 >
-                  <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textPrimary }]}>
-                    Все позиции удалены в ресторане
-                  </Text>
-                </View>
-              ) : (
-                iikoItems.map((item, index) => (
                   <View
-                    key={`${item.product_id}-${item.name}-${index}`}
-                    style={[
-                      styles.row,
-                      {
-                        gap: theme.spacing.md,
-                        paddingHorizontal: theme.spacing.base,
-                        paddingVertical: theme.spacing.sm,
-                        borderTopWidth: StyleSheet.hairlineWidth,
-                        borderTopColor: theme.colors.divider,
-                      },
-                    ]}
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: theme.radius.md,
+                      overflow: 'hidden',
+                      backgroundColor: theme.colors.surfaceSunken,
+                    }}
                   >
-                    <Text style={[theme.typography.body, styles.grow, { color: theme.colors.textPrimary }]}>
-                      {item.name} × {item.amount || 1}
-                    </Text>
-                    {item.net_sum > 0 ? (
-                      <Text
-                        style={[
-                          theme.typography.bodyMedium,
-                          theme.tabularNums,
-                          { color: theme.colors.textPrimary },
-                        ]}
-                      >
-                        {formatPrice(Math.round(item.net_sum * 100))}
-                      </Text>
-                    ) : null}
-                    {item.group_name ? (
-                      <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
-                        {item.group_name}
-                      </Text>
+                    {line.imageUrl ? (
+                      <Image
+                        source={{ uri: mediaUrl(line.imageUrl) ?? '' }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="cover"
+                      />
                     ) : null}
                   </View>
-                ))
-              )}
 
-              {iikoTotal > 0 ? (
-                <View
-                  style={[
-                    styles.row,
-                    {
-                      gap: theme.spacing.md,
-                      padding: theme.spacing.base,
-                      borderTopWidth: StyleSheet.hairlineWidth,
-                      borderTopColor: theme.colors.divider,
-                      backgroundColor: theme.colors.surfaceSunken,
-                    },
-                  ]}
-                >
-                  <Text style={[theme.typography.bodyMedium, styles.grow, { color: theme.colors.textSecondary }]}>
-                    К оплате по факту
-                  </Text>
+                  <View style={[styles.grow, { gap: 2 }]}>
+                    <Text
+                      style={[
+                        theme.typography.body,
+                        {
+                          color: theme.colors.textPrimary,
+                          textDecorationLine: gone ? 'line-through' : 'none',
+                        },
+                      ]}
+                    >
+                      {line.name} × {line.quantity}
+                    </Text>
+
+                    {line.extras.length > 0 ? (
+                      <Text style={[theme.typography.caption, { color: theme.colors.brand }]}>
+                        + {line.extras.join(', ')}
+                      </Text>
+                    ) : null}
+
+                    {/* Пометка вместо второго списка: сразу под названием */}
+                    {gone || fresh || less ? (
+                      <View
+                        style={[
+                          styles.mark,
+                          {
+                            paddingHorizontal: theme.spacing.sm,
+                            paddingVertical: 1,
+                            borderRadius: theme.radius.sm,
+                            backgroundColor: gone
+                              ? theme.colors.dangerSubtle
+                              : fresh
+                                ? theme.colors.accentSubtle
+                                : theme.colors.warningSubtle,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            theme.typography.overline,
+                            {
+                              color: gone
+                                ? theme.colors.danger
+                                : fresh
+                                  ? theme.colors.accent
+                                  : theme.colors.warning,
+                            },
+                          ]}
+                        >
+                          {gone
+                            ? 'Удалено'
+                            : fresh
+                              ? 'Добавлено'
+                              : `Было ${line.wasQuantity ?? line.quantity}`}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
                   <Text
                     style={[
                       theme.typography.bodyMedium,
-                      theme.tabularNums,
-                      { color: theme.colors.textPrimary },
+                      {
+                        color: theme.colors.textPrimary,
+                        textDecorationLine: gone ? 'line-through' : 'none',
+                      },
                     ]}
                   >
-                    {formatPrice(Math.round(iikoTotal * 100))}
+                    {formatPrice(line.totalKopecks)}
                   </Text>
                 </View>
-              ) : null}
-            </Animated.View>
-          ) : null}
+              );
+            })}
+          </Animated.View>
 
           <Animated.View
             entering={FadeIn.delay(740).duration(320)}
@@ -803,5 +794,6 @@ const styles = StyleSheet.create({
   // Кружки поверх линии: иначе она просвечивает сквозь незакрашенные шаги
   steps: { justifyContent: 'space-between', marginTop: -19, zIndex: 2 },
   step: { alignItems: 'center', width: 62 },
+  mark: { alignSelf: 'flex-start' },
   halo: { position: 'absolute' },
 });

@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Edit3, Eye, EyeOff, Map, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
   api,
@@ -8,298 +11,522 @@ import {
   type City,
   type Zone,
 } from "./api";
+import { ConfirmDialog } from "./components/patterns/ConfirmDialog";
+import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
+import { DetailDrawer } from "./components/patterns/DetailDrawer";
 import { ZoneEditor } from "./ZoneEditor";
-import { Badge, Button, c, radius, Section, spacing, styles, typography } from "./ui";
+import { Badge, Button, IconButton, Section, Select } from "./ui";
 
-/** Копейки → рубли в поле ввода и обратно. */
-const toRub = (kopecks: number | null) =>
-  kopecks === null ? "" : String(Math.round(kopecks / 100));
-const toKop = (value: string) =>
-  value.trim() === "" ? null : Number(value.replace(/\D/g, "")) * 100;
+type StatusFilter = "all" | "active" | "inactive";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+type ZoneDraft = {
+  delivery_minutes: string;
+  delivery_price_rub: string;
+  free_delivery_from_rub: string;
+  is_active: boolean;
+  min_order_rub: string;
+  min_order_weekend_rub: string;
+  name: string;
+  restaurant_id: string;
+  sort_order: string;
+};
+
+const column = createAdminColumnHelper<Zone>();
+const ZONE_COLORS = ["#1E3A8A", "#0F766E", "#B45309", "#7E22CE", "#B91C1C", "#3F6212", "#C2410C", "#0369A1"];
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
+
+function toRub(kopecks: number | null): string {
+  return kopecks === null ? "" : String(Math.round(kopecks / 100));
+}
+
+function rubToKopecks(value: string): number | null {
+  return value.trim() === "" ? null : Number(value.replace(/\D/g, "") || 0) * 100;
+}
+
+function toDraft(zone: Zone): ZoneDraft {
+  return {
+    delivery_minutes: zone.delivery_minutes === null ? "" : String(zone.delivery_minutes),
+    delivery_price_rub: toRub(zone.delivery_price_kopecks),
+    free_delivery_from_rub: toRub(zone.free_delivery_from_kopecks),
+    is_active: zone.is_active,
+    min_order_rub: toRub(zone.min_order_kopecks),
+    min_order_weekend_rub: toRub(zone.min_order_weekend_kopecks),
+    name: zone.name,
+    restaurant_id: zone.restaurant_id,
+    sort_order: String(zone.sort_order),
+  };
+}
+
+function zonePatch(draft: ZoneDraft) {
+  return {
+    delivery_minutes: draft.delivery_minutes.trim() === "" ? null : Number(draft.delivery_minutes.replace(/\D/g, "")),
+    delivery_price_kopecks: rubToKopecks(draft.delivery_price_rub) ?? 0,
+    free_delivery_from_kopecks: rubToKopecks(draft.free_delivery_from_rub),
+    is_active: draft.is_active,
+    min_order_kopecks: rubToKopecks(draft.min_order_rub) ?? 0,
+    min_order_weekend_kopecks: rubToKopecks(draft.min_order_weekend_rub),
+    name: draft.name.trim(),
+    restaurant_id: draft.restaurant_id,
+    sort_order: Number(draft.sort_order.replace(/\D/g, "") || 0),
+  };
+}
+
+function zoneColorKey(color: string): string {
+  const index = ZONE_COLORS.indexOf(color.toUpperCase());
+  return index >= 0 ? String(index) : "custom";
+}
+
+function Metric({ label, note, value }: { label: string; note: string; value: string }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 120 }}>
-      <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>{label}</span>
-      {children}
-    </label>
+    <div className="metric-card">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-note">{note}</div>
+    </div>
   );
 }
 
-function ZoneRow({
-  zone,
+function ZoneBadge({ zone }: { zone: Zone }) {
+  return zone.is_active ? <Badge text="работает" tone="ok" /> : <Badge text="выключена" tone="muted" />;
+}
+
+function ZoneSettingsDrawer({
+  onClose,
+  onSubmit,
+  pending,
   restaurants,
-  onSaved,
-  onEdit,
+  zone,
 }: {
-  zone: Zone;
+  onClose: () => void;
+  onSubmit: (draft: ZoneDraft) => void;
+  pending: boolean;
   restaurants: AdminRestaurant[];
-  onSaved: () => void;
-  onEdit: () => void;
+  zone: Zone;
 }) {
-  const [draft, setDraft] = useState(zone);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ZoneDraft>(() => toDraft(zone));
 
-  useEffect(() => setDraft(zone), [zone]);
+  useEffect(() => {
+    setDraft(toDraft(zone));
+  }, [zone]);
 
-  const dirty =
-    draft.restaurant_id !== zone.restaurant_id ||
-    draft.delivery_price_kopecks !== zone.delivery_price_kopecks ||
-    draft.min_order_kopecks !== zone.min_order_kopecks ||
-    draft.min_order_weekend_kopecks !== zone.min_order_weekend_kopecks ||
-    draft.free_delivery_from_kopecks !== zone.free_delivery_from_kopecks ||
-    draft.delivery_minutes !== zone.delivery_minutes ||
-    draft.is_active !== zone.is_active;
-
-  const save = async () => {
-    setBusy(true);
-    setFailure(null);
-    try {
-      await api.updateZone(zone.id, {
-        restaurant_id: draft.restaurant_id,
-        delivery_price_kopecks: draft.delivery_price_kopecks,
-        min_order_kopecks: draft.min_order_kopecks,
-        min_order_weekend_kopecks: draft.min_order_weekend_kopecks,
-        free_delivery_from_kopecks: draft.free_delivery_from_kopecks,
-        delivery_minutes: draft.delivery_minutes,
-        is_active: draft.is_active,
-      });
-      onSaved();
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось сохранить");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const set = <K extends keyof ZoneDraft>(key: K, value: ZoneDraft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
   return (
-    <tr>
-      <td style={styles.td}>
-        <div style={{ display: "flex", alignItems: "center", gap: spacing.sm }}>
-          <span
-            title={zone.color}
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: 4,
-              background: zone.color,
-              border: `1px solid ${c.border}`,
-            }}
-          />
-          <div>
-            <div style={{ fontWeight: 600 }}>{zone.name}</div>
-            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-              {zone.outline.length} точек контура
+    <DetailDrawer
+      badge={<ZoneBadge zone={zone} />}
+      footer={
+        <>
+          <Button disabled={pending} variant="ghost" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button disabled={pending || draft.name.trim().length < 2} onClick={() => onSubmit(draft)}>
+            {pending ? "Сохраняем..." : "Сохранить"}
+          </Button>
+        </>
+      }
+      subtitle={`${zone.outline.length} точек контура · ${zone.restaurant_name}`}
+      title={zone.name}
+      onClose={onClose}
+    >
+      <div className="drawer-form">
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Основное</h3>
+          <div className="drawer-form-grid">
+            <label className="field" data-wide="true">
+              <span className="field-label">Название</span>
+              <input className="input" value={draft.name} onChange={(event) => set("name", event.target.value)} />
+            </label>
+            <div className="field">
+              <span className="field-label">Ресторан</span>
+              <Select
+                value={draft.restaurant_id}
+                options={restaurants.map((restaurant) => ({ label: restaurant.name, value: restaurant.id }))}
+                onChange={(value) => set("restaurant_id", value)}
+              />
             </div>
+            <label className="field">
+              <span className="field-label">Порядок</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.sort_order}
+                onChange={(event) => set("sort_order", event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <label className="inline-check">
+              <input
+                checked={draft.is_active}
+                type="checkbox"
+                onChange={(event) => set("is_active", event.target.checked)}
+              />
+              Зона работает
+            </label>
           </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Условия доставки</h3>
+          <div className="drawer-form-grid">
+            <label className="field">
+              <span className="field-label">Доставка, ₽</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.delivery_price_rub}
+                onChange={(event) => set("delivery_price_rub", event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Минимум, ₽</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.min_order_rub}
+                onChange={(event) => set("min_order_rub", event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Минимум пт-вс, ₽</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                placeholder="как в будни"
+                value={draft.min_order_weekend_rub}
+                onChange={(event) => set("min_order_weekend_rub", event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Бесплатно от, ₽</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                placeholder="не задано"
+                value={draft.free_delivery_from_rub}
+                onChange={(event) => set("free_delivery_from_rub", event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Минут в пути</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                placeholder="не задано"
+                value={draft.delivery_minutes}
+                onChange={(event) => set("delivery_minutes", event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+          </div>
+        </section>
+
+        <div className="info-band">
+          Если зоны накладываются, порядок в списке решает, какая зона сработает для адреса гостя.
         </div>
-      </td>
-
-      <td style={styles.td}>
-        <select
-          style={{ ...styles.input, maxWidth: 230 }}
-          value={draft.restaurant_id}
-          onChange={(event) => setDraft({ ...draft, restaurant_id: event.target.value })}
-        >
-          {restaurants.map((restaurant) => (
-            <option key={restaurant.id} value={restaurant.id}>
-              {restaurant.name}
-            </option>
-          ))}
-        </select>
-      </td>
-
-      <td style={styles.td}>
-        <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
-          <Field label="Доставка, ₽">
-            <input
-              style={{ ...styles.input, width: 90 }}
-              inputMode="numeric"
-              value={toRub(draft.delivery_price_kopecks)}
-              onChange={(event) =>
-                setDraft({ ...draft, delivery_price_kopecks: toKop(event.target.value) ?? 0 })
-              }
-            />
-          </Field>
-          <Field label="Минимум, ₽">
-            <input
-              style={{ ...styles.input, width: 90 }}
-              inputMode="numeric"
-              value={toRub(draft.min_order_kopecks)}
-              onChange={(event) =>
-                setDraft({ ...draft, min_order_kopecks: toKop(event.target.value) ?? 0 })
-              }
-            />
-          </Field>
-          <Field label="Минимум пт–вс, ₽">
-            <input
-              style={{ ...styles.input, width: 110 }}
-              inputMode="numeric"
-              value={toRub(draft.min_order_weekend_kopecks)}
-              onChange={(event) =>
-                setDraft({ ...draft, min_order_weekend_kopecks: toKop(event.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Бесплатно от, ₽">
-            <input
-              style={{ ...styles.input, width: 110 }}
-              inputMode="numeric"
-              value={toRub(draft.free_delivery_from_kopecks)}
-              onChange={(event) =>
-                setDraft({ ...draft, free_delivery_from_kopecks: toKop(event.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Минут в пути">
-            <input
-              style={{ ...styles.input, width: 90 }}
-              inputMode="numeric"
-              value={draft.delivery_minutes ?? ""}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  delivery_minutes:
-                    event.target.value.trim() === ""
-                      ? null
-                      : Number(event.target.value.replace(/\D/g, "")),
-                })
-              }
-            />
-          </Field>
-        </div>
-        {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
-      </td>
-
-      <td style={styles.td}>
-        <label style={{ display: "flex", alignItems: "center", gap: spacing.sm }}>
-          <input
-            type="checkbox"
-            checked={draft.is_active}
-            onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}
-          />
-          <span>{draft.is_active ? "работает" : "выключена"}</span>
-        </label>
-      </td>
-
-      <td style={{ ...styles.td, textAlign: "right" }}>
-        <div style={{ display: "flex", gap: spacing.sm, justifyContent: "flex-end" }}>
-          <Button tone="quiet" onClick={onEdit}>
-            Контур
-          </Button>
-          <Button onClick={() => void save()} disabled={!dirty || busy}>
-            {busy ? "…" : "Сохранить"}
-          </Button>
-        </div>
-      </td>
-    </tr>
+      </div>
+    </DetailDrawer>
   );
 }
 
 export function ZonesTab() {
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [restaurants, setRestaurants] = useState<AdminRestaurant[]>([]);
-  const [cities, setCities] = useState<City[]>([]);
-  const [failure, setFailure] = useState<string | null>(null);
-  // null — окно закрыто, зона — правим её контур, "new" — рисуем новую
-  const [editing, setEditing] = useState<Zone | "new" | null>(null);
+  const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
+  const [search, setSearch] = useState("");
+  const [restaurantId, setRestaurantId] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingContour, setEditingContour] = useState<Zone | "new" | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Zone | null>(null);
 
-  const load = async () => {
-    try {
-      const [zoneRows, restaurantRows, cityRows] = await Promise.all([
-        api.zones(),
-        api.adminRestaurants(),
-        api.cities(),
-      ]);
-      setZones(zoneRows);
-      setRestaurants(restaurantRows);
-      setCities(cityRows);
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось загрузить зоны");
-    }
-  };
+  const zones = useQuery({ queryKey: ["zones"], queryFn: api.zones });
+  const restaurants = useQuery({ queryKey: ["admin-restaurants"], queryFn: api.adminRestaurants });
+  const cities = useQuery({ queryKey: ["cities"], queryFn: api.cities });
 
-  useEffect(() => {
-    void load();
-  }, []);
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["zones"] });
 
-  const covered = zones.filter((zone) => zone.is_active).length;
+  const save = useMutation({
+    mutationFn: ({ draft, id }: { draft: ZoneDraft; id: string }) => api.updateZone(id, zonePatch(draft)),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (zone) => {
+      setSelectedId(zone.id);
+      refresh();
+      toast.success("Зона сохранена");
+    },
+  });
+
+  const toggle = useMutation({
+    mutationFn: (zone: Zone) => api.updateZone(zone.id, { is_active: !zone.is_active }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: refresh,
+  });
+
+  const remove = useMutation({
+    mutationFn: api.deleteZone,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      setSelectedId(null);
+      refresh();
+      toast.success("Зона удалена");
+    },
+  });
+
+  const rows = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("ru-RU");
+    return [...(zones.data ?? [])]
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ru-RU"))
+      .filter((zone) => {
+        const text = `${zone.name} ${zone.restaurant_name}`.toLocaleLowerCase("ru-RU");
+        const matchesStatus =
+          status === "all" ||
+          (status === "active" && zone.is_active) ||
+          (status === "inactive" && !zone.is_active);
+        return text.includes(needle) && (!restaurantId || zone.restaurant_id === restaurantId) && matchesStatus;
+      });
+  }, [restaurantId, search, status, zones.data]);
+
+  const allZones = zones.data ?? [];
+  const isLoadingZones = zones.isPending;
+  const selected = selectedId ? allZones.find((zone) => zone.id === selectedId) ?? null : null;
+  const active = allZones.filter((zone) => zone.is_active).length;
+  const avgMin =
+    allZones.length > 0
+      ? Math.round(allZones.reduce((sum, zone) => sum + zone.min_order_kopecks, 0) / allZones.length)
+      : 0;
+  const freeDelivery = allZones.filter((zone) => zone.free_delivery_from_kopecks !== null).length;
+
+  const columns = useMemo(
+    () =>
+      column.columns([
+        column.accessor("name", {
+          header: "Зона",
+          cell: (info) => {
+            const zone = info.row.original;
+            return (
+              <div className="zone-name-cell">
+                <span className="zone-color-dot" data-color-index={zoneColorKey(zone.color)} title={zone.color} />
+                <div className="min-w-0">
+                  <div className="row-main">{info.getValue()}</div>
+                  <div className="row-sub">{zone.outline.length} точек контура</div>
+                </div>
+              </div>
+            );
+          },
+        }),
+        column.accessor("restaurant_name", {
+          header: "Ресторан",
+          cell: (info) => info.getValue(),
+        }),
+        column.display({
+          id: "terms",
+          header: "Условия",
+          cell: (info) => {
+            const zone = info.row.original;
+            return (
+              <div>
+                <div className="row-main">
+                  доставка {formatPrice(zone.delivery_price_kopecks)} · минимум {formatPrice(zone.min_order_kopecks)}
+                </div>
+                <div className="row-sub">
+                  {zone.min_order_weekend_kopecks ? `пт-вс ${formatPrice(zone.min_order_weekend_kopecks)} · ` : ""}
+                  {zone.free_delivery_from_kopecks
+                    ? `бесплатно от ${formatPrice(zone.free_delivery_from_kopecks)}`
+                    : "бесплатный порог не задан"}
+                </div>
+              </div>
+            );
+          },
+        }),
+        column.accessor("delivery_minutes", {
+          header: "Время",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => (info.getValue() ? <span className="mono">{info.getValue()} мин</span> : <span className="row-muted">—</span>),
+        }),
+        column.accessor("is_active", {
+          header: "Статус",
+          cell: (info) => <ZoneBadge zone={info.row.original} />,
+        }),
+        column.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) => {
+            const zone = info.row.original;
+            return (
+              <div className="cell-actions">
+                <IconButton
+                  label="Править условия"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedId(zone.id);
+                  }}
+                >
+                  <Edit3 size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label="Контур"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setEditingContour(zone);
+                  }}
+                >
+                  <Map size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label={zone.is_active ? "Выключить" : "Включить"}
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggle.mutate(zone);
+                  }}
+                >
+                  {zone.is_active ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
+                </IconButton>
+                <IconButton
+                  label="Удалить"
+                  size="xs"
+                  variant="danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteTarget(zone);
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden />
+                </IconButton>
+              </div>
+            );
+          },
+        }),
+      ]),
+    [toggle],
+  );
 
   return (
-    <Section title="Зоны доставки">
-      {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
-
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button onClick={() => setEditing("new")} disabled={restaurants.length === 0}>
+    <Section
+      title="Зоны доставки"
+      action={
+        <Button
+          disabled={(restaurants.data ?? []).length === 0}
+          onClick={() => setEditingContour("new")}
+        >
+          <Plus size={15} aria-hidden />
           Нарисовать зону
         </Button>
+      }
+      description="Контуры доставки, ресторан-исполнитель, минимумы, стоимость и порядок выбора зоны."
+    >
+      <div className="metric-strip">
+        <Metric label="Зон" note="контуров доставки" value={isLoadingZones ? "..." : String(allZones.length)} />
+        <Metric label="Работают" note="участвуют в расчёте" value={isLoadingZones ? "..." : String(active)} />
+        <Metric label="Средний минимум" note="по всем зонам" value={isLoadingZones ? "..." : allZones.length ? formatPrice(avgMin) : "—"} />
+        <Metric label="Бесплатный порог" note="настроен" value={isLoadingZones ? "..." : String(freeDelivery)} />
       </div>
 
-      <div
-        style={{
-          background: c.surfaceSunken,
-          borderRadius: radius.lg,
-          padding: spacing.base,
-          color: c.textSecondary,
-        }}
-      >
-        Зон {zones.length}, из них работают {covered}. Адрес гостя проверяется по контуру зоны:
-        какой ресторан её обслуживает, тот и принимает заказ, а условия доставки берутся отсюда,
-        а не из карточки ресторана. Если зоны наложились, побеждает та, что выше в списке.
+      <div className="info-band">
+        Адрес гостя проверяется по контуру зоны. Условия доставки берутся отсюда, а не из карточки ресторана.
       </div>
 
-      <div style={styles.card}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Зона</th>
-              <th style={styles.th}>Ресторан</th>
-              <th style={styles.th}>Условия</th>
-              <th style={styles.th}>Состояние</th>
-              <th style={styles.th} />
-            </tr>
-          </thead>
-          <tbody>
-            {zones.map((zone) => (
-              <ZoneRow
-                key={zone.id}
-                zone={zone}
-                restaurants={restaurants}
-                onSaved={load}
-                onEdit={() => setEditing(zone)}
-              />
-            ))}
-            {zones.length === 0 ? (
-              <tr>
-                <td style={{ ...styles.td, color: c.textTertiary }} colSpan={5}>
-                  Зон пока нет. Загрузите их командой{" "}
-                  <code>uv run python -m app.import_zones</code>
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+      <div className="surface-toolbar">
+        <label className="field toolbar-field">
+          <span className="field-label">Поиск</span>
+          <span className="search-control">
+            <Search className="search-icon" size={15} aria-hidden />
+            <input
+              className="input"
+              placeholder="Поиск зоны"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </span>
+        </label>
+        <div className="field toolbar-field">
+          <span className="field-label">Ресторан</span>
+          <Select
+            value={restaurantId}
+            options={[
+              { label: "Все рестораны", value: "" },
+              ...(restaurants.data ?? []).map((restaurant) => ({ label: restaurant.name, value: restaurant.id })),
+            ]}
+            onChange={setRestaurantId}
+          />
+        </div>
+        <div className="filter-chips" aria-label="Статус зон">
+          <button className="filter-chip" data-active={status === "all"} type="button" onClick={() => setStatus("all")}>
+            Все
+          </button>
+          <button className="filter-chip" data-active={status === "active"} type="button" onClick={() => setStatus("active")}>
+            Работают
+          </button>
+          <button className="filter-chip" data-active={status === "inactive"} type="button" onClick={() => setStatus("inactive")}>
+            Выключены
+          </button>
+        </div>
+        <span className="toolbar-spacer" />
+        <DensityToggle density={density} onChange={setDensity} />
       </div>
 
-      <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-        Минимальная сумма показана в рублях. Пустое поле «Бесплатно от» — доставка платная всегда.
-        Средний чек по зонам:{" "}
-        {zones.length > 0
-          ? formatPrice(
-              Math.round(
-                zones.reduce((sum, zone) => sum + zone.min_order_kopecks, 0) / zones.length,
-              ),
-            )
-          : "—"}
-      </div>
-      {editing ? (
+      {zones.error ? (
+        <div className="error-state">
+          <h2>Не удалось загрузить зоны</h2>
+          <p>{errorMessage(zones.error)}</p>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={rows}
+          density={density}
+          getRowId={(row) => row.id}
+          isLoading={zones.isPending}
+          onRowClick={(zone) => setSelectedId(zone.id)}
+          pageSize={20}
+          selectedId={selectedId}
+          empty={
+            <div className="empty-state">
+              <h2>Зон пока нет</h2>
+              <p>Нарисуйте первую зону на карте или импортируйте существующие контуры.</p>
+            </div>
+          }
+        />
+      )}
+
+      {selected ? (
+        <ZoneSettingsDrawer
+          pending={save.isPending}
+          restaurants={restaurants.data ?? []}
+          zone={selected}
+          onClose={() => setSelectedId(null)}
+          onSubmit={(draft) => save.mutate({ draft, id: selected.id })}
+        />
+      ) : null}
+
+      {editingContour ? (
         <ZoneEditor
-          zone={editing === "new" ? null : editing}
-          restaurants={restaurants}
-          cities={cities}
-          onClose={() => setEditing(null)}
-          onSaved={load}
+          cities={cities.data ?? []}
+          restaurants={restaurants.data ?? []}
+          zone={editingContour === "new" ? null : editingContour}
+          onClose={() => setEditingContour(null)}
+          onSaved={() => {
+            setEditingContour(null);
+            refresh();
+          }}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          busy={remove.isPending}
+          message={`Удалить зону «${deleteTarget.name}»?`}
+          title="Удалить зону"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => remove.mutate(deleteTarget.id)}
         />
       ) : null}
     </Section>

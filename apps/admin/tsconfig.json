@@ -12,7 +12,6 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "paths": {
-      "@mr/design-tokens": ["../../packages/design-tokens/src"],
       "@mr/tenants": ["../../packages/tenants/src"]
     }
   },

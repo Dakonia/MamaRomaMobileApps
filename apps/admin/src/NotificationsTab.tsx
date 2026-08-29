@@ -1,19 +1,19 @@
+import { Bell, Send, Sparkles } from "lucide-react";
 import { useState } from "react";
 
 import { AutomationsTab } from "./AutomationsTab";
 import { CampaignsTab } from "./CampaignsTab";
 import { NotificationSteps } from "./NotificationSteps";
-import { Button, Section, spacing } from "./ui";
+import { Section } from "./ui";
 
 type Part = "steps" | "campaigns" | "automations";
 
-const PARTS: { key: Part; label: string }[] = [
-  { key: "steps", label: "Шаги заказа" },
-  { key: "campaigns", label: "Рассылки" },
-  { key: "automations", label: "Сценарии" },
+const PARTS: { icon: typeof Bell; key: Part; label: string }[] = [
+  { icon: Bell, key: "steps", label: "Шаги заказа" },
+  { icon: Send, key: "campaigns", label: "Рассылки" },
+  { icon: Sparkles, key: "automations", label: "Сценарии" },
 ];
 
-/** Всё про уведомления в одном разделе: транзакционные, рекламные и автоматические. */
 export function NotificationsTab() {
   const [part, setPart] = useState<Part>("steps");
 
@@ -21,18 +21,25 @@ export function NotificationsTab() {
     <Section
       title="Уведомления"
       action={
-        <div style={{ display: "flex", gap: spacing.sm }}>
-          {PARTS.map((item) => (
-            <Button
-              key={item.key}
-              tone={part === item.key ? "brand" : "quiet"}
-              onClick={() => setPart(item.key)}
-            >
-              {item.label}
-            </Button>
-          ))}
+        <div className="tabs" aria-label="Раздел уведомлений">
+          {PARTS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.key}
+                className="tab-button"
+                data-active={part === item.key}
+                type="button"
+                onClick={() => setPart(item.key)}
+              >
+                <Icon size={15} aria-hidden />
+                {item.label}
+              </button>
+            );
+          })}
         </div>
       }
+      description="Транзакционные сообщения, рекламные рассылки и автоматические сценарии в одном месте."
     >
       {part === "steps" ? <NotificationSteps /> : null}
       {part === "campaigns" ? <CampaignsTab /> : null}

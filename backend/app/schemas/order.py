@@ -55,6 +55,18 @@ class OrderItemRead(BaseModel):
     total_kopecks: int
 
 
+class OrderChangeRead(BaseModel):
+    """Строка состава после правки ресторана: что стало с этой позицией."""
+
+    name: str
+    # kept — не тронули, removed — сняли, added — добавили, changed — изменили количество
+    state: str
+    quantity: float
+    was_quantity: float | None = None
+    total_kopecks: int = 0
+    image_url: str | None = None
+
+
 class IikoOrderItemRead(BaseModel):
     """Фактическая позиция заказа по последнему снимку iikoFront."""
 
@@ -96,6 +108,8 @@ class OrderRead(BaseModel):
     iiko_cancel_comment: str | None = None
     iiko_items: list[IikoOrderItemRead] = Field(default_factory=list)
     iiko_items_changed_at: datetime | None = None
+    # Состав одним списком с пометками — считается только для карточки заказа
+    changes: list[OrderChangeRead] = Field(default_factory=list)
 
     subtotal_kopecks: int
     delivery_kopecks: int

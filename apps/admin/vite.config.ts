@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // 5173 занят другим проектом на этой машине, поэтому админка живёт на 5174
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   /**
    * На сервере админка отдаётся из подпапки /mamaroma/admin/, а не из корня
    * домена: там уже живёт другое приложение. Без этого сборка просит стили и

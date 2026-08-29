@@ -1,21 +1,23 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Save, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { api, ApiError, type Automation } from "./api";
-import { Button, c, radius, spacing, styles, typography } from "./ui";
+import { Badge, Button } from "./ui";
 
-/** Сценарии, которые срабатывают сами. Настройка у каждого своя. */
 const KINDS: {
-  trigger: string;
+  body: string;
   label: string;
   note: string;
-  param: { key: string; label: string; hint: string; fallback: number };
+  param: { fallback: number; hint: string; key: string; label: string };
   title: string;
-  body: string;
+  trigger: string;
 }[] = [
   {
     trigger: "birthday",
     label: "День рождения",
-    note: "Пишем гостю заранее, чтобы он успел позвать друзей",
+    note: "Пишем гостю заранее, чтобы он успел позвать друзей.",
     param: { key: "days_before", label: "За сколько дней", hint: "0 — в сам день", fallback: 3 },
     title: "С днём рождения, {name}!",
     body: "Дарим подарок к вашему заказу — загляните в приложение",
@@ -23,112 +25,106 @@ const KINDS: {
   {
     trigger: "inactive",
     label: "Давно не заказывал",
-    note: "Тем, кто заказывал раньше, но перестал",
-    param: { key: "days", label: "Дней молчания", hint: "Обычно 30–45", fallback: 30 },
+    note: "Тем, кто заказывал раньше, но перестал возвращаться.",
+    param: { key: "days", label: "Дней молчания", hint: "Обычно 30-45", fallback: 30 },
     title: "Скучаем, {name}",
     body: "Ваша любимая пицца на месте — и мы придумали пару новинок",
   },
   {
     trigger: "abandoned_cart",
     label: "Забытая корзина",
-    note: "Собрал корзину и не оформил заказ",
-    param: { key: "hours", label: "Через сколько часов", hint: "Обычно 2–4", fallback: 2 },
+    note: "Гость собрал корзину, но не оформил заказ.",
+    param: { key: "hours", label: "Через часов", hint: "Обычно 2-4", fallback: 2 },
     title: "Корзина ждёт",
     body: "Ваш заказ собран — осталось оформить",
   },
   {
     trigger: "points_expiring",
     label: "Сгорают баллы",
-    note: "Напоминание, пока баллами ещё можно воспользоваться",
+    note: "Напоминание, пока баллами ещё можно воспользоваться.",
     param: { key: "days_before", label: "За сколько дней", hint: "Обычно 7", fallback: 7 },
     title: "Баллы скоро сгорят",
     body: "Успейте потратить их на любимое блюдо",
   },
 ];
 
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
+
+function emptyAutomation(kind: (typeof KINDS)[number]): Automation {
+  return {
+    body: kind.body,
+    is_enabled: false,
+    params: { [kind.param.key]: kind.param.fallback },
+    target: { screen: "promos" },
+    title: kind.title,
+    trigger: kind.trigger,
+  };
+}
+
+function PushPreview({ automation }: { automation: Automation }) {
+  return (
+    <div className="push-preview">
+      <div className="push-icon">
+        <Sparkles size={16} aria-hidden />
+      </div>
+      <div className="min-w-0">
+        <div className="row-main">{automation.title.replaceAll("{name}", "Владислав")}</div>
+        <div className="row-sub">{automation.body.replaceAll("{name}", "Владислав")}</div>
+      </div>
+    </div>
+  );
+}
+
 function AutomationCard({
   kind,
   saved,
-  onSaved,
 }: {
   kind: (typeof KINDS)[number];
   saved: Automation | undefined;
-  onSaved: () => void;
 }) {
-  const [draft, setDraft] = useState<Automation>(
-    saved ?? {
-      trigger: kind.trigger,
-      is_enabled: false,
-      title: kind.title,
-      body: kind.body,
-      target: { screen: "promos" },
-      params: { [kind.param.key]: kind.param.fallback },
-    },
-  );
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<Automation>(() => saved ?? emptyAutomation(kind));
 
   useEffect(() => {
-    if (saved) setDraft(saved);
-  }, [saved]);
+    setDraft(saved ?? emptyAutomation(kind));
+  }, [kind, saved]);
 
-  const save = async () => {
-    setBusy(true);
-    setFailure(null);
-
-    try {
-      await api.saveAutomation(draft);
-      onSaved();
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось сохранить");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const save = useMutation({
+    mutationFn: api.saveAutomation,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["automations"] });
+      toast.success("Сценарий сохранён");
+    },
+  });
 
   const value = draft.params?.[kind.param.key] ?? kind.param.fallback;
 
   return (
-    <div
-      style={{
-        ...styles.card,
-        padding: spacing.base,
-        display: "flex",
-        flexDirection: "column",
-        gap: spacing.md,
-        borderLeft: `3px solid ${draft.is_enabled ? c.accent : c.border}`,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: spacing.md }}>
-        <label style={{ display: "flex", alignItems: "center", gap: spacing.sm, cursor: "pointer" }}>
+    <section className="notification-card" data-enabled={draft.is_enabled}>
+      <div className="notification-card-head">
+        <label className="inline-check">
           <input
-            type="checkbox"
             checked={draft.is_enabled}
+            type="checkbox"
             onChange={(event) => setDraft({ ...draft, is_enabled: event.target.checked })}
           />
-          <span style={{ fontWeight: 600 }}>{kind.label}</span>
+          <span className="row-main">{kind.label}</span>
         </label>
-
-        <span style={{ flex: 1 }} />
-
-        {saved?.sent_count ? (
-          <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-            отправлено {saved.sent_count}
-          </span>
-        ) : null}
+        <span className="toolbar-spacer" />
+        {saved?.sent_count ? <Badge text={`отправлено ${saved.sent_count}`} tone="accent" /> : null}
+        {draft.is_enabled ? <Badge text="активен" tone="ok" /> : <Badge text="выключен" tone="muted" />}
       </div>
 
-      <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-        {kind.note}
-      </div>
+      <p className="section-copy">{kind.note}</p>
 
-      <div style={{ display: "flex", gap: spacing.md, flexWrap: "wrap" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, width: 150 }}>
-          <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-            {kind.param.label}
-          </span>
+      <div className="notification-form-grid compact">
+        <label className="field">
+          <span className="field-label">{kind.param.label}</span>
           <input
-            style={styles.input}
+            className="input"
             inputMode="numeric"
             value={value}
             onChange={(event) =>
@@ -138,101 +134,74 @@ function AutomationCard({
               })
             }
           />
-          <span style={{ fontSize: 12, color: c.textTertiary }}>{kind.param.hint}</span>
+          <span className="field-label">{kind.param.hint}</span>
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 200px" }}>
-          <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-            Заголовок
-          </span>
+        <label className="field">
+          <span className="field-label">Заголовок</span>
           <input
-            style={styles.input}
+            className="input"
             value={draft.title}
             onChange={(event) => setDraft({ ...draft, title: event.target.value })}
           />
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "2 1 280px" }}>
-          <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-            Текст
-          </span>
+        <label className="field">
+          <span className="field-label">Текст</span>
           <input
-            style={styles.input}
+            className="input"
             value={draft.body}
             onChange={(event) => setDraft({ ...draft, body: event.target.value })}
           />
         </label>
       </div>
 
-      <div
-        style={{
-          background: c.surfaceSunken,
-          borderRadius: radius.md,
-          padding: spacing.md,
-          fontSize: 13,
-          color: c.textSecondary,
-        }}
-      >
-        <b style={{ color: c.textPrimary }}>{draft.title.replace("{name}", "Владислав")}</b>
-        <br />
-        {draft.body.replace("{name}", "Владислав")}
-      </div>
+      <PushPreview automation={draft} />
 
-      <div style={{ display: "flex", alignItems: "center", gap: spacing.md }}>
-        <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
-          Одному гостю по одному сценарию пишем не чаще раза в месяц
-        </span>
-        <span style={{ flex: 1 }} />
-        {failure ? <span style={{ color: c.danger }}>{failure}</span> : null}
-        <Button onClick={() => void save()} disabled={busy}>
-          {busy ? "…" : "Сохранить"}
+      <div className="notification-card-foot">
+        <span className="toolbar-note">Один сценарий пишет одному гостю не чаще раза в месяц.</span>
+        <span className="toolbar-spacer" />
+        <Button disabled={save.isPending || draft.title.trim().length < 2} onClick={() => save.mutate(draft)}>
+          <Save size={15} aria-hidden />
+          {save.isPending ? "Сохраняем..." : "Сохранить"}
         </Button>
       </div>
-    </div>
+    </section>
   );
 }
 
-/** Сценарии: поводы написать, которые наступают сами. */
 export function AutomationsTab() {
-  const [rows, setRows] = useState<Automation[]>([]);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  const load = async () => {
-    try {
-      setRows(await api.automations());
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось загрузить сценарии");
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
+  const automations = useQuery({ queryKey: ["automations"], queryFn: api.automations });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: spacing.lg }}>
-      {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
-
-      <div
-        style={{
-          background: c.surfaceSunken,
-          borderRadius: radius.lg,
-          padding: spacing.base,
-          color: c.textSecondary,
-        }}
-      >
-        Сценарий срабатывает сам, когда наступает повод. Проверка идёт раз в несколько минут, в
-        тихие часы сообщения ждут утра. В тексте доступна подстановка {"{name}"} — имя гостя.
+    <div className="page-stack">
+      <div className="info-band">
+        Сценарии срабатывают автоматически, когда наступает повод. Рекламные сообщения учитывают
+        тихие часы и лимит частоты.
       </div>
 
-      {KINDS.map((kind) => (
-        <AutomationCard
-          key={kind.trigger}
-          kind={kind}
-          saved={rows.find((row) => row.trigger === kind.trigger)}
-          onSaved={load}
-        />
-      ))}
+      {automations.error ? (
+        <div className="error-state">
+          <h2>Не удалось загрузить сценарии</h2>
+          <p>{errorMessage(automations.error)}</p>
+        </div>
+      ) : automations.isPending ? (
+        <div className="notification-grid">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="skeleton skeleton-card" />
+          ))}
+        </div>
+      ) : (
+        <div className="notification-grid">
+          {KINDS.map((kind) => (
+            <AutomationCard
+              key={kind.trigger}
+              kind={kind}
+              saved={(automations.data ?? []).find((row) => row.trigger === kind.trigger)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

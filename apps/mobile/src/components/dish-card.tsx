@@ -34,6 +34,9 @@ export function DishCard({
 }: Props) {
   const theme = useTheme();
 
+  // ПЛАШКИ ПОВЕРХ ФОТО. Порядок в списке = порядок сверху вниз.
+  // Цвет текста берите парный к фону: к colors.brand идёт colors.textOnBrand,
+  // к colors.accent — colors.onAccent. Иначе в тёмной теме буквы пропадут.
   const badges = [
     // Цвет текста берём под каждый фон: в тёмной теме плашки светлые,
     // и белые буквы на них не читаются
@@ -82,12 +85,13 @@ export function DishCard({
       style={[
         styles.root,
         {
+          // Ширину задаёт экран меню — см. cardWidth в app/(tabs)/index.tsx
           width,
           flex: width === undefined ? 1 : undefined,
-          borderRadius: theme.radius.xl,
+          borderRadius: theme.radius.xl, // 22 — скругление углов карточки
           backgroundColor: theme.colors.surface,
-          ...theme.elevation.card,
-          opacity: dish.is_available ? 1 : 0.55,
+          ...theme.elevation.card, // мягкая тень; убрать — elevation.none
+          opacity: dish.is_available ? 1 : 0.55, // недоступное блюдо гаснет
         },
       ]}
     >
@@ -123,9 +127,9 @@ export function DishCard({
               <View
                 key={badge.text}
                 style={{
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xxs,
-                  borderRadius: theme.radius.sm,
+                  paddingHorizontal: theme.spacing.sm, // 8 — поля плашки по бокам
+                  paddingVertical: theme.spacing.xxs, // 2 — сверху и снизу
+                  borderRadius: theme.radius.sm, // 8 — скругление плашки
                   backgroundColor: badge.background,
                 }}
               >
@@ -183,14 +187,16 @@ export function DishCard({
               depth={0.88}
               style={[
                 styles.add,
+                // КРУГЛАЯ КНОПКА «+». Крупнее — поставьте spacing.huge (56)
+                // и значок ниже увеличьте до spacing.xl (24)
                 {
-                  right: theme.spacing.sm,
-                  bottom: theme.spacing.sm,
-                  width: theme.spacing.xxxl,
+                  right: theme.spacing.sm, // 8 — отступ от правого края фото
+                  bottom: theme.spacing.sm, // 8 — отступ от низа фото
+                  width: theme.spacing.xxxl, // 40 — РАЗМЕР КНОПКИ
                   height: theme.spacing.xxxl,
-                  borderRadius: theme.radius.pill,
+                  borderRadius: theme.radius.pill, // делает её круглой
                   backgroundColor: theme.colors.brand,
-                  ...theme.elevation.raised,
+                  ...theme.elevation.raised, // кнопка «летит» над фотографией
                 },
               ]}
             >
@@ -218,7 +224,10 @@ export function DishCard({
         )}
       </View>
 
+      {/* ТЕКСТОВАЯ ЧАСТЬ: padding — поля внутри, gap — промежуток между строками */}
       <View style={[styles.body, { padding: theme.spacing.md, gap: theme.spacing.xxs }]}>
+        {/* Название. При трёх колонках поставьте numberOfLines={1},
+            иначе карточки поедут по высоте */}
         <Text
           numberOfLines={2}
           style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}
@@ -236,6 +245,7 @@ export function DishCard({
         ) : null}
 
         <View style={[styles.priceRow, { gap: theme.spacing.sm, paddingTop: theme.spacing.xxs }]}>
+          {/* Цена. tabularNums — цифры одной ширины, строка не дёргается */}
           <Text style={[theme.typography.price, theme.tabularNums, { color: theme.colors.textPrimary }]}>
             {formatPrice(dish.price_kopecks)}
           </Text>
@@ -254,6 +264,15 @@ const styles = StyleSheet.create({
   root: { overflow: 'hidden' },
   body: { flex: 1 },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 'auto' },
+  /**
+   * ФОРМА ФОТОГРАФИИ. Высота НЕ задаётся числом — она считается из ширины
+   * по этой пропорции, поэтому карточка одинаково выглядит на любом экране.
+   *
+   *   4 / 3  — сейчас, слегка вытянуто вширь
+   *   1 / 1  — квадрат: карточки выше, в экран влезает меньше
+   *  16 / 9  — широкая полоса: влезает больше, но еда мельче
+   *   3 / 4  — вертикально, как в модных доставках; список сильно длиннее
+   */
   photo: { width: '100%', aspectRatio: 4 / 3 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   add: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },

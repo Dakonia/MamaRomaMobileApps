@@ -1,484 +1,627 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Bell,
+  Edit3,
+  ImageUp,
+  Plus,
+  Power,
+  Search,
+  Trash2,
+  Trophy,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
   api,
   ApiError,
+  formatDate,
   mediaUrl,
   type Promotion,
   type PromotionDraft,
   type Restaurant,
 } from "./api";
+import { ConfirmDialog } from "./components/patterns/ConfirmDialog";
+import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
+import { DetailDrawer } from "./components/patterns/DetailDrawer";
 import { PromoPush } from "./PromoPush";
-import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
+import { Badge, Button, IconButton, Section } from "./ui";
+
+type PromoFilter = "all" | "active" | "inactive" | "expired";
 
 const empty: PromotionDraft = {
-  title: "",
   description: null,
-  label: null,
-  image_url: null,
-  restaurant_ids: [],
   ends_at: null,
-  sort_order: 0,
+  image_url: null,
   is_active: true,
+  label: null,
+  restaurant_ids: [],
   show_in_menu: false,
+  sort_order: 0,
+  title: "",
 };
+
+const column = createAdminColumnHelper<Promotion>();
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
 
 function toDraft(promotion: Promotion): PromotionDraft {
   return {
-    title: promotion.title,
     description: promotion.description,
-    label: promotion.label,
-    image_url: promotion.image_url,
-    restaurant_ids: promotion.restaurant_ids,
     ends_at: promotion.ends_at ? promotion.ends_at.slice(0, 10) : null,
-    sort_order: promotion.sort_order,
+    image_url: promotion.image_url,
     is_active: promotion.is_active,
+    label: promotion.label,
+    restaurant_ids: promotion.restaurant_ids,
     show_in_menu: promotion.show_in_menu,
+    sort_order: promotion.sort_order,
+    title: promotion.title,
   };
 }
 
-function label(text: string) {
-  return (
-    <span
-      style={{
-        fontSize: typography.caption.fontSize,
-        color: c.textTertiary,
-        textTransform: "uppercase",
-        letterSpacing: 0.6,
-      }}
-    >
-      {text}
-    </span>
-  );
+function normalizeDraft(draft: PromotionDraft): PromotionDraft {
+  return {
+    ...draft,
+    description: draft.description?.trim() || null,
+    ends_at: draft.ends_at ? `${draft.ends_at}T23:59:00Z` : null,
+    label: draft.label?.trim() || null,
+    title: draft.title.trim(),
+  };
 }
 
-function PromoForm({
-  restaurants,
-  initial,
-  title,
-  pending,
-  error,
-  onCancel,
-  onSubmit,
-}: {
-  restaurants: Restaurant[];
-  initial: PromotionDraft;
-  title: string;
-  pending: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onSubmit: (draft: PromotionDraft) => void;
-}) {
-  const [draft, setDraft] = useState(initial);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+function isExpired(promotion: Promotion): boolean {
+  return promotion.ends_at !== null && new Date(promotion.ends_at).getTime() < Date.now();
+}
 
-  const set = <K extends keyof PromotionDraft>(key: K, value: PromotionDraft[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
+function promoStatus(promotion: Promotion) {
+  if (!promotion.is_active) return <Badge text="выключена" tone="muted" />;
+  if (isExpired(promotion)) return <Badge text="истекла" tone="bad" />;
+  return <Badge text="активна" tone="ok" />;
+}
 
-  const nullable = (value: string) => (value.trim() === "" ? null : value);
-
+function Metric({ label, note, value }: { label: string; note: string; value: string }) {
   return (
-    <div style={{ ...styles.card, padding: spacing.lg, display: "grid", gap: spacing.base }}>
-      <strong style={{ fontFamily: "'Comfortaa', sans-serif", fontSize: typography.h3.fontSize }}>
-        {title}
-      </strong>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: spacing.md,
-        }}
-      >
-        <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
-          {label("Заголовок")}
-          <input
-            style={styles.input}
-            value={draft.title}
-            placeholder="Паста дня — 490 ₽"
-            onChange={(event) => set("title", event.target.value)}
-          />
-        </label>
-
-        <label style={{ display: "grid", gap: 4 }}>
-          {label("Плашка на картинке")}
-          <input
-            style={styles.input}
-            value={draft.label ?? ""}
-            placeholder="−30%"
-            maxLength={24}
-            onChange={(event) => set("label", nullable(event.target.value))}
-          />
-        </label>
-
-        <label style={{ display: "grid", gap: 4 }}>
-          {label("Действует до")}
-          <input
-            style={styles.input}
-            type="date"
-            value={draft.ends_at ?? ""}
-            onChange={(event) => set("ends_at", nullable(event.target.value))}
-          />
-        </label>
-
-        <div style={{ display: "grid", gap: 6, gridColumn: "1 / -1" }}>
-          {label(
-            draft.restaurant_ids.length === 0
-              ? "Рестораны — во всех"
-              : `Рестораны — выбрано ${draft.restaurant_ids.length}`,
-          )}
-
-          <div style={{ display: "flex", gap: spacing.sm, marginBottom: spacing.xs }}>
-            <Button tone="quiet" onClick={() => set("restaurant_ids", [])}>
-              Во всех
-            </Button>
-            <Button
-              tone="quiet"
-              onClick={() =>
-                set(
-                  "restaurant_ids",
-                  restaurants.map((restaurant) => restaurant.id),
-                )
-              }
-            >
-              Отметить все
-            </Button>
-          </div>
-
-          {/* Акция сети часто идёт не везде: «фестиваль в 13 ресторанах» */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: 6,
-              maxHeight: 220,
-              overflowY: "auto",
-              border: `1px solid ${c.border}`,
-              borderRadius: 10,
-              padding: spacing.sm,
-            }}
-          >
-            {restaurants.map((restaurant) => {
-              const picked = draft.restaurant_ids.includes(restaurant.id);
-
-              return (
-                <label
-                  key={restaurant.id}
-                  style={{ display: "flex", gap: spacing.xs, cursor: "pointer" }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={picked}
-                    onChange={() =>
-                      set(
-                        "restaurant_ids",
-                        picked
-                          ? draft.restaurant_ids.filter((id) => id !== restaurant.id)
-                          : [...draft.restaurant_ids, restaurant.id],
-                      )
-                    }
-                  />
-                  <span style={{ fontSize: typography.caption.fontSize }}>{restaurant.name}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
-          {label("Текст акции")}
-          <textarea
-            style={{ ...styles.input, minHeight: 80, resize: "vertical" }}
-            value={draft.description ?? ""}
-            onChange={(event) => set("description", nullable(event.target.value))}
-          />
-        </label>
-
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: spacing.sm,
-            gridColumn: "1 / -1",
-            cursor: "pointer",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={draft.show_in_menu}
-            onChange={(event) => set("show_in_menu", event.target.checked)}
-          />
-          <span>
-            Показывать в карусели меню
-            <span style={{ color: c.textTertiary }}> — только для акций доставки</span>
-          </span>
-        </label>
-
-        <div style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
-          {label("Картинка")}
-          <div style={{ display: "flex", gap: spacing.base, alignItems: "center" }}>
-            {draft.image_url ? (
-              <img
-                src={mediaUrl(draft.image_url) ?? ""}
-                alt=""
-                style={{
-                  width: 140,
-                  height: 84,
-                  objectFit: "cover",
-                  borderRadius: 12,
-                  border: `1px solid ${c.border}`,
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: 140,
-                  height: 84,
-                  borderRadius: 12,
-                  border: `1px dashed ${c.borderStrong}`,
-                  display: "grid",
-                  placeItems: "center",
-                  color: c.textTertiary,
-                  fontSize: typography.caption.fontSize,
-                }}
-              >
-                нет картинки
-              </div>
-            )}
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={uploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  setUploading(true);
-                  api
-                    .uploadImage(file, "promos")
-                    .then((url) => set("image_url", url))
-                    .catch((exc: ApiError) => setUploadError(exc.message))
-                    .finally(() => setUploading(false));
-                }}
-                style={{ fontSize: typography.caption.fontSize }}
-              />
-              {uploading ? (
-                <span style={{ color: c.textSecondary }}>Загружаем…</span>
-              ) : uploadError ? (
-                <span style={{ color: c.danger }}>{uploadError}</span>
-              ) : (
-                <span style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                  Горизонтальная картинка смотрится лучше
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {error ? <span style={{ color: c.danger }}>{error}</span> : null}
-
-      <div style={{ display: "flex", gap: spacing.sm }}>
-        <Button onClick={() => onSubmit(draft)} disabled={pending || draft.title.trim().length < 2}>
-          {pending ? "Сохраняем…" : "Сохранить"}
-        </Button>
-        <Button tone="quiet" onClick={onCancel}>
-          Отмена
-        </Button>
-      </div>
+    <div className="metric-card">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-note">{note}</div>
     </div>
   );
 }
 
+function PromoImage({ promotion }: { promotion: Promotion }) {
+  return (
+    <div className="promo-thumb">
+      {promotion.image_url ? (
+        <img src={mediaUrl(promotion.image_url) ?? undefined} alt="" />
+      ) : (
+        <Trophy size={17} aria-hidden />
+      )}
+    </div>
+  );
+}
+
+function PromoDrawer({
+  onClose,
+  onSubmit,
+  pending,
+  promotion,
+  restaurants,
+}: {
+  onClose: () => void;
+  onSubmit: (draft: PromotionDraft) => void;
+  pending: boolean;
+  promotion: Promotion | null;
+  restaurants: Restaurant[];
+}) {
+  const [draft, setDraft] = useState<PromotionDraft>(() => (promotion ? toDraft(promotion) : empty));
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    setDraft(promotion ? toDraft(promotion) : empty);
+  }, [promotion]);
+
+  const set = <K extends keyof PromotionDraft>(key: K, value: PromotionDraft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+
+  const toggleRestaurant = (id: string) => {
+    setDraft((current) => ({
+      ...current,
+      restaurant_ids: current.restaurant_ids.includes(id)
+        ? current.restaurant_ids.filter((restaurantId) => restaurantId !== id)
+        : [...current.restaurant_ids, id],
+    }));
+  };
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const url = await api.uploadImage(file, "promos");
+      set("image_url", url);
+      toast.success("Картинка загружена");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <DetailDrawer
+      badge={
+        draft.is_active ? <Badge text="активна" tone="ok" /> : <Badge text="выключена" tone="muted" />
+      }
+      footer={
+        <>
+          <Button disabled={pending || uploading} variant="ghost" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button
+            disabled={pending || uploading || draft.title.trim().length < 2}
+            onClick={() => onSubmit(normalizeDraft(draft))}
+          >
+            {pending ? "Сохраняем..." : "Сохранить"}
+          </Button>
+        </>
+      }
+      subtitle={promotion ? "Правка текста, ресторанов и показа" : "Акция появится в приложении после сохранения"}
+      title={promotion?.title ?? "Новая акция"}
+      onClose={onClose}
+    >
+      <div className="drawer-form">
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Контент</h3>
+          <div className="drawer-form-grid">
+            <label className="field" data-wide="true">
+              <span className="field-label">Заголовок</span>
+              <input
+                className="input"
+                placeholder="Паста дня — 490 ₽"
+                value={draft.title}
+                onChange={(event) => set("title", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Плашка</span>
+              <input
+                className="input"
+                maxLength={24}
+                placeholder="-30%"
+                value={draft.label ?? ""}
+                onChange={(event) => set("label", event.target.value || null)}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Действует до</span>
+              <input
+                className="input"
+                type="date"
+                value={draft.ends_at ?? ""}
+                onChange={(event) => set("ends_at", event.target.value || null)}
+              />
+            </label>
+            <label className="field" data-wide="true">
+              <span className="field-label">Текст акции</span>
+              <textarea
+                className="textarea"
+                value={draft.description ?? ""}
+                onChange={(event) => set("description", event.target.value || null)}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Картинка</h3>
+          <div className="promo-preview">
+            {draft.image_url ? (
+              <img src={mediaUrl(draft.image_url) ?? undefined} alt="" />
+            ) : (
+              <div className="promo-preview-empty">
+                <Trophy size={22} aria-hidden />
+              </div>
+            )}
+            <div className="drawer-section">
+              <label className="upload-button">
+                <ImageUp size={15} aria-hidden />
+                {uploading ? "Загружаем..." : "Загрузить"}
+                <input
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={uploading}
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void upload(file);
+                  }}
+                />
+              </label>
+              <div className="row-sub">Лучше работает горизонтальная картинка с понятным блюдом или оффером.</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Рестораны</h3>
+          <div className="drawer-actions">
+            <Button size="xs" variant="ghost" onClick={() => set("restaurant_ids", [])}>
+              Во всех
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => set("restaurant_ids", restaurants.map((restaurant) => restaurant.id))}
+            >
+              Отметить все
+            </Button>
+          </div>
+          <div className="checkbox-grid bordered-list">
+            {restaurants.map((restaurant) => (
+              <label key={restaurant.id} className="inline-check">
+                <input
+                  checked={draft.restaurant_ids.includes(restaurant.id)}
+                  type="checkbox"
+                  onChange={() => toggleRestaurant(restaurant.id)}
+                />
+                {restaurant.name}
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Показ</h3>
+          <div className="checkbox-grid">
+            <label className="inline-check">
+              <input
+                checked={draft.is_active}
+                type="checkbox"
+                onChange={(event) => set("is_active", event.target.checked)}
+              />
+              Активна
+            </label>
+            <label className="inline-check">
+              <input
+                checked={draft.show_in_menu}
+                type="checkbox"
+                onChange={(event) => set("show_in_menu", event.target.checked)}
+              />
+              Показывать в карусели меню
+            </label>
+          </div>
+        </section>
+      </div>
+    </DetailDrawer>
+  );
+}
+
 export function PromosTab() {
-  // Акция, которую отправляем уведомлением
-  const [pushing, setPushing] = useState<Promotion | null>(null);
   const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<PromoFilter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [pushing, setPushing] = useState<Promotion | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Promotion | null>(null);
+
   const promos = useQuery({ queryKey: ["promotions"], queryFn: api.promotions });
   const restaurants = useQuery({ queryKey: ["restaurants"], queryFn: api.restaurants });
   const cities = useQuery({ queryKey: ["cities"], queryFn: api.cities });
 
-  const [editing, setEditing] = useState<{ id: string | null; draft: PromotionDraft } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["promotions"] });
-  const fail = (exc: ApiError) => setError(exc.message);
 
   const save = useMutation({
-    mutationFn: ({ id, draft }: { id: string | null; draft: PromotionDraft }) => {
-      const body = { ...draft, ends_at: draft.ends_at ? `${draft.ends_at}T23:59:00Z` : null };
-      return id === null ? api.createPromotion(body) : api.updatePromotion(id, body);
-    },
-    onSuccess: () => {
-      setEditing(null);
-      setError(null);
+    mutationFn: ({ draft, id }: { draft: PromotionDraft; id: string | null }) =>
+      id === null ? api.createPromotion(draft) : api.updatePromotion(id, draft),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (promotion) => {
+      setCreating(false);
+      setSelectedId(promotion.id);
       refresh();
+      toast.success("Акция сохранена");
     },
-    onError: fail,
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => api.deletePromotion(id),
-    onSuccess: refresh,
-    onError: fail,
+    mutationFn: api.deletePromotion,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      setSelectedId(null);
+      refresh();
+      toast.success("Акция удалена");
+    },
   });
 
-  const expired = (promotion: Promotion) =>
-    promotion.ends_at !== null && new Date(promotion.ends_at) < new Date();
+  const toggle = useMutation({
+    mutationFn: (promotion: Promotion) =>
+      api.updatePromotion(promotion.id, normalizeDraft({ ...toDraft(promotion), is_active: !promotion.is_active })),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: refresh,
+  });
 
-  const swap = (from: number, to: number) => {
-    const rows = promos.data ?? [];
-    if (to < 0 || to >= rows.length) return;
+  const swap = (promotion: Promotion, direction: -1 | 1) => {
+    const ordered = [...(promos.data ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+    const index = ordered.findIndex((item) => item.id === promotion.id);
+    const next = ordered[index + direction];
+    if (!next) return;
 
-    const first = rows[from];
-    const second = rows[to];
-    save.mutate({ id: first.id, draft: { ...toDraft(first), sort_order: second.sort_order } });
-    save.mutate({ id: second.id, draft: { ...toDraft(second), sort_order: first.sort_order } });
+    save.mutate({ id: promotion.id, draft: normalizeDraft({ ...toDraft(promotion), sort_order: next.sort_order }) });
+    save.mutate({ id: next.id, draft: normalizeDraft({ ...toDraft(next), sort_order: promotion.sort_order }) });
   };
+
+  const rows = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("ru-RU");
+    return [...(promos.data ?? [])]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .filter((promotion) => {
+        const text = `${promotion.title} ${promotion.description ?? ""} ${promotion.label ?? ""} ${promotion.restaurant_names.join(" ")}`.toLocaleLowerCase("ru-RU");
+        const expired = isExpired(promotion);
+        const matchesFilter =
+          filter === "all" ||
+          (filter === "active" && promotion.is_active && !expired) ||
+          (filter === "inactive" && !promotion.is_active) ||
+          (filter === "expired" && expired);
+        return text.includes(needle) && matchesFilter;
+      });
+  }, [filter, promos.data, search]);
+
+  const selected = selectedId ? (promos.data ?? []).find((promotion) => promotion.id === selectedId) ?? null : null;
+  const active = (promos.data ?? []).filter((promotion) => promotion.is_active && !isExpired(promotion)).length;
+  const expiredCount = (promos.data ?? []).filter(isExpired).length;
+  const inMenu = (promos.data ?? []).filter((promotion) => promotion.show_in_menu).length;
+
+  const columns = useMemo(
+    () =>
+      column.columns([
+        column.accessor("title", {
+          header: "Акция",
+          cell: (info) => {
+            const promotion = info.row.original;
+            return (
+              <div className="promo-row-title">
+                <PromoImage promotion={promotion} />
+                <div className="min-w-0">
+                  <div className="row-main">{info.getValue()}</div>
+                  <div className="row-sub">{promotion.description || "Без описания"}</div>
+                </div>
+              </div>
+            );
+          },
+        }),
+        column.display({
+          id: "scope",
+          header: "Где действует",
+          cell: (info) => {
+            const promotion = info.row.original;
+            return (
+              <div>
+                <div className="row-main">
+                  {promotion.restaurant_names.length === 0
+                    ? "Все рестораны"
+                    : promotion.restaurant_names.length > 3
+                      ? `${promotion.restaurant_names.length} ресторанов`
+                      : promotion.restaurant_names.join(", ")}
+                </div>
+                <div className="row-sub">
+                  {promotion.ends_at ? `до ${formatDate(promotion.ends_at)}` : "бессрочно"}
+                </div>
+              </div>
+            );
+          },
+        }),
+        column.accessor("sort_order", {
+          header: "Порядок",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => <span className="mono">{info.getValue()}</span>,
+        }),
+        column.display({
+          id: "status",
+          header: "Статус",
+          cell: (info) => (
+            <div className="chips-line">
+              {promoStatus(info.row.original)}
+              {info.row.original.label ? <Badge text={info.row.original.label} tone="warn" /> : null}
+              {info.row.original.show_in_menu ? <Badge text="в меню" tone="accent" /> : null}
+            </div>
+          ),
+        }),
+        column.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) => {
+            const promotion = info.row.original;
+            return (
+              <div className="cell-actions">
+                <IconButton
+                  label="Выше"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    swap(promotion, -1);
+                  }}
+                >
+                  <ArrowUp size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label="Ниже"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    swap(promotion, 1);
+                  }}
+                >
+                  <ArrowDown size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label="Править"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setCreating(false);
+                    setSelectedId(promotion.id);
+                  }}
+                >
+                  <Edit3 size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label="Отправить уведомлением"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPushing(promotion);
+                  }}
+                >
+                  <Bell size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label={promotion.is_active ? "Выключить" : "Включить"}
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggle.mutate(promotion);
+                  }}
+                >
+                  <Power size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label="Удалить"
+                  size="xs"
+                  variant="danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteTarget(promotion);
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden />
+                </IconButton>
+              </div>
+            );
+          },
+        }),
+      ]),
+    [toggle],
+  );
 
   return (
     <Section
       title="Акции"
       action={
-        editing === null ? (
-          <Button onClick={() => setEditing({ id: null, draft: empty })}>Новая акция</Button>
-        ) : null
-      }
-    >
-      {error ? <div style={{ color: c.danger }}>{error}</div> : null}
-
-      {editing !== null ? (
-        <PromoForm
-          restaurants={restaurants.data ?? []}
-          initial={editing.draft}
-          title={editing.id === null ? "Новая акция" : "Правка акции"}
-          pending={save.isPending}
-          error={error}
-          onCancel={() => {
-            setEditing(null);
-            setError(null);
+        <Button
+          onClick={() => {
+            setCreating(true);
+            setSelectedId(null);
           }}
-          onSubmit={(draft) => save.mutate({ id: editing.id, draft })}
+        >
+          <Plus size={15} aria-hidden />
+          Новая акция
+        </Button>
+      }
+      description="Промо-карточки в приложении, карусель меню и быстрый push по готовому офферу."
+    >
+      <div className="metric-strip">
+        <Metric label="Всего" note="карточек" value={String(promos.data?.length ?? 0)} />
+        <Metric label="Активны" note="видны гостям" value={String(active)} />
+        <Metric label="Истекли" note="по дате окончания" value={String(expiredCount)} />
+        <Metric label="В меню" note="показ в карусели" value={String(inMenu)} />
+      </div>
+
+      <div className="surface-toolbar">
+        <label className="field toolbar-field">
+          <span className="field-label">Поиск</span>
+          <span className="search-control">
+            <Search className="search-icon" size={15} aria-hidden />
+            <input
+              className="input"
+              placeholder="Поиск акции"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </span>
+        </label>
+
+        <div className="filter-chips" aria-label="Фильтр акций">
+          <button className="filter-chip" data-active={filter === "all"} type="button" onClick={() => setFilter("all")}>
+            Все
+          </button>
+          <button className="filter-chip" data-active={filter === "active"} type="button" onClick={() => setFilter("active")}>
+            Активные
+          </button>
+          <button className="filter-chip" data-active={filter === "expired"} type="button" onClick={() => setFilter("expired")}>
+            Истекшие
+          </button>
+          <button className="filter-chip" data-active={filter === "inactive"} type="button" onClick={() => setFilter("inactive")}>
+            Выключены
+          </button>
+        </div>
+
+        <span className="toolbar-spacer" />
+        <DensityToggle density={density} onChange={setDensity} />
+      </div>
+
+      {promos.error ? (
+        <div className="error-state">
+          <h2>Не удалось загрузить акции</h2>
+          <p>{errorMessage(promos.error)}</p>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={rows}
+          density={density}
+          getRowId={(row) => row.id}
+          isLoading={promos.isPending}
+          onRowClick={(promotion) => {
+            setCreating(false);
+            setSelectedId(promotion.id);
+          }}
+          pageSize={20}
+          selectedId={selectedId}
+          empty={
+            <div className="empty-state">
+              <h2>Акций пока нет</h2>
+              <p>Создайте первую промо-карточку, чтобы она появилась в клиентском приложении.</p>
+            </div>
+          }
+        />
+      )}
+
+      {creating || selected ? (
+        <PromoDrawer
+          pending={save.isPending}
+          promotion={creating ? null : selected}
+          restaurants={restaurants.data ?? []}
+          onClose={() => {
+            setCreating(false);
+            setSelectedId(null);
+          }}
+          onSubmit={(draft) => save.mutate({ draft, id: creating ? null : selected?.id ?? null })}
         />
       ) : null}
 
-      {(promos.data ?? []).length === 0 ? (
-        <p style={{ color: c.textSecondary, margin: 0 }}>
-          Акций пока нет. Первая появится в приложении сразу после сохранения.
-        </p>
-      ) : (
-        <div style={{ display: "grid", gap: spacing.md }}>
-          {(promos.data ?? []).map((promotion, index) => (
-            <div
-              key={promotion.id}
-              style={{
-                ...styles.card,
-                padding: spacing.base,
-                display: "flex",
-                gap: spacing.base,
-                opacity: promotion.is_active && !expired(promotion) ? 1 : 0.55,
-              }}
-            >
-              {promotion.image_url ? (
-                <img
-                  src={mediaUrl(promotion.image_url) ?? ""}
-                  alt=""
-                  style={{
-                    width: 120,
-                    height: 76,
-                    objectFit: "cover",
-                    borderRadius: 10,
-                    flexShrink: 0,
-                  }}
-                />
-              ) : null}
-
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", gap: spacing.sm, alignItems: "center" }}>
-                  <strong>{promotion.title}</strong>
-                  {promotion.label ? <Badge text={promotion.label} tone="warn" /> : null}
-                  {expired(promotion) ? <Badge text="истекла" tone="muted" /> : null}
-                  {!promotion.is_active ? <Badge text="выключена" tone="muted" /> : null}
-                  {promotion.show_in_menu ? <Badge text="в меню" tone="ok" /> : null}
-                  <span style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                    №{promotion.sort_order}
-                  </span>
-                </div>
-
-                {promotion.description ? (
-                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                    {promotion.description}
-                  </div>
-                ) : null}
-
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                  {promotion.restaurant_names.length === 0
-                    ? "Во всех ресторанах"
-                    : promotion.restaurant_names.length > 3
-                      ? `${promotion.restaurant_names.length} ресторанов`
-                      : promotion.restaurant_names.join(", ")}
-                  {promotion.ends_at
-                    ? ` · до ${new Date(promotion.ends_at).toLocaleDateString("ru-RU")}`
-                    : " · бессрочно"}
-                  {promotion.source_url ? (
-                    <>
-                      {" · "}
-                      <a
-                        href={promotion.source_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: c.brand }}
-                      >
-                        страница на сайте
-                      </a>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: spacing.sm, alignItems: "flex-start" }}>
-                {/* Порядок задаём перестановкой: акция меняется местами с соседней,
-                    поэтому номера не разъезжаются */}
-                <Button tone="quiet" onClick={() => swap(index, index - 1)}>
-                  ↑
-                </Button>
-                <Button tone="quiet" onClick={() => swap(index, index + 1)}>
-                  ↓
-                </Button>
-                <Button
-                  tone="quiet"
-                  onClick={() => setEditing({ id: promotion.id, draft: toDraft(promotion) })}
-                >
-                  Править
-                </Button>
-                {/* Отправить акцию уведомлением: текст берётся из неё самой */}
-                <Button tone="quiet" onClick={() => setPushing(promotion)}>
-                  Уведомить
-                </Button>
-                <Button
-                  tone="quiet"
-                  onClick={() =>
-                    save.mutate({
-                      id: promotion.id,
-                      draft: { ...toDraft(promotion), is_active: !promotion.is_active },
-                    })
-                  }
-                >
-                  {promotion.is_active ? "Выключить" : "Включить"}
-                </Button>
-                <Button tone="danger" onClick={() => remove.mutate(promotion.id)}>
-                  Удалить
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
       {pushing ? (
         <PromoPush promo={pushing} cities={cities.data ?? []} onClose={() => setPushing(null)} />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          busy={remove.isPending}
+          message={`Удалить акцию «${deleteTarget.title}»?`}
+          title="Удалить акцию"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => remove.mutate(deleteTarget.id)}
+        />
       ) : null}
     </Section>
   );

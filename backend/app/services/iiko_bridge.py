@@ -35,6 +35,8 @@ from app.models.integration import (
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish, DishExtra, DishPrice, MenuCategory, StopListEntry
 from app.models.order import Order
+from app.services import loyalty as loyalty_service
+from app.services import order_changes
 from app.services import push as push_service
 
 # Столько плагину даётся на то, чтобы завести заказ и отчитаться.
@@ -868,6 +870,10 @@ async def _sync_iiko_details(
             and await _iiko_items_changed(session, tenant, order, items)
         )
 
+        if items_changed:
+            # Счёт и баллы должны отражать то, что гость получит на самом деле
+            await recount_after_change(session, tenant, order)
+
         next_changed_at = (order.iiko_items_changed_at or now) if items_changed else None
         if order.iiko_items_changed_at != next_changed_at:
             # Сообщаем один раз — в момент, когда правка появилась. Дальше
@@ -950,6 +956,177 @@ async def _expected_iiko_fingerprint(
         _add_iiko_fingerprint(result, "", "Приборы", order.persons_count or 0)
 
     return dict(result)
+
+
+async def describe_changes(
+    session: AsyncSession, tenant: Tenant, order: Order
+) -> list[order_changes.ChangeRow]:
+    """Состав одним списком с пометками. Денег не трогает — только показ."""
+    if not order.iiko_items or order.iiko_items_changed_at is None:
+        return []
+
+    links = await _links(session, tenant, order)
+    return order_changes.compare(order, our_rows(order, links), their_rows(order.iiko_items))
+
+
+async def recount_after_change(
+    session: AsyncSession, tenant: Tenant, order: Order
+) -> order_changes.OrderChanges:
+    """Пересчитывает счёт и баллы по фактическому составу с кассы.
+
+    Считаем от разницы, а не заново: касса шлёт срез каждые полминуты, и
+    повторный вызов не должен ни начислять кэшбэк дважды, ни возвращать баллы,
+    которые уже вернули.
+    """
+    links = await _links(session, tenant, order)
+    rows = order_changes.compare(order, our_rows(order, links), their_rows(order.iiko_items))
+
+    account = await session.scalar(
+        select(LoyaltyAccount).where(
+            LoyaltyAccount.tenant_id == tenant.id,
+            LoyaltyAccount.guest_id == order.guest_id,
+        )
+    )
+    percent = (
+        loyalty_service.tier_by_code(tenant, account.tier_code).cashback_percent if account else 0
+    )
+
+    result = order_changes.recount(tenant, order, rows, percent)
+
+    if account is not None:
+        returned = order.points_spent - result.points_spent
+        if returned > 0:
+            account.points_balance += returned
+            session.add(
+                LoyaltyTransaction(
+                    tenant_id=tenant.id,
+                    account_id=account.id,
+                    order_id=order.id,
+                    operation=LoyaltyOperation.REFUND,
+                    points=returned,
+                    balance_after=account.points_balance,
+                    comment=f"Чек уменьшился: возврат баллов по заказу {order.number}",
+                )
+            )
+
+        earned_delta = result.points_earned - order.points_earned
+        if earned_delta != 0:
+            account.points_balance = max(0, account.points_balance + earned_delta)
+            session.add(
+                LoyaltyTransaction(
+                    tenant_id=tenant.id,
+                    account_id=account.id,
+                    order_id=order.id,
+                    operation=LoyaltyOperation.MANUAL,
+                    points=earned_delta,
+                    balance_after=account.points_balance,
+                    comment=f"Пересчёт кэшбэка: состав заказа {order.number} изменён",
+                )
+            )
+
+    order.points_spent = result.points_spent
+    order.points_earned = result.points_earned
+    order.subtotal_kopecks = result.subtotal_kopecks
+    order.promo_discount_kopecks = result.promo_discount_kopecks
+    order.discount_kopecks = int(result.points_spent * tenant.loyalty.point_to_ruble_rate * 100)
+    order.total_kopecks = result.total_kopecks
+
+    return result
+
+
+def _row_key(product_id: str, name: str) -> str:
+    """Тот же ключ, что и у отпечатка состава: иначе строки не сойдутся."""
+    if _is_cutlery_name(name):
+        return CUTLERY_FINGERPRINT_KEY
+    return product_id.strip() or _normalize(name)
+
+
+def our_rows(
+    order: Order, links: dict[tuple[str, str], IikoLink]
+) -> dict[str, order_changes.ChangeRow]:
+    """Состав, который оформил гость, — в строках для сравнения.
+
+    Добавки идут отдельными строками: касса присылает их так же, и без этого
+    снятый рестораном пармезан выглядел бы как добавленное блюдо.
+    """
+    rows: dict[str, order_changes.ChangeRow] = {}
+
+    def add(key: str, name: str, quantity: float, total: int, image: str | None) -> None:
+        if not key or key == CUTLERY_FINGERPRINT_KEY:
+            return
+
+        found = rows.get(key)
+        if found is None:
+            rows[key] = order_changes.ChangeRow(
+                key=key,
+                name=name,
+                state="kept",
+                quantity=quantity,
+                unit_price_kopecks=int(total / quantity) if quantity else total,
+                total_kopecks=total,
+                image_url=image,
+            )
+            return
+
+        found.quantity += quantity
+        found.total_kopecks += total
+
+    for item in order.items:
+        link = links.get(("dish", str(item.dish_id))) if item.dish_id else None
+        extras_price = sum(int(_float(extra.get("price_kopecks"))) for extra in item.extras or [])
+        # Цена самого блюда без добавок: они пойдут своими строками
+        dish_total = item.total_kopecks - extras_price * item.quantity
+
+        add(
+            _row_key(link.product_id if link else "", item.name),
+            item.name,
+            item.quantity,
+            max(0, dish_total),
+            item.image_url,
+        )
+
+        for extra in item.extras or []:
+            extra_link = links.get(("extra", str(extra.get("id") or "")))
+            add(
+                _row_key(extra_link.product_id if extra_link else "", str(extra.get("name") or "")),
+                str(extra.get("name") or ""),
+                item.quantity,
+                int(_float(extra.get("price_kopecks"))) * item.quantity,
+                None,
+            )
+
+    return rows
+
+
+def their_rows(items: list[dict[str, object]]) -> dict[str, order_changes.ChangeRow]:
+    """Фактический состав с кассы — в тех же строках."""
+    rows: dict[str, order_changes.ChangeRow] = {}
+
+    for item in items:
+        name = str(item.get("name") or "")
+        key = _row_key(str(item.get("product_id") or ""), name)
+        if not key or key == CUTLERY_FINGERPRINT_KEY:
+            continue
+
+        quantity = _float(item.get("amount")) or 1
+        total = order_changes.money(_float(item.get("net_sum")))
+
+        found = rows.get(key)
+        if found is None:
+            rows[key] = order_changes.ChangeRow(
+                key=key,
+                name=name,
+                state="kept",
+                quantity=quantity,
+                unit_price_kopecks=order_changes.money(_float(item.get("price"))),
+                total_kopecks=total,
+            )
+            continue
+
+        found.quantity += quantity
+        found.total_kopecks += total
+
+    return rows
 
 
 def _actual_iiko_fingerprint(items: list[dict[str, object]]) -> dict[str, float]:

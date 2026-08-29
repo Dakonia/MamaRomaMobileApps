@@ -1,19 +1,59 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { radius, spacing, typography } from "@mr/design-tokens";
+import {
+  BadgeCheck,
+  Building2,
+  CheckCircle2,
+  Copy,
+  Link2,
+  ListTree,
+  RefreshCw,
+  Search,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Unlink,
+  Utensils,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
   api,
+  ApiError,
   formatDateTime,
   formatPrice,
+  type Bridge,
+  type Handoff,
+  type IikoGroup,
   type IikoLink,
   type IikoProduct,
+  type MenuBranch,
+  type MenuTree,
 } from "./api";
-import { Badge, Button, c, Section, styles } from "./ui";
+import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
+import { Badge, Button, IconButton, Section, Select } from "./ui";
 
 type Pane = "bridges" | "links" | "tree" | "queue";
+type MatchFilter = "unmatched" | "matched" | "all";
+type LinkKindFilter = "all" | "dish" | "extra";
 
-/** Сколько прошло с последней связи: точнее, чем дата, и читается быстрее. */
+type DraftPick = {
+  code?: string | null;
+  groupPath?: string | null;
+  id: string;
+  name: string;
+  productType?: string | null;
+};
+
+const bridgeColumn = createAdminColumnHelper<Bridge>();
+const linkColumn = createAdminColumnHelper<IikoLink>();
+const queueColumn = createAdminColumnHelper<Handoff>();
+const branchColumn = createAdminColumnHelper<MenuBranch>();
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
+
 function sinceLabel(iso: string | null): string {
   if (!iso) return "не выходил на связь";
 
@@ -24,13 +64,83 @@ function sinceLabel(iso: string | null): string {
   return `${Math.floor(minutes / 1440)} дн назад`;
 }
 
-/** Плагин считается живым, если выходил на связь последние десять минут. */
 function isOnline(iso: string | null): boolean {
   return iso !== null && Date.now() - new Date(iso).getTime() < 10 * 60 * 1000;
 }
 
+function shortId(id: string): string {
+  return id.length > 14 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+}
+
+function keyOf(row: IikoLink): string {
+  return `${row.kind}:${row.id}`;
+}
+
+function currentPick(row: IikoLink, draft: Record<string, DraftPick>): DraftPick | null {
+  const picked = draft[keyOf(row)];
+  if (picked) return picked.id ? picked : null;
+  if (!row.product_id || !row.product_name) return null;
+  return {
+    code: row.product_code,
+    groupPath: row.product_group_path,
+    id: row.product_id,
+    name: row.product_name,
+    productType: row.product_type,
+  };
+}
+
+function bridgeStatus(row: Bridge) {
+  if (!row.is_registered) return <Badge text="нет ключа" tone="muted" />;
+  if (!row.is_active) return <Badge text="выключен" tone="muted" />;
+  if (isOnline(row.last_seen_at)) return <Badge text="на связи" tone="ok" />;
+  return <Badge text="молчит" tone="warn" />;
+}
+
+function Metric({ label, note, value }: { label: string; note: string; value: string }) {
+  return (
+    <div className="metric-card">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-note">{note}</div>
+    </div>
+  );
+}
+
+function SecretPanel({ shown, onClose }: { onClose: () => void; shown: { name: string; secret: string } }) {
+  const copy = () => {
+    if (!navigator.clipboard) return;
+    void navigator.clipboard.writeText(shown.secret).then(() => toast.success("Ключ скопирован"));
+  };
+
+  return (
+    <div className="secret-card">
+      <div className="section-head">
+        <div>
+          <h2 className="section-title">Ключ для «{shown.name}»</h2>
+          <p className="section-copy">Скопируйте сейчас: второй раз ключ не покажется.</p>
+        </div>
+        <Button variant="ghost" onClick={onClose}>
+          Скрыть
+        </Button>
+      </div>
+      <code className="secret-code">{shown.secret}</code>
+      <div className="drawer-actions">
+        <Button variant="ghost" onClick={copy}>
+          <Copy size={15} aria-hidden />
+          Скопировать
+        </Button>
+      </div>
+      <p className="section-copy">
+        Впишите ключ в bridge.settings.json в поле mamaroma.secret, а идентификатор ресторана —
+        в mamaroma.restaurantId.
+      </p>
+    </div>
+  );
+}
+
 function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void }) {
   const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
   const [shown, setShown] = useState<{ name: string; secret: string } | null>(null);
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
@@ -38,244 +148,248 @@ function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void 
   const bridges = useQuery({
     queryKey: ["iiko-bridges"],
     queryFn: api.bridges,
-    // Терминал отмечается при каждом запросе — обновляем, чтобы видеть живых
     refetchInterval: 30000,
   });
+
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] });
 
   const issue = useMutation({
     mutationFn: (row: { id: string; name: string }) =>
       api.bridgeSecret(row.id).then((result) => ({ name: row.name, secret: result.secret })),
+    onError: (error) => toast.error(errorMessage(error)),
     onSuccess: (result) => {
       setShown(result);
-      void queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] });
+      refresh();
+      toast.success("Ключ выпущен");
     },
   });
 
   const toggle = useMutation({
-    mutationFn: ({ id, active }: { id: string; active: boolean }) => api.toggleBridge(id, active),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] }),
+    mutationFn: ({ active, id }: { active: boolean; id: string }) => api.toggleBridge(id, active),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: refresh,
   });
 
-  const copy = useMutation({
+  const copyLinks = useMutation({
     mutationFn: () => api.copyIikoLinks(source, target, false),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (result) => {
+      refresh();
+      toast.success(`Перенесено ${result.copied}, пропущено ${result.skipped}`);
+    },
   });
 
-  const ready = (bridges.data ?? []).filter((row) => row.linked_dishes > 0);
+  const bridgeRows = bridges.data ?? [];
+  const isLoadingBridges = bridges.isPending;
+  const ready = bridgeRows.filter((row) => row.linked_dishes > 0);
+  const registered = bridgeRows.filter((row) => row.is_registered).length;
+  const online = bridgeRows.filter((row) => isOnline(row.last_seen_at)).length;
+  const unlinked = bridgeRows.reduce((sum, row) => sum + row.unlinked_dishes, 0);
+  const failed = bridgeRows.reduce((sum, row) => sum + row.failed_orders, 0);
+
+  const columns = useMemo(
+    () =>
+      bridgeColumn.columns([
+        bridgeColumn.accessor("restaurant_name", {
+          header: "Ресторан",
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div>
+                <div className="row-main">{info.getValue()}</div>
+                <div className="row-sub">
+                  {row.terminal_name ?? "терминал не назвался"}
+                  {row.plugin_version ? ` · версия ${row.plugin_version}` : ""}
+                </div>
+              </div>
+            );
+          },
+        }),
+        bridgeColumn.accessor("last_seen_at", {
+          header: "Связь",
+          cell: (info) => (
+            <div>
+              {bridgeStatus(info.row.original)}
+              <div className="row-sub">{sinceLabel(info.getValue())}</div>
+            </div>
+          ),
+        }),
+        bridgeColumn.display({
+          id: "links",
+          header: "Сопоставлено",
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div>
+                <div className="mono row-main">
+                  {row.linked_dishes} блюд · {row.linked_extras} добавок
+                </div>
+                <div className="row-sub">в кассе {row.products} товаров</div>
+                {row.is_registered && row.unlinked_dishes > 0 ? (
+                  <div className="form-error">не связано {row.unlinked_dishes}</div>
+                ) : null}
+              </div>
+            );
+          },
+        }),
+        bridgeColumn.display({
+          id: "queue",
+          header: "Очередь",
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div>
+                <div>{row.pending_orders > 0 ? `${row.pending_orders} ждут` : "пусто"}</div>
+                {row.failed_orders > 0 ? <div className="form-error">{row.failed_orders} с ошибкой</div> : null}
+              </div>
+            );
+          },
+        }),
+        bridgeColumn.accessor("restaurant_id", {
+          header: "ID",
+          cell: (info) => (
+            <code className="table-code" title={info.getValue()}>
+              {shortId(info.getValue())}
+            </code>
+          ),
+        }),
+        bridgeColumn.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div className="cell-actions">
+                <Button size="xs" variant="ghost" onClick={() => onOpenLinks(row.restaurant_id)}>
+                  <Link2 size={14} aria-hidden />
+                  Связи
+                </Button>
+                <Button
+                  size="xs"
+                  onClick={() => issue.mutate({ id: row.restaurant_id, name: row.restaurant_name })}
+                >
+                  <ShieldCheck size={14} aria-hidden />
+                  {row.is_registered ? "Новый ключ" : "Ключ"}
+                </Button>
+                {row.is_registered ? (
+                  <Button
+                    size="xs"
+                    variant={row.is_active ? "danger" : "ghost"}
+                    onClick={() => toggle.mutate({ active: !row.is_active, id: row.restaurant_id })}
+                  >
+                    {row.is_active ? <Unlink size={14} aria-hidden /> : <CheckCircle2 size={14} aria-hidden />}
+                    {row.is_active ? "Выключить" : "Включить"}
+                  </Button>
+                ) : null}
+              </div>
+            );
+          },
+        }),
+      ]),
+    [issue, onOpenLinks, toggle],
+  );
 
   return (
-    <>
-    <Section title="Плагины по ресторанам">
-      {shown ? (
-        <div
-          style={{
-            padding: spacing.base,
-            borderRadius: radius.lg,
-            background: c.warningSubtle,
-            border: `1px solid ${c.warning}`,
-            marginBottom: spacing.base,
-          }}
-        >
-          <div style={{ fontWeight: 600, marginBottom: spacing.xs }}>
-            Ключ для «{shown.name}» — скопируйте сейчас, второй раз он не покажется
-          </div>
-          <code
-            style={{
-              display: "block",
-              padding: spacing.sm,
-              background: c.surface,
-              borderRadius: radius.sm,
-              wordBreak: "break-all",
-              fontSize: typography.caption.fontSize,
-            }}
-          >
-            {shown.secret}
-          </code>
-          <div style={{ marginTop: spacing.sm, color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-            Впишите его в <code>bridge.settings.json</code> в поле <code>mamaroma.secret</code>,
-            а идентификатор ресторана — в <code>mamaroma.restaurantId</code>.
-          </div>
-          <div style={{ marginTop: spacing.sm }}>
-            <Button tone="quiet" onClick={() => setShown(null)}>
-              Скрыть
-            </Button>
-          </div>
+    <div className="page-stack">
+      <Section title="Плагины по ресторанам">
+        <div className="metric-strip">
+          <Metric label="Точек" note="в интеграции" value={isLoadingBridges ? "..." : String(bridgeRows.length)} />
+          <Metric label="С ключом" note="зарегистрированы" value={isLoadingBridges ? "..." : String(registered)} />
+          <Metric label="На связи" note="последние 10 минут" value={isLoadingBridges ? "..." : String(online)} />
+          <Metric label="Риски" note="несвязанные/ошибки" value={isLoadingBridges ? "..." : `${unlinked}/${failed}`} />
         </div>
-      ) : null}
 
-      {bridges.isPending ? (
-        <p style={{ color: c.textSecondary }}>Загружаем…</p>
-      ) : (
-        <div style={styles.card}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Ресторан</th>
-                <th style={styles.th}>Связь</th>
-                <th style={styles.th}>Сопоставлено</th>
-                <th style={styles.th}>Очередь</th>
-                <th style={styles.th}>Идентификатор</th>
-                <th style={styles.th} />
-              </tr>
-            </thead>
-            <tbody>
-              {(bridges.data ?? []).map((row) => (
-                <tr key={row.restaurant_id}>
-                  <td style={styles.td}>
-                    <div style={{ fontWeight: 600 }}>{row.restaurant_name}</div>
-                    <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                      {row.terminal_name ?? "терминал не назвался"}
-                      {row.plugin_version ? ` · версия ${row.plugin_version}` : ""}
-                    </div>
-                  </td>
+        {shown ? <SecretPanel shown={shown} onClose={() => setShown(null)} /> : null}
 
-                  <td style={styles.td}>
-                    {!row.is_registered ? (
-                      <Badge text="нет ключа" tone="muted" />
-                    ) : !row.is_active ? (
-                      <Badge text="выключен" tone="muted" />
-                    ) : isOnline(row.last_seen_at) ? (
-                      <Badge text="на связи" tone="ok" />
-                    ) : (
-                      <Badge text="молчит" tone="warn" />
-                    )}
-                    <div style={{ marginTop: 4, color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                      {sinceLabel(row.last_seen_at)}
-                    </div>
-                  </td>
-
-                  <td style={{ ...styles.td, fontVariantNumeric: "tabular-nums" }}>
-                    {row.linked_dishes} блюд · {row.linked_extras} добавок
-                    <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                      в кассе {row.products} товаров
-                    </div>
-                    {/* Несопоставленное блюдо — это заказ, который не уедет
-                        на кухню. Показываем это до того, как гость его сделает */}
-                    {row.is_registered && row.unlinked_dishes > 0 ? (
-                      <div style={{ color: c.danger, fontSize: typography.caption.fontSize }}>
-                        не связано {row.unlinked_dishes}
-                      </div>
-                    ) : null}
-                  </td>
-
-                  <td style={{ ...styles.td, fontVariantNumeric: "tabular-nums" }}>
-                    {row.pending_orders > 0 ? `${row.pending_orders} ждут` : "пусто"}
-                    {row.failed_orders > 0 ? (
-                      <div style={{ color: c.danger }}>{row.failed_orders} с ошибкой</div>
-                    ) : null}
-                  </td>
-
-                  <td style={{ ...styles.td, fontSize: typography.caption.fontSize, color: c.textSecondary }}>
-                    <code style={{ wordBreak: "break-all" }}>{row.restaurant_id}</code>
-                  </td>
-
-                  <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
-                    <div style={{ display: "flex", gap: spacing.xs, justifyContent: "flex-end" }}>
-                      <Button tone="quiet" onClick={() => onOpenLinks(row.restaurant_id)}>
-                        Сопоставить
-                      </Button>
-                      <Button
-                        tone="brand"
-                        onClick={() =>
-                          issue.mutate({ id: row.restaurant_id, name: row.restaurant_name })
-                        }
-                      >
-                        {row.is_registered ? "Новый ключ" : "Выдать ключ"}
-                      </Button>
-                      {row.is_registered ? (
-                        <Button
-                          tone={row.is_active ? "danger" : "quiet"}
-                          onClick={() =>
-                            toggle.mutate({ id: row.restaurant_id, active: !row.is_active })
-                          }
-                        >
-                          {row.is_active ? "Выключить" : "Включить"}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="surface-toolbar">
+          <DensityToggle density={density} onChange={setDensity} />
         </div>
-      )}
-    </Section>
 
-    {/* Перенос настройки: товары заводятся через iiko chain, коды у точек
-        совпадают, поэтому настроенный ресторан можно размножить */}
-    <Section title="Перенести сопоставление на другую точку">
-      <p style={{ marginTop: 0, color: c.textSecondary }}>
-        Берём связи блюд с настроенного ресторана и повторяем их на новом. Переносим
-        только те товары, которые есть в номенклатуре получателя — остальные пропускаем,
-        чтобы заказ не уехал с несуществующим кодом. Уже настроенное не трогаем.
-      </p>
+        {bridges.error ? (
+          <div className="error-state">
+            <h2>Не удалось загрузить плагины</h2>
+            <p>{errorMessage(bridges.error)}</p>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={bridgeRows}
+            density={density}
+            getRowId={(row) => row.restaurant_id}
+            isLoading={bridges.isPending}
+            pageSize={20}
+          />
+        )}
+      </Section>
 
-      <div style={{ display: "flex", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
-        <select style={styles.input} value={source} onChange={(event) => setSource(event.target.value)}>
-          <option value="">Откуда — настроенный ресторан</option>
-          {ready.map((row) => (
-            <option key={row.restaurant_id} value={row.restaurant_id}>
-              {row.restaurant_name} · {row.linked_dishes} блюд
-            </option>
-          ))}
-        </select>
-
-        <span style={{ color: c.textTertiary }}>→</span>
-
-        <select style={styles.input} value={target} onChange={(event) => setTarget(event.target.value)}>
-          <option value="">Куда</option>
-          {(bridges.data ?? [])
-            .filter((row) => row.restaurant_id !== source)
-            .map((row) => (
-              <option key={row.restaurant_id} value={row.restaurant_id}>
-                {row.restaurant_name} · связано {row.linked_dishes}
-              </option>
-            ))}
-        </select>
-
-        <Button
-          tone="brand"
-          onClick={() => {
-            if (source && target) copy.mutate();
-          }}
-        >
-          {copy.isPending ? "Переносим…" : "Перенести"}
-        </Button>
-      </div>
-
-      {copy.data ? (
-        <p style={{ color: c.textSecondary }}>
-          Перенесено {copy.data.copied}, пропущено {copy.data.skipped} — это позиции,
-          которых нет в номенклатуре получателя или которые там уже сопоставлены.
-        </p>
-      ) : null}
-    </Section>
-    </>
+      <Section title="Перенести сопоставление на другую точку">
+        <div className="iiko-copy-panel">
+          <div className="field">
+            <span className="field-label">Откуда</span>
+            <Select
+              value={source}
+              options={[
+                { label: "Настроенный ресторан", value: "" },
+                ...ready.map((row) => ({
+                  label: row.restaurant_name,
+                  description: `${row.linked_dishes} блюд`,
+                  value: row.restaurant_id,
+                })),
+              ]}
+              onChange={setSource}
+            />
+          </div>
+          <div className="field">
+            <span className="field-label">Куда</span>
+            <Select
+              value={target}
+              options={[
+                { label: "Новая точка", value: "" },
+                ...bridgeRows
+                  .filter((row) => row.restaurant_id !== source)
+                  .map((row) => ({
+                    label: row.restaurant_name,
+                    description: `связано ${row.linked_dishes}`,
+                    value: row.restaurant_id,
+                  })),
+              ]}
+              onChange={setTarget}
+            />
+          </div>
+          <Button disabled={!source || !target || copyLinks.isPending} onClick={() => copyLinks.mutate()}>
+            <Copy size={15} aria-hidden />
+            {copyLinks.isPending ? "Переносим..." : "Перенести"}
+          </Button>
+        </div>
+        <div className="info-band">
+          Уже настроенные позиции не перезаписываем. Товары, которых нет в номенклатуре получателя,
+          будут пропущены.
+        </div>
+      </Section>
+    </div>
   );
 }
 
-/** Окно поиска товара кассы: ищет сервер, в браузер список целиком не влезает. */
 function ProductPicker({
-  restaurantId,
   groups,
-  title,
-  onPick,
   onClose,
+  onPick,
+  restaurantId,
+  title,
 }: {
-  restaurantId: string;
   groups: string[];
-  title: string;
-  onPick: (product: IikoProduct) => void;
   onClose: () => void;
+  onPick: (product: IikoProduct) => void;
+  restaurantId: string;
+  title: string;
 }) {
   const [query, setQuery] = useState(title);
   const [typed, setTyped] = useState(title);
 
-  // Пока печатают, сервер не дёргаем
   useEffect(() => {
-    const timer = setTimeout(() => setQuery(typed), 300);
-    return () => clearTimeout(timer);
+    const timer = window.setTimeout(() => setQuery(typed), 300);
+    return () => window.clearTimeout(timer);
   }, [typed]);
 
   const found = useQuery({
@@ -284,108 +398,76 @@ function ProductPicker({
   });
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(20,17,16,.45)",
-        display: "grid",
-        placeItems: "center",
-        zIndex: 50,
-      }}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        style={{
-          width: "min(720px, 92vw)",
-          maxHeight: "80vh",
-          display: "flex",
-          flexDirection: "column",
-          background: c.surface,
-          borderRadius: radius.lg,
-          border: `1px solid ${c.border}`,
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ padding: spacing.base, borderBottom: `1px solid ${c.divider}` }}>
-          <div style={{ fontWeight: 600, marginBottom: spacing.sm }}>{title}</div>
+    <>
+      <div className="command-overlay" onClick={onClose} />
+      <section aria-modal="true" className="picker-dialog" role="dialog">
+        <div className="picker-head">
+          <div>
+            <h2 className="drawer-title">{title}</h2>
+            <div className="row-sub">
+              {groups.length > 0 ? `Поиск в выбранных группах: ${groups.length}` : "Поиск по всей номенклатуре"}
+            </div>
+          </div>
+          <span className="toolbar-spacer" />
+          <Button variant="ghost" onClick={onClose}>
+            Закрыть
+          </Button>
+        </div>
+
+        <div className="picker-search">
+          <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)]" size={15} aria-hidden />
           <input
             autoFocus
-            style={{ ...styles.input, width: "100%" }}
+            className="input pl-9"
             placeholder="Название товара в кассе"
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
           />
-          <div style={{ marginTop: 6, color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-            {groups.length > 0
-              ? `Ищем в выбранных группах (${groups.length})`
-              : "Ищем по всей номенклатуре — выберите группы, чтобы сузить"}
-          </div>
         </div>
 
-        <div style={{ overflow: "auto" }}>
+        <div className="picker-results">
           {found.isPending ? (
-            <p style={{ padding: spacing.base, color: c.textSecondary }}>Ищем…</p>
+            <div className="empty-state">
+              <h2>Ищем товары</h2>
+              <p>Сервер просматривает номенклатуру выбранной кассы.</p>
+            </div>
           ) : (found.data ?? []).length === 0 ? (
-            <p style={{ padding: spacing.base, color: c.textSecondary }}>Ничего не нашлось</p>
+            <div className="empty-state">
+              <h2>Ничего не нашлось</h2>
+              <p>Попробуйте часть названия, код или снимите ограничение по группам.</p>
+            </div>
           ) : (
-            (found.data ?? []).map((product) => {
-              const groupLabel = product.group_path ?? product.group_name;
-
-              return (
-                <button
-                  key={product.product_id}
-                  type="button"
-                  onClick={() => onPick(product)}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: `${spacing.sm}px ${spacing.base}px`,
-                    border: "none",
-                    borderBottom: `1px solid ${c.divider}`,
-                    background: "transparent",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: typography.body.fontSize,
-                    color: c.textPrimary,
-                  }}
-                >
-                  {product.name}
-                  <span style={{ color: c.textTertiary }}>
-                    {groupLabel ? ` · ${groupLabel}` : ""}
-                    {product.code ? ` · ${product.code}` : ""}
-                  </span>
-                </button>
-              );
-            })
+            (found.data ?? []).map((product) => (
+              <button
+                key={product.product_id}
+                className="picker-row"
+                type="button"
+                onClick={() => onPick(product)}
+              >
+                <span className="row-main">{product.name}</span>
+                <span className="row-sub">
+                  {product.group_path ?? product.group_name ?? "без группы"}
+                  {product.code ? ` · код ${product.code}` : ""}
+                  {product.price_kopecks > 0 ? ` · ${formatPrice(product.price_kopecks)}` : ""}
+                </span>
+              </button>
+            ))
           )}
         </div>
-      </div>
-    </div>
+      </section>
+    </>
   );
 }
 
-type DraftPick = {
-  id: string;
-  name: string;
-  code?: string | null;
-  groupPath?: string | null;
-  productType?: string | null;
-};
-
-type MatchFilter = "unmatched" | "matched" | "all";
-type LinkKindFilter = "all" | "dish" | "extra";
-
 function Links({
-  restaurantId,
   onRestaurantChange,
+  restaurantId,
 }: {
-  restaurantId: string;
   onRestaurantChange: (id: string) => void;
+  restaurantId: string;
 }) {
   const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
   const [search, setSearch] = useState("");
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("unmatched");
   const [kindFilter, setKindFilter] = useState<LinkKindFilter>("dish");
@@ -432,6 +514,25 @@ function Links({
     setSearch("");
   }, [restaurantId, storageKey]);
 
+  const allGroups = useQuery({
+    queryKey: ["iiko-groups", restaurantId],
+    queryFn: () => api.iikoGroups(restaurantId),
+    enabled: restaurantId !== "",
+  });
+
+  const presetGroups = useMemo(
+    () => (allGroups.data ?? []).filter((group) => group.is_preset).map((group) => group.path),
+    [allGroups.data],
+  );
+
+  useEffect(() => {
+    if (restaurantId === "" || groups.length > 0 || presetGroups.length === 0) return;
+    if (localStorage.getItem(storageKey)) return;
+    const unique = [...new Set(presetGroups)].filter(Boolean);
+    setGroups(unique);
+    localStorage.setItem(storageKey, JSON.stringify(unique));
+  }, [groups.length, presetGroups, restaurantId, storageKey]);
+
   const saveGroups = (next: string[]) => {
     const unique = [...new Set(next)].filter(Boolean);
     setGroups(unique);
@@ -448,34 +549,13 @@ function Links({
     });
   };
 
-  const allGroups = useQuery({
-    queryKey: ["iiko-groups", restaurantId],
-    queryFn: () => api.iikoGroups(restaurantId),
-    enabled: restaurantId !== "",
-  });
-
-  const presetGroups = useMemo(
-    () => (allGroups.data ?? []).filter((group) => group.is_preset).map((group) => group.path),
-    [allGroups.data],
-  );
-
-  useEffect(() => {
-    if (restaurantId === "" || groups.length > 0 || presetGroups.length === 0) return;
-    if (localStorage.getItem(storageKey)) return;
-    saveGroups(presetGroups);
-  }, [groups.length, presetGroups, restaurantId, storageKey]);
-
   const links = useQuery({
     queryKey: ["iiko-links", restaurantId, groups],
     queryFn: () => api.iikoLinks(restaurantId, groups),
     enabled: restaurantId !== "",
   });
 
-  const keyOf = (row: IikoLink) => `${row.kind}:${row.id}`;
-  const selectedProductId = (row: IikoLink) => {
-    const drafted = draft[keyOf(row)];
-    return drafted ? drafted.id : row.product_id ?? "";
-  };
+  const selectedProductId = (row: IikoLink) => currentPick(row, draft)?.id ?? "";
   const isRowLinked = (row: IikoLink) => selectedProductId(row) !== "";
 
   const save = useMutation({
@@ -484,38 +564,35 @@ function Links({
         restaurantId,
         Object.entries(draft).map(([key, value]) => {
           const [kind, id] = key.split(":");
-          return { kind, id, product_id: value.id };
+          return { id, kind, product_id: value.id };
         }),
       ),
-    onSuccess: () => {
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (result) => {
       setDraft({});
       void queryClient.invalidateQueries({ queryKey: ["iiko-links", restaurantId] });
       void queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] });
+      toast.success(`Сохранено связей: ${result.applied}`);
     },
   });
 
   const auto = useMutation({
     mutationFn: () => api.autoMatchIiko(restaurantId, groups),
-    onSuccess: () => {
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["iiko-links", restaurantId] });
       void queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] });
+      toast.success(`Автосвязано ${result.matched}, пропущено ${result.skipped}`);
     },
   });
 
   const allRows = links.data ?? [];
-
   const categoryStats = useMemo(() => {
-    const byCategory = new Map<string, { name: string; total: number; linked: number; dishes: number; extras: number }>();
+    const byCategory = new Map<string, { dishes: number; extras: number; linked: number; name: string; total: number }>();
 
     for (const row of allRows) {
       const name = row.group ?? "Без категории";
-      const current = byCategory.get(name) ?? {
-        name,
-        total: 0,
-        linked: 0,
-        dishes: 0,
-        extras: 0,
-      };
+      const current = byCategory.get(name) ?? { dishes: 0, extras: 0, linked: 0, name, total: 0 };
       current.total += 1;
       if (isRowLinked(row)) current.linked += 1;
       if (row.kind === "dish") current.dishes += 1;
@@ -523,34 +600,32 @@ function Links({
       byCategory.set(name, current);
     }
 
-    return [...byCategory.values()];
+    return [...byCategory.values()].sort((a, b) => b.total - a.total);
   }, [allRows, draft]);
 
   useEffect(() => {
     if (categoryFilter === "all") return;
-    if (!categoryStats.some((item) => item.name === categoryFilter)) {
-      setCategoryFilter("all");
-    }
+    if (!categoryStats.some((item) => item.name === categoryFilter)) setCategoryFilter("all");
   }, [categoryFilter, categoryStats]);
 
   const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+    const needle = search.trim().toLocaleLowerCase("ru-RU");
     return allRows.filter((row) => {
       const linked = isRowLinked(row);
       if (matchFilter === "unmatched" && linked) return false;
       if (matchFilter === "matched" && !linked) return false;
       if (kindFilter !== "all" && row.kind !== kindFilter) return false;
-      if (categoryFilter !== "all" && (row.group ?? "Без категории") !== categoryFilter) {
-        return false;
-      }
-      if (needle === "") return true;
+      if (categoryFilter !== "all" && (row.group ?? "Без категории") !== categoryFilter) return false;
+      if (!needle) return true;
       const haystack = [
         row.name,
         row.group ?? "",
         row.product_name ?? "",
         row.product_code ?? "",
         row.product_group_path ?? "",
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLocaleLowerCase("ru-RU");
       return haystack.includes(needle);
     });
   }, [allRows, categoryFilter, draft, kindFilter, matchFilter, search]);
@@ -558,115 +633,195 @@ function Links({
   const total = allRows.length;
   const linked = allRows.filter(isRowLinked).length;
   const unlinked = total - linked;
-  const changed = Object.keys(draft).length;
   const dishTotal = allRows.filter((row) => row.kind === "dish").length;
   const dishLinked = allRows.filter((row) => row.kind === "dish" && isRowLinked(row)).length;
   const extraTotal = allRows.filter((row) => row.kind === "extra").length;
   const extraLinked = allRows.filter((row) => row.kind === "extra" && isRowLinked(row)).length;
+  const changed = Object.keys(draft).length;
+
+  const columns = useMemo(
+    () =>
+      linkColumn.columns([
+        linkColumn.accessor("name", {
+          header: "Позиция",
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div>
+                <div className="row-main">{info.getValue()}</div>
+                <div className="row-sub">
+                  {row.kind === "dish" ? row.group ?? "Без категории" : "Добавка"}
+                  {row.kind === "extra" ? " · нужна группа модификатора" : ""}
+                </div>
+              </div>
+            );
+          },
+        }),
+        linkColumn.display({
+          id: "product",
+          header: "Товар iiko",
+          cell: (info) => {
+            const row = info.row.original;
+            const picked = currentPick(row, draft);
+            const changedRow = draft[keyOf(row)] !== undefined;
+            const priceDiff =
+              picked !== null &&
+              row.iiko_price_kopecks > 0 &&
+              row.our_price_kopecks !== row.iiko_price_kopecks;
+
+            return picked ? (
+              <div>
+                <div className={changedRow ? "row-main text-[var(--acc)]" : "row-main"}>{picked.name}</div>
+                <div className="row-sub">
+                  {picked.code ? `код ${picked.code}` : "без кода"}
+                  {picked.productType ? ` · ${picked.productType}` : ""}
+                </div>
+                {picked.groupPath ? <div className="iiko-product-path">{picked.groupPath}</div> : null}
+                {priceDiff ? (
+                  <div className="chips-line mt-1">
+                    <Badge text="цена отличается" tone="warn" />
+                    <span className="row-sub">
+                      у нас {formatPrice(row.our_price_kopecks)}, iiko {formatPrice(row.iiko_price_kopecks)}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <Badge text="нет связи" tone="warn" />
+            );
+          },
+        }),
+        linkColumn.display({
+          id: "actions",
+          header: "Действие",
+          cell: (info) => {
+            const row = info.row.original;
+            const key = keyOf(row);
+            const picked = currentPick(row, draft);
+            return (
+              <div className="iiko-link-actions">
+                <div className="drawer-actions">
+                  <Button size="xs" variant="ghost" onClick={() => setPicking(row)}>
+                    <Search size={14} aria-hidden />
+                    {picked ? "Сменить" : "Найти"}
+                  </Button>
+                  {picked ? (
+                    <Button
+                      size="xs"
+                      variant="danger"
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          [key]: { id: "", name: "" },
+                        }))
+                      }
+                    >
+                      <Unlink size={14} aria-hidden />
+                      Снять
+                    </Button>
+                  ) : null}
+                </div>
+                {row.suggestions.length > 0 ? (
+                  <div className="suggestion-chips">
+                    {row.suggestions.slice(0, 4).map((product) => (
+                      <button
+                        key={product.product_id}
+                        className="suggestion-chip"
+                        title={product.group_path ?? product.group_name ?? ""}
+                        type="button"
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            [key]: {
+                              code: product.code,
+                              groupPath: product.group_path,
+                              id: product.product_id,
+                              name: product.name,
+                              productType: product.product_type,
+                            },
+                          }))
+                        }
+                      >
+                        {product.name}
+                        {product.code ? ` · ${product.code}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          },
+        }),
+      ]),
+    [draft],
+  );
 
   return (
-    <>
+    <div className="page-stack">
       <Section
         title="Сопоставление iiko"
         action={
-          <div style={{ display: "flex", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
-            <select
-              style={{ ...styles.input, minWidth: 280 }}
-              value={restaurantId}
-              onChange={(event) => onRestaurantChange(event.target.value)}
-            >
-              <option value="">Выберите ресторан</option>
-              {(bridges.data ?? []).map((row) => (
-                <option key={row.restaurant_id} value={row.restaurant_id}>
-                  {row.restaurant_name}
-                </option>
-              ))}
-            </select>
-            <Button tone="quiet" onClick={() => saveGroups(presetGroups)} disabled={restaurantId === ""}>
+          <div className="surface-toolbar">
+            <div className="field">
+              <span className="field-label">Ресторан</span>
+              <Select
+                value={restaurantId}
+                options={[
+                  { label: "Выберите ресторан", value: "" },
+                  ...(bridges.data ?? []).map((row) => ({ label: row.restaurant_name, value: row.restaurant_id })),
+                ]}
+                onChange={onRestaurantChange}
+              />
+            </div>
+            <Button disabled={restaurantId === ""} variant="ghost" onClick={() => saveGroups(presetGroups)}>
               Группы Mama Roma
             </Button>
-            <Button tone="quiet" onClick={() => saveGroups([])} disabled={restaurantId === ""}>
+            <Button disabled={restaurantId === ""} variant="ghost" onClick={() => saveGroups([])}>
               Вся касса
             </Button>
           </div>
         }
       >
         {restaurantId === "" ? (
-          <p style={{ color: c.textSecondary, margin: 0 }}>Выберите ресторан.</p>
+          <div className="empty-state">
+            <h2>Выберите ресторан</h2>
+            <p>После выбора загрузятся группы iiko и позиции, которые требуют связи.</p>
+          </div>
         ) : (
           <>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: spacing.md,
-              }}
-            >
-              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Ресторан</div>
-                <div style={{ fontWeight: 700 }}>{currentBridge?.restaurant_name ?? "—"}</div>
-                <div style={{ marginTop: 4 }}>
-                  {currentBridge && isOnline(currentBridge.last_seen_at) ? (
-                    <Badge text="плагин на связи" tone="ok" />
-                  ) : (
-                    <Badge text="нет свежей связи" tone="warn" />
-                  )}
-                </div>
-              </div>
-              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Блюда</div>
-                <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                  {dishLinked} / {dishTotal}
-                </div>
-                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                  не связано {Math.max(dishTotal - dishLinked, 0)}
-                </div>
-              </div>
-              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Добавки</div>
-                <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                  {extraLinked} / {extraTotal}
-                </div>
-                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                  требуют группы модификатора
-                </div>
-              </div>
-              <div style={{ padding: spacing.base, background: c.surface, border: `1px solid ${c.border}`, borderRadius: radius.md }}>
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>Номенклатура iiko</div>
-                <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                  {currentBridge?.products ?? 0}
-                </div>
-                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                  {groups.length > 0 ? `групп выбрано ${groups.length}` : "поиск по всей кассе"}
-                </div>
-              </div>
+            <div className="metric-strip">
+              <Metric
+                label="Ресторан"
+                note={currentBridge && isOnline(currentBridge.last_seen_at) ? "плагин на связи" : "нет свежей связи"}
+                value={currentBridge?.restaurant_name ?? "—"}
+              />
+              <Metric label="Блюда" note={`не связано ${Math.max(dishTotal - dishLinked, 0)}`} value={`${dishLinked}/${dishTotal}`} />
+              <Metric label="Добавки" note="модификаторы" value={`${extraLinked}/${extraTotal}`} />
+              <Metric
+                label="Номенклатура"
+                note={groups.length > 0 ? `групп выбрано ${groups.length}` : "поиск по всей кассе"}
+                value={String(currentBridge?.products ?? 0)}
+              />
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs }}>
-              {(allGroups.data ?? []).filter((group) => group.is_preset).map((group) => {
-                const picked = groups.includes(group.path);
-                return (
-                  <button
-                    key={group.path}
-                    type="button"
-                    onClick={() => pickGroup(group.path)}
-                    style={{
-                      padding: `4px ${spacing.sm}px`,
-                      borderRadius: radius.pill,
-                      border: `1px solid ${picked ? c.brand : c.border}`,
-                      background: picked ? c.brandSubtle : c.surface,
-                      color: picked ? c.brand : c.textSecondary,
-                      cursor: "pointer",
-                      fontSize: typography.caption.fontSize,
-                      fontFamily: "inherit",
-                      fontWeight: 600,
-                    }}
-                    title={group.path}
-                  >
-                    {group.name} · {group.products}
-                  </button>
-                );
-              })}
+            <div className="iiko-group-chips">
+              {(allGroups.data ?? [])
+                .filter((group) => group.is_preset)
+                .map((group) => {
+                  const picked = groups.includes(group.path);
+                  return (
+                    <button
+                      key={group.path}
+                      className="filter-chip"
+                      data-active={picked}
+                      title={group.path}
+                      type="button"
+                      onClick={() => pickGroup(group.path)}
+                    >
+                      {group.name} · {group.products}
+                    </button>
+                  );
+                })}
             </div>
           </>
         )}
@@ -676,256 +831,119 @@ function Links({
         <Section
           title={`Позиции · связано ${linked} из ${total}`}
           action={
-            <div style={{ display: "flex", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
-              <input
-                style={{ ...styles.input, minWidth: 220 }}
-                placeholder="Блюдо или товар iiko"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-              <Button tone={matchFilter === "unmatched" ? "brand" : "quiet"} onClick={() => setMatchFilter("unmatched")}>
-                Нет связи
+            <div className="surface-toolbar">
+              <Button disabled={auto.isPending} variant="ghost" onClick={() => auto.mutate()}>
+                <BadgeCheck size={15} aria-hidden />
+                {auto.isPending ? "Ищем..." : "Автосвязать точные"}
               </Button>
-              <Button tone={matchFilter === "matched" ? "brand" : "quiet"} onClick={() => setMatchFilter("matched")}>
-                Есть связь
-              </Button>
-              <Button tone={matchFilter === "all" ? "brand" : "quiet"} onClick={() => setMatchFilter("all")}>
-                Все
-              </Button>
-              <Button tone="quiet" onClick={() => auto.mutate()} disabled={auto.isPending}>
-                {auto.isPending ? "Ищем…" : "Автосвязать точные"}
-              </Button>
-              <Button tone="brand" onClick={() => save.mutate()} disabled={changed === 0 || save.isPending}>
-                {save.isPending ? "Сохраняем…" : changed > 0 ? `Сохранить (${changed})` : "Сохранить"}
+              <Button disabled={changed === 0 || save.isPending} onClick={() => save.mutate()}>
+                <CheckCircle2 size={15} aria-hidden />
+                {save.isPending ? "Сохраняем..." : changed > 0 ? `Сохранить (${changed})` : "Сохранить"}
               </Button>
             </div>
           }
         >
-          {auto.data ? (
-            <div style={{ color: c.textSecondary }}>
-              Автоподбор добавил {auto.data.matched}; без точного совпадения осталось {auto.data.skipped}.
+          <div className="surface-toolbar">
+            <label className="field toolbar-field">
+              <span className="field-label">Поиск</span>
+              <span className="search-control">
+                <Search className="search-icon" size={15} aria-hidden />
+                <input
+                  className="input"
+                  placeholder="Поиск связи"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </span>
+            </label>
+            <div className="filter-chips" aria-label="Статус связи">
+              <button className="filter-chip" data-active={matchFilter === "unmatched"} type="button" onClick={() => setMatchFilter("unmatched")}>
+                Нет связи
+              </button>
+              <button className="filter-chip" data-active={matchFilter === "matched"} type="button" onClick={() => setMatchFilter("matched")}>
+                Есть связь
+              </button>
+              <button className="filter-chip" data-active={matchFilter === "all"} type="button" onClick={() => setMatchFilter("all")}>
+                Все
+              </button>
             </div>
-          ) : null}
-
-          <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
-            <Button tone={kindFilter === "dish" ? "brand" : "quiet"} onClick={() => setKindFilter("dish")}>
-              Блюда
-            </Button>
-            <Button tone={kindFilter === "extra" ? "brand" : "quiet"} onClick={() => setKindFilter("extra")}>
-              Добавки
-            </Button>
-            <Button tone={kindFilter === "all" ? "brand" : "quiet"} onClick={() => setKindFilter("all")}>
-              Всё
-            </Button>
+            <div className="filter-chips" aria-label="Тип позиции">
+              <button className="filter-chip" data-active={kindFilter === "dish"} type="button" onClick={() => setKindFilter("dish")}>
+                Блюда
+              </button>
+              <button className="filter-chip" data-active={kindFilter === "extra"} type="button" onClick={() => setKindFilter("extra")}>
+                Добавки
+              </button>
+              <button className="filter-chip" data-active={kindFilter === "all"} type="button" onClick={() => setKindFilter("all")}>
+                Всё
+              </button>
+            </div>
+            <span className="toolbar-spacer" />
+            <DensityToggle density={density} onChange={setDensity} />
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "280px minmax(0, 1fr)",
-              gap: spacing.base,
-              alignItems: "start",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: spacing.xs }}>
+          <div className="iiko-link-layout">
+            <aside className="iiko-category-list">
               <button
+                className="iiko-category-card"
+                data-active={categoryFilter === "all"}
                 type="button"
                 onClick={() => setCategoryFilter("all")}
-                style={{
-                  textAlign: "left",
-                  padding: spacing.sm,
-                  borderRadius: radius.md,
-                  border: `1px solid ${categoryFilter === "all" ? c.brand : c.border}`,
-                  background: categoryFilter === "all" ? c.brandSubtle : c.surface,
-                  color: c.textPrimary,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
               >
-                <div style={{ fontWeight: 700 }}>Все категории</div>
-                <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                  не связано {unlinked}
-                </div>
+                <span className="row-main">Все категории</span>
+                <span className="row-sub">нет связи {unlinked}</span>
               </button>
               {categoryStats.map((item) => {
                 const missing = item.total - item.linked;
-                const picked = categoryFilter === item.name;
-
                 return (
                   <button
                     key={item.name}
+                    className="iiko-category-card"
+                    data-active={categoryFilter === item.name}
                     type="button"
                     onClick={() => setCategoryFilter(item.name)}
-                    style={{
-                      textAlign: "left",
-                      padding: spacing.sm,
-                      borderRadius: radius.md,
-                      border: `1px solid ${picked ? c.brand : c.border}`,
-                      background: picked ? c.brandSubtle : c.surface,
-                      color: c.textPrimary,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: spacing.sm }}>
-                      <span style={{ fontWeight: 700 }}>{item.name}</span>
-                      <span style={{ fontVariantNumeric: "tabular-nums" }}>{item.linked}/{item.total}</span>
-                    </div>
-                    <div style={{ color: missing > 0 ? c.warning : c.success, fontSize: typography.caption.fontSize }}>
-                      {missing > 0 ? `нет связи ${missing}` : "готово"}
-                    </div>
+                    <span className="row-main">{item.name}</span>
+                    <span className="row-sub">
+                      {item.linked}/{item.total} · {missing > 0 ? `нет связи ${missing}` : "готово"}
+                    </span>
                   </button>
                 );
               })}
-            </div>
+            </aside>
 
-            <div>
-              {links.isPending ? (
-                <p style={{ color: c.textSecondary }}>Загружаем…</p>
-              ) : rows.length === 0 ? (
-                <div style={{ ...styles.card, padding: spacing.base, color: c.textSecondary }}>
-                  Ничего не найдено.
+            <DataTable
+              columns={columns}
+              data={rows}
+              density={density}
+              getRowId={(row) => keyOf(row)}
+              isLoading={links.isPending}
+              pageSize={20}
+              empty={
+                <div className="empty-state">
+                  <h2>Ничего не найдено</h2>
+                  <p>Смените фильтр, категорию или поисковую строку.</p>
                 </div>
-              ) : (
-                <div style={styles.card}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Позиция приложения</th>
-                        <th style={styles.th}>Товар iiko</th>
-                        <th style={styles.th}>Действие</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.slice(0, 200).map((row) => {
-                        const key = keyOf(row);
-                        const chosen = draft[key];
-                        const currentName = chosen ? chosen.name : row.product_name ?? "";
-                        const currentCode = chosen ? chosen.code : row.product_code;
-                        const currentGroupPath = chosen ? chosen.groupPath : row.product_group_path;
-                        const currentType = chosen ? chosen.productType : row.product_type;
-
-                        return (
-                          <tr key={key}>
-                            <td style={styles.td}>
-                              <div style={{ fontWeight: 700 }}>{row.name}</div>
-                              <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                                {row.kind === "dish" ? row.group : "Добавка"}
-                              </div>
-                            </td>
-
-                            <td style={{ ...styles.td, minWidth: 320 }}>
-                              {currentName ? (
-                                <div>
-                                  <div style={{ color: chosen ? c.brand : c.textPrimary, fontWeight: 600 }}>
-                                    {currentName}
-                                  </div>
-                                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                                    {currentCode ? `код ${currentCode}` : "без кода"}
-                                    {currentType ? ` · ${currentType}` : ""}
-                                  </div>
-                                  {currentGroupPath ? (
-                                    <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                                      {currentGroupPath}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <Badge text="нет связи" tone="warn" />
-                              )}
-                            </td>
-
-                            <td style={styles.td}>
-                              <div style={{ display: "flex", flexDirection: "column", gap: spacing.xs }}>
-                                <div style={{ display: "flex", gap: spacing.xs, flexWrap: "wrap" }}>
-                                  <Button tone="quiet" onClick={() => setPicking(row)}>
-                                    {currentName ? "Сменить" : "Найти"}
-                                  </Button>
-                                  {currentName ? (
-                                    <Button
-                                      tone="danger"
-                                      onClick={() =>
-                                        setDraft((current) => ({
-                                          ...current,
-                                          [key]: { id: "", name: "" },
-                                        }))
-                                      }
-                                    >
-                                      Снять
-                                    </Button>
-                                  ) : null}
-                                </div>
-                                {row.suggestions.length > 0 ? (
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.xs }}>
-                                    {row.suggestions.map((product) => (
-                                      <button
-                                        key={product.product_id}
-                                        type="button"
-                                        onClick={() =>
-                                          setDraft((current) => ({
-                                            ...current,
-                                            [key]: {
-                                              id: product.product_id,
-                                              name: product.name,
-                                              code: product.code,
-                                              groupPath: product.group_path,
-                                              productType: product.product_type,
-                                            },
-                                          }))
-                                        }
-                                        style={{
-                                          padding: `2px ${spacing.sm}px`,
-                                          borderRadius: radius.pill,
-                                          border: `1px solid ${c.border}`,
-                                          background: c.surface,
-                                          cursor: "pointer",
-                                          fontFamily: "inherit",
-                                          fontSize: typography.caption.fontSize,
-                                          color: c.textSecondary,
-                                          maxWidth: 360,
-                                        }}
-                                        title={product.group_path ?? product.group_name ?? ""}
-                                      >
-                                        {product.name}
-                                        {product.code ? ` · ${product.code}` : ""}
-                                      </button>
-                                    ))}
-                                  </div>
-                                ) : null}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-
-                  {rows.length > 200 ? (
-                    <div style={{ padding: spacing.base, color: c.textTertiary }}>
-                      Показаны первые 200 из {rows.length}. Выберите категорию или уточните поиск.
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </div>
+              }
+            />
           </div>
         </Section>
       ) : null}
 
       {picking ? (
         <ProductPicker
-          restaurantId={restaurantId}
           groups={groups}
+          restaurantId={restaurantId}
           title={picking.name}
           onClose={() => setPicking(null)}
           onPick={(product) => {
             setDraft((current) => ({
               ...current,
-              [`${picking.kind}:${picking.id}`]: {
-                id: product.product_id,
-                name: product.name,
+              [keyOf(picking)]: {
                 code: product.code,
                 groupPath: product.group_path,
+                id: product.product_id,
+                name: product.name,
                 productType: product.product_type,
               },
             }));
@@ -933,12 +951,13 @@ function Links({
           }}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
 function Queue() {
   const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
   const [onlyProblems, setOnlyProblems] = useState(false);
 
   const queue = useQuery({
@@ -948,103 +967,144 @@ function Queue() {
   });
 
   const retry = useMutation({
-    mutationFn: (orderId: string) => api.retryHandoff(orderId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["iiko-queue"] }),
+    mutationFn: api.retryHandoff,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["iiko-queue"] });
+      toast.success("Заказ отправлен на повтор");
+    },
   });
 
-  const label: Record<string, { text: string; tone: "ok" | "warn" | "muted" }> = {
+  const status: Record<string, { text: string; tone: "ok" | "warn" | "muted" | "bad" }> = {
+    accepted: { text: "заведён", tone: "ok" },
+    failed: { text: "не принят", tone: "bad" },
     pending: { text: "ждёт кассу", tone: "warn" },
     sent: { text: "у плагина", tone: "warn" },
-    accepted: { text: "заведён", tone: "ok" },
-    failed: { text: "не принят", tone: "muted" },
   };
+
+  const failed = (queue.data ?? []).filter((row) => row.status === "failed").length;
+  const pending = (queue.data ?? []).filter((row) => row.status === "pending" || row.status === "sent").length;
+  const sent = (queue.data ?? []).filter((row) => row.status === "accepted").length;
+
+  const columns = useMemo(
+    () =>
+      queueColumn.columns([
+        queueColumn.accessor("order_number", {
+          header: "Заказ",
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div>
+                <div className="row-main">№ {info.getValue()}</div>
+                <div className="row-sub">
+                  {formatDateTime(row.created_at)} · {formatPrice(row.total_kopecks)}
+                </div>
+              </div>
+            );
+          },
+        }),
+        queueColumn.accessor("restaurant_name", {
+          header: "Ресторан",
+          cell: (info) => info.getValue(),
+        }),
+        queueColumn.accessor("status", {
+          header: "Состояние",
+          cell: (info) => {
+            const row = info.row.original;
+            const item = status[info.getValue()] ?? { text: info.getValue(), tone: "muted" as const };
+            return (
+              <div>
+                <Badge text={item.text} tone={item.tone} />
+                {row.iiko_order_number ? <div className="row-sub">на кассе № {row.iiko_order_number}</div> : null}
+                {row.attempts > 1 ? <div className="row-sub">попыток: {row.attempts}</div> : null}
+              </div>
+            );
+          },
+        }),
+        queueColumn.display({
+          id: "problem",
+          header: "Что случилось",
+          cell: (info) => {
+            const row = info.row.original;
+            return (
+              <div>
+                {row.error ? <div className="form-error">{row.error}</div> : <span className="row-muted">—</span>}
+                {row.missing_products.length > 0 ? (
+                  <div className="row-sub">Нет сопоставления: {row.missing_products.join(", ")}</div>
+                ) : null}
+              </div>
+            );
+          },
+        }),
+        queueColumn.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) =>
+            info.row.original.status === "failed" ? (
+              <Button size="xs" onClick={() => retry.mutate(info.row.original.order_id)}>
+                <RefreshCw size={14} aria-hidden />
+                Повторить
+              </Button>
+            ) : null,
+        }),
+      ]),
+    [retry],
+  );
 
   return (
     <Section
       title="Очередь заказов на кассу"
       action={
-        <Button tone={onlyProblems ? "brand" : "quiet"} onClick={() => setOnlyProblems(!onlyProblems)}>
+        <Button variant={onlyProblems ? "primary" : "ghost"} onClick={() => setOnlyProblems(!onlyProblems)}>
           Только с ошибкой
         </Button>
       }
+      description="Передача заказов из приложения в ресторанную кассу."
     >
-      {queue.isPending ? (
-        <p style={{ color: c.textSecondary }}>Загружаем…</p>
-      ) : (queue.data ?? []).length === 0 ? (
-        <p style={{ color: c.textSecondary }}>
-          {onlyProblems ? "Ошибок нет" : "Очередь пуста"}
-        </p>
-      ) : (
-        <div style={styles.card}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Заказ</th>
-                <th style={styles.th}>Ресторан</th>
-                <th style={styles.th}>Состояние</th>
-                <th style={styles.th}>Что случилось</th>
-                <th style={styles.th} />
-              </tr>
-            </thead>
-            <tbody>
-              {(queue.data ?? []).map((row) => (
-                <tr key={row.order_id}>
-                  <td style={styles.td}>
-                    <div style={{ fontWeight: 600 }}>№ {row.order_number}</div>
-                    <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                      {formatDateTime(row.created_at)} · {formatPrice(row.total_kopecks)}
-                    </div>
-                  </td>
-                  <td style={styles.td}>{row.restaurant_name}</td>
-                  <td style={styles.td}>
-                    <Badge
-                      text={label[row.status]?.text ?? row.status}
-                      tone={label[row.status]?.tone ?? "muted"}
-                    />
-                    {row.iiko_order_number ? (
-                      <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                        на кассе № {row.iiko_order_number}
-                      </div>
-                    ) : null}
-                    {row.attempts > 1 ? (
-                      <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                        попыток: {row.attempts}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td style={{ ...styles.td, maxWidth: 420 }}>
-                    {row.error ? <div style={{ color: c.danger }}>{row.error}</div> : "—"}
-                    {row.missing_products.length > 0 ? (
-                      <div style={{ marginTop: 4, color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                        Нет сопоставления: {row.missing_products.join(", ")}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td style={styles.td}>
-                    {row.status === "failed" ? (
-                      <Button tone="brand" onClick={() => retry.mutate(row.order_id)}>
-                        Повторить
-                      </Button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="metric-strip">
+        <Metric label="В очереди" note="показано сейчас" value={String(queue.data?.length ?? 0)} />
+        <Metric label="Ждут" note="pending/sent" value={String(pending)} />
+        <Metric label="Приняты" note="на кассе" value={String(sent)} />
+        <Metric label="Ошибки" note="нужна реакция" value={String(failed)} />
+      </div>
+
+      <div className="surface-toolbar">
+        <DensityToggle density={density} onChange={setDensity} />
+      </div>
+
+      {queue.error ? (
+        <div className="error-state">
+          <h2>Не удалось загрузить очередь</h2>
+          <p>{errorMessage(queue.error)}</p>
         </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={queue.data ?? []}
+          density={density}
+          getRowId={(row) => row.order_id}
+          isLoading={queue.isPending}
+          pageSize={20}
+          empty={
+            <div className="empty-state">
+              <h2>{onlyProblems ? "Ошибок нет" : "Очередь пуста"}</h2>
+              <p>Новые передачи заказов появятся здесь автоматически.</p>
+            </div>
+          }
+        />
       )}
     </Section>
   );
 }
 
+function split(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
 
-/**
- * Дерево номенклатуры сети: где искать блюда каждой категории.
- *
- * Настройка общая на всю сеть — в iiko chain товары заводят централизованно,
- * и ветки у точек совпадают. Раньше это дерево лежало константами в коде,
- * и новый ресторан с другим деревом требовал правки бэкенда.
- */
 function Tree() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -1055,18 +1115,17 @@ function Tree() {
   const tree = useQuery({ queryKey: ["iiko-menu-tree"], queryFn: api.menuTree });
 
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (data: MenuTree) =>
       api.saveMenuTree({
-        branches: (tree.data?.branches ?? []).map((branch) => ({
+        branches: data.branches.map((branch) => ({
           category_id: branch.category_id,
-          iiko_group_paths: split(
-            draft[branch.category_id] ?? branch.iiko_group_paths.join("\n"),
-          ),
+          iiko_group_paths: split(draft[branch.category_id] ?? branch.iiko_group_paths.join("\n")),
         })),
-        deny_markers: split(deny ?? (tree.data?.deny_markers ?? []).join("\n")),
-        extra_group_paths: split(extras ?? (tree.data?.extra_group_paths ?? []).join("\n")),
-        keep_unknown_groups: keepUnknown ?? tree.data?.keep_unknown_groups ?? false,
+        deny_markers: split(deny ?? data.deny_markers.join("\n")),
+        extra_group_paths: split(extras ?? data.extra_group_paths.join("\n")),
+        keep_unknown_groups: keepUnknown ?? data.keep_unknown_groups,
       }),
+    onError: (error) => toast.error(errorMessage(error)),
     onSuccess: () => {
       setDraft({});
       setDeny(null);
@@ -1074,162 +1133,173 @@ function Tree() {
       setKeepUnknown(null);
       void queryClient.invalidateQueries({ queryKey: ["iiko-menu-tree"] });
       void queryClient.invalidateQueries({ queryKey: ["iiko-groups"] });
+      toast.success("Дерево меню сохранено");
     },
   });
 
-  if (tree.isPending) {
-    return (
-      <Section title="Дерево меню">
-        <p style={{ color: c.textSecondary }}>Загружаем…</p>
-      </Section>
-    );
-  }
+  const columns = useMemo(
+    () =>
+      branchColumn.columns([
+        branchColumn.accessor("name", {
+          header: "Категория",
+          cell: (info) => <span className="row-main">{info.getValue()}</span>,
+        }),
+        branchColumn.display({
+          id: "linked",
+          header: "Связано",
+          cell: (info) => {
+            const branch = info.row.original;
+            return (
+              <div>
+                <div className="mono row-main">
+                  {branch.linked} из {branch.dishes}
+                </div>
+                <div className="row-sub">
+                  {branch.dishes - branch.linked > 0 ? `нет связи ${branch.dishes - branch.linked}` : "готово"}
+                </div>
+              </div>
+            );
+          },
+        }),
+        branchColumn.display({
+          id: "paths",
+          header: "Ветки кассы",
+          cell: (info) => {
+            const branch = info.row.original;
+            return (
+              <textarea
+                className="textarea iiko-tree-textarea"
+                rows={Math.max(2, branch.iiko_group_paths.length + 1)}
+                value={draft[branch.category_id] ?? branch.iiko_group_paths.join("\n")}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    [branch.category_id]: event.target.value,
+                  }))
+                }
+              />
+            );
+          },
+        }),
+      ]),
+    [draft],
+  );
 
-  const keep = keepUnknown ?? tree.data?.keep_unknown_groups ?? false;
+  const data = tree.data;
+  const keep = keepUnknown ?? data?.keep_unknown_groups ?? false;
 
   return (
-    <>
+    <div className="page-stack">
       <Section
-        title="Где искать блюда каждой категории"
+        title="Дерево меню"
         action={
-          <Button tone="brand" onClick={() => save.mutate()}>
-            {save.isPending ? "Сохраняем…" : "Сохранить"}
+          <Button disabled={!data || save.isPending} onClick={() => data && save.mutate(data)}>
+            <CheckCircle2 size={15} aria-hidden />
+            {save.isPending ? "Сохраняем..." : "Сохранить"}
           </Button>
         }
+        description="Где в iiko искать блюда каждой категории и какие ветки исключать."
       >
-        <p style={{ marginTop: 0, color: c.textSecondary }}>
-          Ветка — начало пути группы в кассе, например{" "}
-          <code>КУХНЯ 2026/ПИЦЦЦА/ПИЦЦЦЫ ДОСТАВКА</code>. По одной в строке. Настройка
-          общая на сеть: товары заводятся через iiko chain, и коды у точек совпадают.
-        </p>
-
-        <div style={styles.card}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Категория</th>
-                <th style={styles.th}>Связано</th>
-                <th style={styles.th}>Ветки кассы</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(tree.data?.branches ?? []).map((branch) => (
-                <tr key={branch.category_id}>
-                  <td style={styles.td}>{branch.name}</td>
-                  <td style={{ ...styles.td, whiteSpace: "nowrap", color: c.textSecondary }}>
-                    {branch.linked} из {branch.dishes}
-                  </td>
-                  <td style={styles.td}>
-                    <textarea
-                      rows={Math.max(2, branch.iiko_group_paths.length + 1)}
-                      style={{ ...styles.input, width: "100%", fontFamily: "inherit" }}
-                      value={draft[branch.category_id] ?? branch.iiko_group_paths.join("\n")}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          [branch.category_id]: event.target.value,
-                        }))
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="info-band">
+          Ветка — начало пути группы в кассе. По одной в строке. Настройка общая для сети,
+          потому что товары заводятся централизованно.
         </div>
+
+        {tree.error ? (
+          <div className="error-state">
+            <h2>Не удалось загрузить дерево меню</h2>
+            <p>{errorMessage(tree.error)}</p>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={data?.branches ?? []}
+            density="regular"
+            getRowId={(row) => row.category_id}
+            isLoading={tree.isPending}
+            pageSize={20}
+          />
+        )}
       </Section>
 
-      <Section title="Общие правила сети">
-        <div style={{ display: "flex", gap: spacing.xl, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 320px" }}>
-            <div style={{ marginBottom: spacing.xs }}>Мусорные метки</div>
-            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize, marginBottom: spacing.sm }}>
-              Ветку пропускаем целиком, если путь содержит такой кусок: старые акции,
-              заготовки, подложки. По одной в строке.
-            </div>
-            <textarea
-              rows={8}
-              style={{ ...styles.input, width: "100%", fontFamily: "inherit" }}
-              value={deny ?? (tree.data?.deny_markers ?? []).join("\n")}
-              onChange={(event) => setDeny(event.target.value)}
-            />
+      {data ? (
+        <Section title="Общие правила сети">
+          <div className="tree-rules-grid">
+            <label className="field">
+              <span className="field-label">Мусорные метки</span>
+              <textarea
+                className="textarea iiko-rules-textarea"
+                value={deny ?? data.deny_markers.join("\n")}
+                onChange={(event) => setDeny(event.target.value)}
+              />
+              <span className="row-sub">Ветку пропускаем, если путь содержит такой фрагмент.</span>
+            </label>
+
+            <label className="field">
+              <span className="field-label">Ветки добавок</span>
+              <textarea
+                className="textarea iiko-rules-textarea"
+                value={extras ?? data.extra_group_paths.join("\n")}
+                onChange={(event) => setExtras(event.target.value)}
+              />
+              <span className="row-sub">Где лежат модификаторы: соусы, тесто, сыр и прочие добавки.</span>
+            </label>
           </div>
 
-          <div style={{ flex: "1 1 320px" }}>
-            <div style={{ marginBottom: spacing.xs }}>Ветки добавок</div>
-            <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize, marginBottom: spacing.sm }}>
-              Где лежат модификаторы: соусы к пасте, тесто, сыр. Пусто — ищем
-              по всем веткам меню.
-            </div>
-            <textarea
-              rows={8}
-              style={{ ...styles.input, width: "100%", fontFamily: "inherit" }}
-              value={extras ?? (tree.data?.extra_group_paths ?? []).join("\n")}
-              onChange={(event) => setExtras(event.target.value)}
-            />
+          <label className="inline-check warn-check">
+            <input checked={keep} type="checkbox" onChange={() => setKeepUnknown(!keep)} />
+            Забирать с кассы всё, включая ветки вне меню
+          </label>
+          <div className="row-sub">
+            Нужен только на этапе разбора дерева: иначе в приложение может попасть весь справочник точки.
           </div>
-        </div>
-
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: spacing.sm,
-            marginTop: spacing.base,
-            color: keep ? c.warning : c.textSecondary,
-          }}
-        >
-          <input type="checkbox" checked={keep} onChange={() => setKeepUnknown(!keep)} />
-          Забирать с кассы вообще всё, включая ветки вне меню
-        </label>
-        <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-          Нужно, только пока дерево не разобрано: иначе в базу приложения едет весь
-          справочник точки — десятки тысяч позиций вместе с посудой и заготовками.
-        </div>
-      </Section>
-    </>
+        </Section>
+      ) : null}
+    </div>
   );
 }
 
-/** Строки текстового поля в список: пустые и пробелы выкидываем. */
-function split(value: string): string[] {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-/**
- * Касса ресторана: плагины по точкам, сопоставление блюд и очередь заказов.
- *
- * База iiko у каждого ресторана своя, поэтому и ключ, и сопоставление —
- * тоже свои. Отсюда три раздела: где стоит плагин, что чему соответствует
- * в этой точке и что происходит с заказами.
- */
 export function IikoTab() {
   const [pane, setPane] = useState<Pane>("bridges");
   const [restaurantId, setRestaurantId] = useState("");
 
-  const panes: { key: Pane; label: string }[] = [
-    { key: "bridges", label: "Плагины" },
-    { key: "links", label: "Сопоставление" },
-    { key: "tree", label: "Дерево меню" },
-    { key: "queue", label: "Очередь" },
+  const panes: { icon: typeof Building2; key: Pane; label: string }[] = [
+    { icon: Building2, key: "bridges", label: "Плагины" },
+    { icon: Link2, key: "links", label: "Связи" },
+    { icon: ListTree, key: "tree", label: "Дерево" },
+    { icon: Send, key: "queue", label: "Очередь" },
   ];
 
   return (
-    <>
-      <div style={{ display: "flex", gap: spacing.sm }}>
-        {panes.map((item) => (
-          <Button
-            key={item.key}
-            tone={pane === item.key ? "brand" : "quiet"}
-            onClick={() => setPane(item.key)}
-          >
-            {item.label}
-          </Button>
-        ))}
-      </div>
+    <div className="page-stack">
+      <Section
+        title="iiko"
+        action={
+          <div className="tabs" aria-label="Раздел iiko">
+            {panes.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  className="tab-button"
+                  data-active={pane === item.key}
+                  type="button"
+                  onClick={() => setPane(item.key)}
+                >
+                  <Icon size={15} aria-hidden />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        }
+        description="Плагины ресторанов, сопоставление номенклатуры, дерево iiko и очередь заказов."
+      >
+        <div className="info-band">
+          Ключ и сопоставление хранятся отдельно для каждой точки: база iiko у ресторанов своя,
+          а заказ на кухню уходит только когда все активные блюда связаны с кассой.
+        </div>
+      </Section>
 
       {pane === "bridges" ? (
         <Bridges
@@ -1239,11 +1309,9 @@ export function IikoTab() {
           }}
         />
       ) : null}
-      {pane === "links" ? (
-        <Links restaurantId={restaurantId} onRestaurantChange={setRestaurantId} />
-      ) : null}
+      {pane === "links" ? <Links restaurantId={restaurantId} onRestaurantChange={setRestaurantId} /> : null}
       {pane === "tree" ? <Tree /> : null}
       {pane === "queue" ? <Queue /> : null}
-    </>
+    </div>
   );
 }

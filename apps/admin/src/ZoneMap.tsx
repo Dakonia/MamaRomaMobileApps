@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
 
 import { admin } from "./theme";
-import { Button, c, radius, spacing, typography } from "./ui";
+import { Button } from "./ui";
 
 /** Контур зоны хранится как [долгота, широта] — карта ждёт обратный порядок. */
 type Point = [number, number];
@@ -160,35 +160,24 @@ export function ZoneMap({ outline, color, center, onChange }: Props) {
   }, [outline, color, onChange]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: spacing.sm }}>
-      <div
-        ref={box}
-        style={{
-          height: 420,
-          borderRadius: radius.md,
-          border: `1px solid ${c.border}`,
-          overflow: "hidden",
-          background: c.surfaceSunken,
-        }}
-      />
+    <div className="zone-map-wrap">
+      <div ref={box} className="zone-map-box" />
 
-      <div style={{ display: "flex", alignItems: "center", gap: spacing.md }}>
-        <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>
+      <div className="zone-map-hints">
+        <span className="toolbar-note">
           Точку тащите мышкой · двойной клик по карте добавляет точку · клик по точке удаляет
         </span>
 
-        <span style={{ flex: 1 }} />
+        <span className="toolbar-spacer" />
 
         {outline.length > 0 ? (
-          <Button tone="quiet" onClick={() => onChange([])}>
+          <Button variant="ghost" onClick={() => onChange([])}>
             Очистить контур
           </Button>
         ) : null}
       </div>
 
-      {hint ? (
-        <span style={{ fontSize: typography.caption.fontSize, color: c.warning }}>{hint}</span>
-      ) : null}
+      {hint ? <span className="form-warning">{hint}</span> : null}
     </div>
   );
 }

@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ban, Edit3, Plus, Search, Trash2, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
   api,
@@ -9,7 +12,21 @@ import {
   type Guest,
   type GuestCard,
 } from "./api";
-import { Badge, Button, c, radius, Section, spacing, styles, typography } from "./ui";
+import { ConfirmDialog } from "./components/patterns/ConfirmDialog";
+import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
+import { DetailDrawer } from "./components/patterns/DetailDrawer";
+import { Badge, Button, IconButton, Section, Select } from "./ui";
+
+type GuestFilter = "all" | "vip" | "blocked";
+type GuestDraft = {
+  birthday: string;
+  email: string;
+  gender: "male" | "female" | "";
+  name: string;
+  phone: string;
+};
+
+const column = createAdminColumnHelper<Guest>();
 
 const ORDER_STATUS: Record<string, string> = {
   created: "Оформлен",
@@ -24,484 +41,652 @@ const ORDER_STATUS: Record<string, string> = {
 
 const ORDER_TYPE: Record<string, string> = {
   delivery: "Доставка",
-  pickup: "Самовывоз",
   dine_in: "В зале",
+  pickup: "Самовывоз",
 };
 
 const RESERVATION_STATUS: Record<string, string> = {
+  requested: "Ждёт подтверждения",
   pending: "Ждёт подтверждения",
   confirmed: "Подтверждена",
   seated: "Гость пришёл",
+  completed: "Завершена",
   cancelled: "Отменена",
   no_show: "Не пришёл",
 };
 
 const POINTS_OPERATION: Record<string, string> = {
   earn: "Начисление",
-  spend: "Списание",
   expire: "Сгорание",
   manual: "Вручную",
+  spend: "Списание",
 };
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>{label}</span>
-      {children}
-    </label>
-  );
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function useDebounced(value: string, delayMs = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debounced;
+}
+
+function toDraft(card?: GuestCard | null): GuestDraft {
+  return {
+    birthday: card?.guest.birthday ?? "",
+    email: card?.guest.email ?? "",
+    gender: card?.guest.gender ?? "",
+    name: card?.guest.name ?? "",
+    phone: card?.guest.phone ?? "",
+  };
+}
+
+function guestStatus(guest: Guest) {
+  if (guest.is_blocked) return <Badge text="заблокирован" tone="bad" />;
+  if (guest.orders_count >= 10 || guest.spent_kopecks >= 5000000) return <Badge text="ценный" tone="accent" />;
+  return <Badge text="активен" tone="ok" />;
+}
+
+function DrawerMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        background: c.surfaceSunken,
-        borderRadius: radius.md,
-        padding: `${spacing.md}px ${spacing.base}px`,
-        minWidth: 140,
-      }}
-    >
-      <div style={{ fontSize: typography.caption.fontSize, color: c.textTertiary }}>{label}</div>
-      <div style={{ fontSize: typography.h3.fontSize, fontWeight: 600 }}>{value}</div>
+    <div className="drawer-metric">
+      <div className="metric-label">{label}</div>
+      <div className="drawer-metric-value">{value}</div>
     </div>
   );
 }
 
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: spacing.sm }}>
-      <div
-        style={{
-          fontSize: typography.caption.fontSize,
-          textTransform: "uppercase",
-          letterSpacing: 0.6,
-          color: c.textTertiary,
-          fontWeight: 600,
-        }}
-      >
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function GuestCardView({
+function GuestDrawer({
   card,
-  onChanged,
+  creating,
+  loading,
   onClose,
+  onCreate,
+  onDelete,
+  onSave,
+  onToggleBlock,
+  pending,
 }: {
-  card: GuestCard;
-  onChanged: () => void;
+  card: GuestCard | null;
+  creating: boolean;
+  loading: boolean;
   onClose: () => void;
+  onCreate: (draft: GuestDraft) => void;
+  onDelete: (guest: Guest) => void;
+  onSave: (card: GuestCard, draft: GuestDraft) => void;
+  onToggleBlock: (guest: Guest) => void;
+  pending: boolean;
 }) {
-  const [name, setName] = useState(card.guest.name ?? "");
-  const [email, setEmail] = useState(card.guest.email ?? "");
-  const [birthday, setBirthday] = useState(card.guest.birthday ?? "");
-  const [gender, setGender] = useState(card.guest.gender ?? "");
-  const [failure, setFailure] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<GuestDraft>(() => toDraft(card));
 
-  const save = async () => {
-    setBusy(true);
-    setFailure(null);
-    try {
-      await api.updateGuest(card.guest.id, {
-        name: name.trim() || null,
-        email: email.trim() || null,
-        birthday: birthday.trim() || null,
-        gender: gender === "" ? null : (gender as "male" | "female"),
-      });
-      onChanged();
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось сохранить");
-    } finally {
-      setBusy(false);
-    }
-  };
+  useEffect(() => {
+    setDraft(toDraft(card));
+  }, [card]);
 
-  const toggleBlock = async () => {
-    setFailure(null);
-    try {
-      await api.updateGuest(card.guest.id, { is_blocked: !card.guest.is_blocked });
-      onChanged();
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось изменить");
-    }
-  };
+  const set = <K extends keyof GuestDraft>(key: K, value: GuestDraft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
-  const remove = async () => {
-    if (!window.confirm("Удалить гостя вместе с адресами? Отменить это нельзя")) return;
-    setFailure(null);
-    try {
-      await api.deleteGuest(card.guest.id);
-      onClose();
-      onChanged();
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось удалить");
-    }
-  };
+  const title = creating ? "Новый гость" : card?.guest.name ?? card?.guest.phone ?? "Гость";
+  const canSubmit = draft.phone.trim().length >= 10 && (creating || card !== null);
 
   return (
-    <div style={{ ...styles.card, padding: spacing.lg, display: "grid", gap: spacing.lg }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <div style={{ fontSize: typography.h2.fontSize, fontWeight: 600 }}>
-            {card.guest.name ?? "Без имени"}
-          </div>
-          <div style={{ color: c.textSecondary }}>
-            {card.guest.phone} · с нами с {formatDate(card.guest.created_at)}
-            {card.guest.last_seen_at ? ` · заходил ${formatDate(card.guest.last_seen_at)}` : ""}
-          </div>
-        </div>
-        <Button tone="quiet" onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
-
-      <div style={{ display: "flex", gap: spacing.md, flexWrap: "wrap" }}>
-        <Stat label="Заказов" value={String(card.guest.orders_count)} />
-        <Stat label="Потратил" value={formatPrice(card.guest.spent_kopecks)} />
-        <Stat label="Уровень" value={card.guest.tier_title || "—"} />
-        <Stat label="Баллы" value={String(card.guest.points_balance)} />
-      </div>
-
-      <Block title="Данные гостя">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: spacing.base,
-          }}
-        >
-          <Field label="Имя">
-            <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Почта">
-            <input style={styles.input} value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Field label="День рождения">
-            <input
-              style={styles.input}
-              type="date"
-              value={birthday}
-              onChange={(e) => setBirthday(e.target.value)}
-            />
-          </Field>
-          <Field label="Пол">
-            <select style={styles.input} value={gender} onChange={(e) => setGender(e.target.value)}>
-              <option value="">Не указан</option>
-              <option value="female">Женский</option>
-              <option value="male">Мужской</option>
-            </select>
-          </Field>
-        </div>
-
-        {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
-
-        <div style={{ display: "flex", gap: spacing.md, flexWrap: "wrap" }}>
-          <Button onClick={() => void save()} disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить"}
+    <DetailDrawer
+      badge={!creating && card ? guestStatus(card.guest) : undefined}
+      footer={
+        <>
+          {!creating && card ? (
+            <>
+              <Button disabled={pending} variant="danger" onClick={() => onToggleBlock(card.guest)}>
+                <Ban size={15} aria-hidden />
+                {card.guest.is_blocked ? "Разблокировать" : "Заблокировать"}
+              </Button>
+              <Button disabled={pending} variant="danger" onClick={() => onDelete(card.guest)}>
+                Удалить
+              </Button>
+            </>
+          ) : null}
+          <span className="toolbar-spacer" />
+          <Button disabled={pending} variant="ghost" onClick={onClose}>
+            Отмена
           </Button>
-          <Button tone="quiet" onClick={() => void toggleBlock()}>
-            {card.guest.is_blocked ? "Разблокировать" : "Заблокировать"}
+          <Button
+            disabled={pending || !canSubmit}
+            onClick={() => {
+              if (creating) onCreate(draft);
+              else if (card) onSave(card, draft);
+            }}
+          >
+            {pending ? "Сохраняем..." : "Сохранить"}
           </Button>
-          <Button tone="danger" onClick={() => void remove()}>
-            Удалить
-          </Button>
+        </>
+      }
+      subtitle={creating ? "Создание профиля для заказов и лояльности" : card?.guest.phone}
+      title={title}
+      onClose={onClose}
+    >
+      {loading ? (
+        <div className="page-stack">
+          <div className="skeleton skeleton-row" />
+          <div className="skeleton skeleton-card" />
+          <div className="skeleton skeleton-card" />
         </div>
-      </Block>
-
-      <Block title={`Адреса (${card.addresses.length})`}>
-        {card.addresses.length === 0 ? (
-          <div style={{ color: c.textTertiary }}>Гость пока не сохранял адреса</div>
-        ) : (
-          card.addresses.map((address) => (
-            <div
-              key={address.id}
-              style={{
-                background: c.surfaceSunken,
-                borderRadius: radius.md,
-                padding: spacing.md,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>
-                {address.title ?? "Адрес"} {address.is_default ? <Badge text="основной" tone="ok" /> : null}
-              </div>
-              <div style={{ color: c.textSecondary }}>
-                {address.locality ? `${address.locality}, ` : ""}
-                {address.full_text}
-              </div>
-              {address.metro ? (
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                  м. {address.metro}
-                </div>
-              ) : null}
-              {address.comment ? (
-                <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                  {address.comment}
-                </div>
-              ) : null}
+      ) : (
+        <div className="drawer-form">
+          {!creating && card ? (
+            <div className="drawer-metrics">
+              <DrawerMetric label="Заказов" value={String(card.guest.orders_count)} />
+              <DrawerMetric label="Потратил" value={formatPrice(card.guest.spent_kopecks)} />
+              <DrawerMetric label="Уровень" value={card.guest.tier_title || "—"} />
+              <DrawerMetric label="Баллы" value={String(card.guest.points_balance)} />
             </div>
-          ))
-        )}
-      </Block>
+          ) : null}
 
-      <Block title={`Заказы (${card.orders.length})`}>
-        {card.orders.length === 0 ? (
-          <div style={{ color: c.textTertiary }}>Заказов ещё не было</div>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Когда</th>
-                <th style={styles.th}>Номер</th>
-                <th style={styles.th}>Тип</th>
-                <th style={styles.th}>Куда</th>
-                <th style={styles.th}>Состав</th>
-                <th style={styles.th}>Сумма</th>
-                <th style={styles.th}>Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              {card.orders.map((order) => (
-                <tr key={order.id}>
-                  <td style={styles.td}>{formatDateTime(order.created_at)}</td>
-                  <td style={styles.td}>{order.number}</td>
-                  <td style={styles.td}>{ORDER_TYPE[order.type] ?? order.type}</td>
-                  <td style={styles.td}>{order.address_text ?? order.restaurant_name}</td>
-                  <td style={{ ...styles.td, color: c.textSecondary }}>{order.items.join(", ")}</td>
-                  <td style={styles.td}>{formatPrice(order.total_kopecks)}</td>
-                  <td style={styles.td}>{ORDER_STATUS[order.status] ?? order.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Block>
+          <section className="drawer-section">
+            <h3 className="drawer-section-title">Данные</h3>
+            <div className="drawer-form-grid">
+              <label className="field">
+                <span className="field-label">Телефон</span>
+                <input
+                  className="input"
+                  disabled={!creating}
+                  placeholder="+7 999 123-45-67"
+                  value={draft.phone}
+                  onChange={(event) => set("phone", event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Имя</span>
+                <input
+                  className="input"
+                  placeholder="Имя гостя"
+                  value={draft.name}
+                  onChange={(event) => set("name", event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Почта</span>
+                <input
+                  className="input"
+                  placeholder="mail@example.com"
+                  value={draft.email}
+                  onChange={(event) => set("email", event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">День рождения</span>
+                <input
+                  className="input"
+                  type="date"
+                  value={draft.birthday}
+                  onChange={(event) => set("birthday", event.target.value)}
+                />
+              </label>
+              <div className="field">
+                <span className="field-label">Пол</span>
+                <Select
+                  value={draft.gender}
+                  options={[
+                    { label: "Не указан", value: "" },
+                    { label: "Женский", value: "female" },
+                    { label: "Мужской", value: "male" },
+                  ]}
+                  onChange={(value) => set("gender", value as GuestDraft["gender"])}
+                />
+              </div>
+            </div>
+          </section>
 
-      <Block title={`Брони (${card.reservations.length})`}>
-        {card.reservations.length === 0 ? (
-          <div style={{ color: c.textTertiary }}>Столы не бронировал</div>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Когда</th>
-                <th style={styles.th}>Ресторан</th>
-                <th style={styles.th}>Гостей</th>
-                <th style={styles.th}>Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              {card.reservations.map((row) => (
-                <tr key={row.id}>
-                  <td style={styles.td}>{formatDateTime(row.reserved_at)}</td>
-                  <td style={styles.td}>{row.restaurant_name}</td>
-                  <td style={styles.td}>{row.guests_count}</td>
-                  <td style={styles.td}>{RESERVATION_STATUS[row.status] ?? row.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Block>
+          {!creating && card ? (
+            <>
+              <section className="drawer-section">
+                <h3 className="drawer-section-title">Адреса</h3>
+                {card.addresses.length === 0 ? (
+                  <div className="row-muted">Гость пока не сохранял адреса</div>
+                ) : (
+                  <div className="timeline-list">
+                    {card.addresses.map((address) => (
+                      <div key={address.id} className="timeline-row">
+                        <div className="row-main">
+                          {address.title ?? "Адрес"} {address.is_default ? <Badge text="основной" tone="ok" /> : null}
+                        </div>
+                        <div className="row-sub">
+                          {address.locality ? `${address.locality}, ` : ""}
+                          {address.full_text}
+                        </div>
+                        {address.metro ? <div className="row-sub">м. {address.metro}</div> : null}
+                        {address.comment ? <div className="row-sub">{address.comment}</div> : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
 
-      <Block title="Движение баллов">
-        {card.points.length === 0 ? (
-          <div style={{ color: c.textTertiary }}>Операций не было</div>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Когда</th>
-                <th style={styles.th}>Операция</th>
-                <th style={styles.th}>Баллы</th>
-                <th style={styles.th}>Комментарий</th>
-              </tr>
-            </thead>
-            <tbody>
-              {card.points.map((row, index) => (
-                <tr key={`${row.created_at}-${index}`}>
-                  <td style={styles.td}>{formatDateTime(row.created_at)}</td>
-                  <td style={styles.td}>{POINTS_OPERATION[row.operation] ?? row.operation}</td>
-                  <td style={{ ...styles.td, color: row.points < 0 ? c.danger : c.success }}>
-                    {row.points > 0 ? `+${row.points}` : row.points}
-                  </td>
-                  <td style={{ ...styles.td, color: c.textSecondary }}>{row.comment ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Block>
-    </div>
+              <section className="drawer-section">
+                <h3 className="drawer-section-title">Заказы</h3>
+                {card.orders.length === 0 ? (
+                  <div className="row-muted">Заказов ещё не было</div>
+                ) : (
+                  <div className="timeline-list">
+                    {card.orders.map((order) => (
+                      <div key={order.id} className="timeline-row">
+                        <div className="order-card-top">
+                          <span className="order-number">№ {order.number}</span>
+                          <strong className="mono">{formatPrice(order.total_kopecks)}</strong>
+                        </div>
+                        <div className="row-sub">
+                          {formatDateTime(order.created_at)} · {ORDER_TYPE[order.type] ?? order.type}
+                        </div>
+                        <div className="row-sub">{order.address_text ?? order.restaurant_name}</div>
+                        <div className="chips-line">
+                          <span className="mini-chip">{ORDER_STATUS[order.status] ?? order.status}</span>
+                          {order.items.slice(0, 3).map((item) => (
+                            <span key={item} className="mini-chip">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="drawer-section">
+                <h3 className="drawer-section-title">Брони</h3>
+                {card.reservations.length === 0 ? (
+                  <div className="row-muted">Столы не бронировал</div>
+                ) : (
+                  <div className="timeline-list">
+                    {card.reservations.map((reservation) => (
+                      <div key={reservation.id} className="timeline-row">
+                        <div className="row-main">{formatDateTime(reservation.reserved_at)}</div>
+                        <div className="row-sub">
+                          {reservation.restaurant_name} · {reservation.guests_count} гост.
+                        </div>
+                        <div className="chips-line">
+                          <span className="mini-chip">{RESERVATION_STATUS[reservation.status] ?? reservation.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="drawer-section">
+                <h3 className="drawer-section-title">Баллы</h3>
+                {card.points.length === 0 ? (
+                  <div className="row-muted">Операций не было</div>
+                ) : (
+                  <div className="timeline-list">
+                    {card.points.map((row, index) => (
+                      <div key={`${row.created_at}-${index}`} className="timeline-row">
+                        <div className="order-card-top">
+                          <span className="row-main">{POINTS_OPERATION[row.operation] ?? row.operation}</span>
+                          <strong className={row.points < 0 ? "text-[var(--bad)] mono" : "text-[var(--ok)] mono"}>
+                            {row.points > 0 ? `+${row.points}` : row.points}
+                          </strong>
+                        </div>
+                        <div className="row-sub">{formatDateTime(row.created_at)}</div>
+                        {row.comment ? <div className="row-sub">{row.comment}</div> : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </>
+          ) : null}
+        </div>
+      )}
+    </DetailDrawer>
   );
 }
 
 export function GuestsTab() {
-  const [rows, setRows] = useState<Guest[]>([]);
+  const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
   const [search, setSearch] = useState("");
-  const [card, setCard] = useState<GuestCard | null>(null);
+  const debouncedSearch = useDebounced(search);
+  const [filter, setFilter] = useState<GuestFilter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [newPhone, setNewPhone] = useState("");
-  const [newName, setNewName] = useState("");
-  const [failure, setFailure] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Guest | null>(null);
 
-  const load = async (query = search) => {
-    try {
-      setRows(await api.guests(query));
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось загрузить гостей");
-    }
-  };
+  const guests = useQuery({
+    queryKey: ["guests", debouncedSearch],
+    queryFn: () => api.guests(debouncedSearch),
+    staleTime: 20_000,
+  });
+
+  const guestCard = useQuery({
+    queryKey: ["guest-card", selectedId],
+    queryFn: () => api.guestCard(selectedId ?? ""),
+    enabled: selectedId !== null,
+    staleTime: 10_000,
+  });
 
   useEffect(() => {
-    // Ищем на паузе в наборе, чтобы не дёргать сервер на каждую букву
-    const timer = setTimeout(() => void load(search), 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+    const focusedGuest = sessionStorage.getItem("mr.admin.focus-guest");
+    if (!focusedGuest) return;
+    sessionStorage.removeItem("mr.admin.focus-guest");
+    setCreating(false);
+    setSelectedId(focusedGuest);
+  }, []);
 
-  const open = async (guest: Guest) => {
-    setFailure(null);
-    try {
-      setCard(await api.guestCard(guest.id));
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось открыть карточку");
-    }
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["guests"] });
+    if (selectedId) void queryClient.invalidateQueries({ queryKey: ["guest-card", selectedId] });
   };
 
-  const create = async () => {
-    setFailure(null);
-    try {
-      const guest = await api.createGuest({
-        phone: newPhone.trim(),
-        name: newName.trim() || null,
-        email: null,
-        birthday: null,
-        gender: null,
-      });
+  const create = useMutation({
+    mutationFn: (draft: GuestDraft) =>
+      api.createGuest({
+        birthday: draft.birthday || null,
+        email: draft.email.trim() || null,
+        gender: draft.gender === "" ? null : draft.gender,
+        name: draft.name.trim() || null,
+        phone: draft.phone.trim(),
+      }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (guest) => {
       setCreating(false);
-      setNewPhone("");
-      setNewName("");
-      await load();
-      await open(guest);
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось создать гостя");
-    }
-  };
+      setSelectedId(guest.id);
+      refresh();
+      toast.success("Гость создан");
+    },
+  });
 
-  if (card) {
-    return (
-      <Section title="Гость">
-        <GuestCardView
-          card={card}
-          onClose={() => setCard(null)}
-          onChanged={async () => {
-            await load();
-            const fresh = await api.guestCard(card.guest.id).catch(() => null);
-            setCard(fresh);
-          }}
-        />
-      </Section>
-    );
-  }
+  const update = useMutation({
+    mutationFn: ({ card, draft }: { card: GuestCard; draft: GuestDraft }) =>
+      api.updateGuest(card.guest.id, {
+        birthday: draft.birthday || null,
+        email: draft.email.trim() || null,
+        gender: draft.gender === "" ? null : draft.gender,
+        is_blocked: card.guest.is_blocked,
+        name: draft.name.trim() || null,
+      }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      refresh();
+      toast.success("Гость сохранён");
+    },
+  });
+
+  const toggleBlock = useMutation({
+    mutationFn: (guest: Guest) => api.updateGuest(guest.id, { is_blocked: !guest.is_blocked }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: refresh,
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteGuest(id),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      setSelectedId(null);
+      refresh();
+      toast.success("Гость удалён");
+    },
+  });
+
+  const rows = useMemo(() => {
+    const list = guests.data ?? [];
+    return list.filter((guest) => {
+      if (filter === "blocked") return guest.is_blocked;
+      if (filter === "vip") return guest.orders_count >= 10 || guest.spent_kopecks >= 5000000;
+      return true;
+    });
+  }, [filter, guests.data]);
+
+  const stats = useMemo(() => {
+    const list = guests.data ?? [];
+    return {
+      blocked: list.filter((guest) => guest.is_blocked).length,
+      orders: list.reduce((sum, guest) => sum + guest.orders_count, 0),
+      spent: list.reduce((sum, guest) => sum + guest.spent_kopecks, 0),
+      total: list.length,
+    };
+  }, [guests.data]);
+
+  const columns = useMemo(
+    () =>
+      column.columns([
+        column.accessor((guest) => guest.name ?? guest.phone, {
+          id: "guest",
+          header: "Гость",
+          cell: (info) => {
+            const guest = info.row.original;
+            return (
+              <div>
+                <div className="row-main">
+                  {guest.name ?? "Без имени"} {guest.is_blocked ? <Badge text="стоп" tone="bad" /> : null}
+                </div>
+                <div className="row-sub">
+                  {guest.phone}
+                  {guest.email ? ` · ${guest.email}` : ""}
+                </div>
+              </div>
+            );
+          },
+        }),
+        column.accessor("created_at", {
+          header: "Регистрация",
+          sortFn: "datetime",
+          cell: (info) => (
+            <div>
+              <div className="row-main">{formatDate(info.getValue())}</div>
+              <div className="row-sub">{info.row.original.last_seen_at ? `заходил ${formatDate(info.row.original.last_seen_at)}` : "нет входов"}</div>
+            </div>
+          ),
+        }),
+        column.accessor("orders_count", {
+          header: "Заказы",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => <span className="mono">{info.getValue()}</span>,
+        }),
+        column.accessor("spent_kopecks", {
+          header: "Потратил",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => <span className="mono">{formatPrice(info.getValue())}</span>,
+        }),
+        column.accessor("tier_title", {
+          header: "Лояльность",
+          cell: (info) => (
+            <div>
+              <div className="row-main">{info.getValue() || "—"}</div>
+              <div className="row-sub">{info.row.original.points_balance} баллов</div>
+            </div>
+          ),
+        }),
+        column.display({
+          id: "status",
+          header: "Статус",
+          cell: (info) => guestStatus(info.row.original),
+        }),
+        column.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) => {
+            const guest = info.row.original;
+            return (
+              <div className="cell-actions">
+                <IconButton
+                  label="Открыть"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setCreating(false);
+                    setSelectedId(guest.id);
+                  }}
+                >
+                  <Edit3 size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label={guest.is_blocked ? "Разблокировать" : "Заблокировать"}
+                  size="xs"
+                  variant="danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleBlock.mutate(guest);
+                  }}
+                >
+                  <Ban size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label="Удалить"
+                  size="xs"
+                  variant="danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteTarget(guest);
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden />
+                </IconButton>
+              </div>
+            );
+          },
+        }),
+      ]),
+    [toggleBlock],
+  );
+
+  const activeCard = selectedId ? guestCard.data ?? null : null;
+  const drawerBusy = create.isPending || update.isPending || toggleBlock.isPending;
 
   return (
-    <Section
-      title="Гости"
-      action={
-        creating ? null : <Button onClick={() => setCreating(true)}>Завести гостя</Button>
-      }
-    >
-      {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
+    <div className="page-layout-with-drawer" data-drawer-open={creating || selectedId !== null}>
+      <div className="page-stack">
+        <Section
+          title="Гости"
+          description="Серверный поиск по гостям, история, лояльность и управление доступом."
+          action={
+            <Button
+              onClick={() => {
+                setSelectedId(null);
+                setCreating(true);
+              }}
+            >
+              <Plus size={15} aria-hidden />
+              Завести гостя
+            </Button>
+          }
+        >
+          <div className="metric-strip">
+            <div className="metric-card">
+              <div className="metric-label">Найдено</div>
+              <div className="metric-value">{stats.total}</div>
+              <div className="metric-note">по текущему поиску</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Заказы</div>
+              <div className="metric-value">{stats.orders}</div>
+              <div className="metric-note">суммарно у гостей</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Оборот</div>
+              <div className="metric-value">{formatPrice(stats.spent)}</div>
+              <div className="metric-note">по найденным профилям</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Блокировки</div>
+              <div className="metric-value">{stats.blocked}</div>
+              <div className="metric-note">нужен контроль</div>
+            </div>
+          </div>
 
-      {creating ? (
-        <div style={{ ...styles.card, padding: spacing.lg, display: "flex", gap: spacing.base, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <Field label="Телефон">
-            <input
-              style={styles.input}
-              placeholder="+7 999 123-45-67"
-              value={newPhone}
-              onChange={(event) => setNewPhone(event.target.value)}
-            />
-          </Field>
-          <Field label="Имя">
-            <input
-              style={styles.input}
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-            />
-          </Field>
-          <Button onClick={() => void create()} disabled={newPhone.trim().length < 10}>
-            Создать
-          </Button>
-          <Button tone="quiet" onClick={() => setCreating(false)}>
-            Отмена
-          </Button>
-        </div>
+          <div className="surface-toolbar">
+            <label className="field toolbar-field">
+              <span className="field-label">Поиск</span>
+              <span className="search-control">
+                <Search className="search-icon" size={15} aria-hidden />
+                <input
+                  className="input"
+                  placeholder="Поиск гостя"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </span>
+            </label>
+
+            <div className="filter-chips" aria-label="Фильтр гостей">
+              {[
+                ["all", "Все"],
+                ["vip", "Ценные"],
+                ["blocked", "Блокировки"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  className="filter-chip"
+                  data-active={filter === key}
+                  type="button"
+                  onClick={() => setFilter(key as GuestFilter)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <span className="toolbar-spacer" />
+            <DensityToggle density={density} onChange={setDensity} />
+          </div>
+
+          <DataTable
+            columns={columns}
+            data={rows}
+            density={density}
+            empty={
+              <div className="empty-state">
+                <h2>Гостей не найдено</h2>
+                <p>Измените запрос или заведите новый профиль вручную.</p>
+              </div>
+            }
+            getRowId={(row) => row.id}
+            isLoading={guests.isPending}
+            selectedId={selectedId}
+            onRowClick={(row) => {
+              setCreating(false);
+              setSelectedId(row.id);
+            }}
+          />
+        </Section>
+      </div>
+
+      {creating || selectedId !== null ? (
+        <GuestDrawer
+          card={activeCard}
+          creating={creating}
+          loading={!creating && guestCard.isPending}
+          pending={drawerBusy}
+          onClose={() => {
+            setCreating(false);
+            setSelectedId(null);
+          }}
+          onCreate={(draft) => create.mutate(draft)}
+          onDelete={setDeleteTarget}
+          onSave={(card, draft) => update.mutate({ card, draft })}
+          onToggleBlock={(guest) => toggleBlock.mutate(guest)}
+        />
       ) : null}
 
-      <input
-        style={{ ...styles.input, maxWidth: 380 }}
-        placeholder="Поиск по имени, телефону или почте"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
-
-      <div style={styles.card}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Гость</th>
-              <th style={styles.th}>Регистрация</th>
-              <th style={styles.th}>Заказы</th>
-              <th style={styles.th}>Потратил</th>
-              <th style={styles.th}>Лояльность</th>
-              <th style={styles.th} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((guest) => (
-              <tr key={guest.id}>
-                <td style={styles.td}>
-                  <div style={{ fontWeight: 600 }}>
-                    {guest.name ?? "Без имени"}{" "}
-                    {guest.is_blocked ? <Badge text="заблокирован" tone="warn" /> : null}
-                  </div>
-                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                    {guest.phone}
-                    {guest.email ? ` · ${guest.email}` : ""}
-                  </div>
-                </td>
-                <td style={styles.td}>{formatDate(guest.created_at)}</td>
-                <td style={styles.td}>{guest.orders_count}</td>
-                <td style={styles.td}>{formatPrice(guest.spent_kopecks)}</td>
-                <td style={styles.td}>
-                  {guest.tier_title || "—"}
-                  <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-                    {guest.points_balance} баллов
-                  </div>
-                </td>
-                <td style={{ ...styles.td, textAlign: "right" }}>
-                  <Button tone="quiet" onClick={() => void open(guest)}>
-                    Открыть
-                  </Button>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 ? (
-              <tr>
-                <td style={{ ...styles.td, color: c.textTertiary }} colSpan={6}>
-                  Никого не нашли
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </Section>
+      {deleteTarget ? (
+        <ConfirmDialog
+          busy={remove.isPending}
+          message={`Профиль ${deleteTarget.name ?? deleteTarget.phone} будет удалён вместе с сохранёнными данными.`}
+          title="Удалить гостя"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => remove.mutate(deleteTarget.id)}
+        />
+      ) : null}
+    </div>
   );
 }

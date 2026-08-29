@@ -1,5 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  Edit3,
+  Eye,
+  EyeOff,
+  Flame,
+  ImageOff,
+  ImageUp,
+  Leaf,
+  Plus,
+  RotateCcw,
+  Search,
+  Star,
+  StarOff,
+  Trash2,
+  Utensils,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import {
   api,
@@ -9,700 +26,73 @@ import {
   type Category,
   type Dish,
   type DishDraft,
+  type StopEntry,
 } from "./api";
-import { Badge, Button, c, Section, spacing, styles, typography } from "./ui";
+import { ConfirmDialog } from "./components/patterns/ConfirmDialog";
+import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
+import { DetailDrawer } from "./components/patterns/DetailDrawer";
+import { Badge, Button, IconButton, Section, Select } from "./ui";
+
+const dishColumn = createAdminColumnHelper<Dish>();
+const stopColumn = createAdminColumnHelper<StopEntry>();
 
 const emptyDraft = (categoryId: string): DishDraft => ({
-  category_id: categoryId,
-  name: "",
-  image_url: null,
-  price_kopecks: 0,
-  description: null,
-  composition: null,
-  weight_grams: null,
-  volume_ml: null,
   calories: null,
-  proteins_g: null,
-  fats_g: null,
   carbs_g: null,
+  category_id: categoryId,
+  composition: null,
+  description: null,
+  fats_g: null,
+  image_url: null,
+  is_active: true,
+  is_new: false,
   is_spicy: false,
   is_vegetarian: false,
-  is_new: false,
+  name: "",
+  price_kopecks: 0,
+  proteins_g: null,
   sort_order: 0,
-  is_active: true,
+  volume_ml: null,
+  weight_grams: null,
 });
 
-function toDraft(dish: Dish): DishDraft {
-  return {
-    category_id: dish.category_id,
-    name: dish.name,
-    image_url: dish.image_url,
-    price_kopecks: dish.price_kopecks,
-    description: dish.description,
-    composition: dish.composition,
-    weight_grams: dish.weight_grams,
-    volume_ml: dish.volume_ml,
-    calories: dish.calories,
-    proteins_g: dish.proteins_g,
-    fats_g: dish.fats_g,
-    carbs_g: dish.carbs_g,
-    is_spicy: dish.is_spicy,
-    is_vegetarian: dish.is_vegetarian,
-    is_new: dish.is_new,
-    sort_order: dish.sort_order,
-    is_active: dish.is_active,
-  };
-}
-
-function Field({
-  label,
-  children,
-  wide,
-}: {
-  label: string;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <label style={{ display: "grid", gap: 4, gridColumn: wide ? "1 / -1" : undefined }}>
-      <span
-        style={{
-          fontSize: typography.caption.fontSize,
-          color: c.textTertiary,
-          textTransform: "uppercase",
-          letterSpacing: 0.6,
-        }}
-      >
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function DishForm({
-  categories,
-  initial,
-  title,
-  onCancel,
-  onSubmit,
-  pending,
-  error,
-}: {
-  categories: Category[];
-  initial: DishDraft;
-  title: string;
-  onCancel: () => void;
-  onSubmit: (draft: DishDraft) => void;
-  pending: boolean;
-  error: string | null;
-}) {
-  const [draft, setDraft] = useState(initial);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const set = <K extends keyof DishDraft>(key: K, value: DishDraft[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
-
-  const number = (value: string) => (value.trim() === "" ? null : Number(value.replace(/\D/g, "")));
-  // БЖУ бывает дробным: 12,5 г белка — обычное дело
-  const decimal = (value: string) => {
-    const clean = value.replace(",", ".").replace(/[^\d.]/g, "");
-    return clean === "" ? null : Number(clean);
-  };
-
-  return (
-    <div style={{ ...styles.card, padding: spacing.lg, display: "grid", gap: spacing.base }}>
-      <strong style={{ fontFamily: "'Comfortaa', sans-serif", fontSize: typography.h3.fontSize }}>
-        {title}
-      </strong>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: spacing.md,
-        }}
-      >
-        <Field label="Название" wide>
-          <input
-            style={styles.input}
-            value={draft.name}
-            onChange={(event) => set("name", event.target.value)}
-          />
-        </Field>
-
-        <Field label="Категория">
-          <select
-            style={styles.input}
-            value={draft.category_id}
-            onChange={(event) => set("category_id", event.target.value)}
-          >
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Цена, ₽">
-          <input
-            style={styles.input}
-            inputMode="numeric"
-            value={draft.price_kopecks === 0 ? "" : String(Math.round(draft.price_kopecks / 100))}
-            onChange={(event) => set("price_kopecks", (number(event.target.value) ?? 0) * 100)}
-          />
-        </Field>
-
-        <Field label="Вес, г">
-          <input
-            style={styles.input}
-            inputMode="numeric"
-            value={draft.weight_grams ?? ""}
-            onChange={(event) => set("weight_grams", number(event.target.value))}
-          />
-        </Field>
-
-        <Field label="Объём, мл">
-          <input
-            style={styles.input}
-            inputMode="numeric"
-            value={draft.volume_ml ?? ""}
-            onChange={(event) => set("volume_ml", number(event.target.value))}
-          />
-        </Field>
-
-        <Field label="Калории, ккал">
-          <input
-            style={styles.input}
-            inputMode="numeric"
-            value={draft.calories ?? ""}
-            onChange={(event) => set("calories", number(event.target.value))}
-          />
-        </Field>
-
-        <Field label="Белки, г">
-          <input
-            style={styles.input}
-            inputMode="decimal"
-            value={draft.proteins_g ?? ""}
-            onChange={(event) => set("proteins_g", decimal(event.target.value))}
-          />
-        </Field>
-
-        <Field label="Жиры, г">
-          <input
-            style={styles.input}
-            inputMode="decimal"
-            value={draft.fats_g ?? ""}
-            onChange={(event) => set("fats_g", decimal(event.target.value))}
-          />
-        </Field>
-
-        <Field label="Углеводы, г">
-          <input
-            style={styles.input}
-            inputMode="decimal"
-            value={draft.carbs_g ?? ""}
-            onChange={(event) => set("carbs_g", decimal(event.target.value))}
-          />
-        </Field>
-
-        <Field label="Порядок в списке">
-          <input
-            style={styles.input}
-            inputMode="numeric"
-            value={draft.sort_order}
-            onChange={(event) => set("sort_order", number(event.target.value) ?? 0)}
-          />
-        </Field>
-
-        <Field label="Фотография" wide>
-          <div style={{ display: "flex", gap: spacing.base, alignItems: "center" }}>
-            {draft.image_url ? (
-              <img
-                src={mediaUrl(draft.image_url) ?? ""}
-                alt=""
-                style={{
-                  width: 84,
-                  height: 84,
-                  objectFit: "cover",
-                  borderRadius: 12,
-                  border: `1px solid ${c.border}`,
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: 84,
-                  height: 84,
-                  borderRadius: 12,
-                  border: `1px dashed ${c.borderStrong}`,
-                  display: "grid",
-                  placeItems: "center",
-                  color: c.textTertiary,
-                  fontSize: typography.caption.fontSize,
-                  textAlign: "center",
-                }}
-              >
-                нет фото
-              </div>
-            )}
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={uploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  setUploading(true);
-                  api
-                    .uploadImage(file)
-                    .then((url) => set("image_url", url))
-                    .catch((exc: ApiError) => setUploadError(exc.message))
-                    .finally(() => setUploading(false));
-                }}
-                style={{ fontSize: typography.caption.fontSize }}
-              />
-              {uploading ? (
-                <span style={{ color: c.textSecondary }}>Загружаем…</span>
-              ) : uploadError ? (
-                <span style={{ color: c.danger }}>{uploadError}</span>
-              ) : (
-                <span style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                  JPEG, PNG или WebP, до 8 МБ. Уменьшим и сожмём сами
-                </span>
-              )}
-              {draft.image_url ? (
-                <Button tone="quiet" onClick={() => set("image_url", null)}>
-                  Убрать фото
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </Field>
-
-        <Field label="Метки поверх фотографии" wide>
-          <div style={{ display: "flex", gap: spacing.lg, flexWrap: "wrap", paddingTop: 6 }}>
-            {(
-              [
-                ["is_new", "Новинка"],
-                ["is_spicy", "Острое"],
-                ["is_vegetarian", "Вегетарианское"],
-              ] as const
-            ).map(([key, title]) => (
-              <label key={key} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={draft[key]}
-                  onChange={(event) => set(key, event.target.checked)}
-                />
-                {title}
-              </label>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="Описание для гостя" wide>
-          <textarea
-            style={{ ...styles.input, minHeight: 64, resize: "vertical" }}
-            value={draft.description ?? ""}
-            onChange={(event) =>
-              set("description", event.target.value.trim() === "" ? null : event.target.value)
-            }
-          />
-        </Field>
-
-        <Field label="Состав" wide>
-          <textarea
-            style={{ ...styles.input, minHeight: 64, resize: "vertical" }}
-            value={draft.composition ?? ""}
-            onChange={(event) =>
-              set("composition", event.target.value.trim() === "" ? null : event.target.value)
-            }
-          />
-        </Field>
-      </div>
-
-      {error ? <span style={{ color: c.danger }}>{error}</span> : null}
-
-      <div style={{ display: "flex", gap: spacing.sm }}>
-        <Button
-          onClick={() => onSubmit(draft)}
-          disabled={pending || draft.name.trim() === "" || draft.price_kopecks <= 0}
-        >
-          {pending ? "Сохраняем…" : "Сохранить"}
-        </Button>
-        <Button tone="quiet" onClick={onCancel}>
-          Отмена
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-export function MenuTab() {
-  const queryClient = useQueryClient();
-  const categories = useQuery({ queryKey: ["categories"], queryFn: api.categories });
-  const dishes = useQuery({ queryKey: ["dishes"], queryFn: api.dishes });
-  const stopList = useQuery({ queryKey: ["stop-list"], queryFn: api.stopList });
-
-  const [editing, setEditing] = useState<{ id: string | null; draft: DishDraft } | null>(null);
-  const [filter, setFilter] = useState<string | null>(null);
-  const [newCategory, setNewCategory] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["dishes"] });
-    void queryClient.invalidateQueries({ queryKey: ["categories"] });
-    void queryClient.invalidateQueries({ queryKey: ["stop-list"] });
-  };
-
-  const fail = (exc: ApiError) => setError(exc.message);
-
-  const saveDish = useMutation({
-    mutationFn: ({ id, draft }: { id: string | null; draft: DishDraft }) =>
-      id === null ? api.createDish(draft) : api.updateDish(id, draft),
-    onSuccess: () => {
-      setEditing(null);
-      setError(null);
-      refresh();
-    },
-    onError: fail,
-  });
-
-  const removeDish = useMutation({
-    mutationFn: (id: string) => api.deleteDish(id),
-    onSuccess: () => {
-      setError(null);
-      refresh();
-    },
-    onError: fail,
-  });
-
-  const addCategory = useMutation({
-    mutationFn: () =>
-      api.createCategory({
-        name: newCategory.trim(),
-        slug: translit(newCategory),
-        sort_order: (categories.data?.length ?? 0) + 1,
-      }),
-    onSuccess: () => {
-      setNewCategory("");
-      setError(null);
-      refresh();
-    },
-    onError: fail,
-  });
-
-  const removeCategory = useMutation({
-    mutationFn: (id: string) => api.deleteCategory(id),
-    onSuccess: () => {
-      setError(null);
-      refresh();
-    },
-    onError: fail,
-  });
-
-  const toggleCategory = useMutation({
-    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
-      api.updateCategory(id, { is_active }),
-    onSuccess: refresh,
-    onError: fail,
-  });
-
-  // Полка «Часто заказывают» в приложении: соусам и напиткам там не место
-  const togglePopular = useMutation({
-    mutationFn: ({ id, show_in_popular }: { id: string; show_in_popular: boolean }) =>
-      api.updateCategory(id, { show_in_popular }),
-    onSuccess: refresh,
-    onError: fail,
-  });
-
-  const removeStop = useMutation({
-    mutationFn: (id: string) => api.removeStop(id),
-    onSuccess: refresh,
-    onError: fail,
-  });
-
-  const list = (dishes.data ?? []).filter(
-    (dish) => filter === null || dish.category_id === filter,
-  );
-  const nameOf = (id: string) => categories.data?.find((item) => item.id === id)?.name ?? "—";
-
-  return (
-    <>
-      {error ? (
-        <div
-          style={{
-            ...styles.card,
-            padding: spacing.md,
-            borderColor: c.danger,
-            color: c.danger,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
-      <Section
-        title="Категории"
-        action={
-          <div style={{ display: "flex", gap: spacing.sm }}>
-            <input
-              style={{ ...styles.input, width: 190 }}
-              placeholder="Новая категория"
-              value={newCategory}
-              onChange={(event) => setNewCategory(event.target.value)}
-            />
-            <Button
-              onClick={() => addCategory.mutate()}
-              disabled={newCategory.trim().length < 2 || addCategory.isPending}
-            >
-              Добавить
-            </Button>
-          </div>
-        }
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: spacing.sm }}>
-          <Button tone={filter === null ? "brand" : "quiet"} onClick={() => setFilter(null)}>
-            Все блюда
-          </Button>
-          {(categories.data ?? []).map((category) => (
-            <div
-              key={category.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: spacing.xs,
-                border: `1px solid ${c.border}`,
-                borderRadius: 999,
-                paddingRight: spacing.sm,
-                background: filter === category.id ? c.brandSubtle : "transparent",
-              }}
-            >
-              <Button
-                tone={filter === category.id ? "brand" : "quiet"}
-                onClick={() => setFilter(category.id)}
-              >
-                {category.name} · {category.dishes_count}
-              </Button>
-              {!category.is_active ? <Badge text="скрыта" tone="muted" /> : null}
-              {!category.show_in_popular ? <Badge text="не в хитах" tone="muted" /> : null}
-              <button
-                type="button"
-                title={
-                  category.show_in_popular
-                    ? "Убрать с полки «Часто заказывают»"
-                    : "Вернуть на полку «Часто заказывают»"
-                }
-                onClick={() =>
-                  togglePopular.mutate({
-                    id: category.id,
-                    show_in_popular: !category.show_in_popular,
-                  })
-                }
-                style={ghost}
-              >
-                {category.show_in_popular ? "★" : "☆"}
-              </button>
-              <button
-                type="button"
-                title={category.is_active ? "Скрыть" : "Показать"}
-                onClick={() =>
-                  toggleCategory.mutate({ id: category.id, is_active: !category.is_active })
-                }
-                style={ghost}
-              >
-                {category.is_active ? "◉" : "○"}
-              </button>
-              <button
-                type="button"
-                title="Удалить"
-                onClick={() => removeCategory.mutate(category.id)}
-                style={{ ...ghost, color: c.danger }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section
-        title="Блюда"
-        action={
-          editing === null ? (
-            <Button
-              onClick={() =>
-                setEditing({
-                  id: null,
-                  draft: emptyDraft(filter ?? categories.data?.[0]?.id ?? ""),
-                })
-              }
-              disabled={(categories.data ?? []).length === 0}
-            >
-              Новое блюдо
-            </Button>
-          ) : null
-        }
-      >
-        {editing !== null ? (
-          <DishForm
-            categories={categories.data ?? []}
-            initial={editing.draft}
-            title={editing.id === null ? "Новое блюдо" : "Правка блюда"}
-            pending={saveDish.isPending}
-            error={error}
-            onCancel={() => {
-              setEditing(null);
-              setError(null);
-            }}
-            onSubmit={(draft) => saveDish.mutate({ id: editing.id, draft })}
-          />
-        ) : null}
-
-        <div style={styles.card}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Название</th>
-                <th style={styles.th}>Категория</th>
-                <th style={styles.th}>Цена</th>
-                <th style={styles.th}>Состояние</th>
-                <th style={styles.th} />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((dish) => (
-                <tr key={dish.id}>
-                  <td style={styles.td}>
-                    <div style={{ display: "flex", gap: spacing.md }}>
-                      {dish.image_url ? (
-                        <img
-                          src={mediaUrl(dish.image_url) ?? ""}
-                          alt=""
-                          style={{
-                            width: 52,
-                            height: 52,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : null}
-                      <div>
-                    <div style={{ fontWeight: 500 }}>{dish.name}</div>
-                    {dish.description ? (
-                      <div
-                        style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}
-                      >
-                        {dish.description}
-                      </div>
-                    ) : null}
-                    <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                      {dish.weight_grams ? `${dish.weight_grams} г` : null}
-                      {dish.calories ? ` · ${dish.calories} ккал` : null}
-                      {dish.image_url ? null : " · без фото"}
-                    </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ ...styles.td, color: c.textSecondary }}>
-                    {nameOf(dish.category_id)}
-                  </td>
-                  <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
-                    {formatPrice(dish.price_kopecks)}
-                  </td>
-                  <td style={styles.td}>
-                    <Badge
-                      text={dish.is_active ? "в продаже" : "снято"}
-                      tone={dish.is_active ? "ok" : "muted"}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
-                      <Button
-                        tone="quiet"
-                        onClick={() => setEditing({ id: dish.id, draft: toDraft(dish) })}
-                      >
-                        Править
-                      </Button>
-                      <Button
-                        tone="quiet"
-                        onClick={() =>
-                          saveDish.mutate({
-                            id: dish.id,
-                            draft: { ...toDraft(dish), is_active: !dish.is_active },
-                          })
-                        }
-                      >
-                        {dish.is_active ? "Снять" : "Вернуть"}
-                      </Button>
-                      <Button tone="danger" onClick={() => removeDish.mutate(dish.id)}>
-                        Удалить
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Стоп-лист">
-        {(stopList.data ?? []).length === 0 ? (
-          <p style={{ color: c.textSecondary, margin: 0 }}>Сейчас всё есть в наличии.</p>
-        ) : (
-          <div style={styles.card}>
-            <table style={styles.table}>
-              <tbody>
-                {(stopList.data ?? []).map((entry) => (
-                  <tr key={entry.id}>
-                    <td style={styles.td}>{entry.dish_name}</td>
-                    <td style={{ ...styles.td, color: c.textSecondary }}>
-                      {entry.restaurant_name}
-                    </td>
-                    <td style={{ ...styles.td, color: c.textSecondary }}>
-                      {entry.comment ?? "—"}
-                    </td>
-                    <td style={styles.td}>
-                      <Button tone="quiet" onClick={() => removeStop.mutate(entry.id)}>
-                        Вернуть в меню
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
-    </>
-  );
-}
-
-const ghost: React.CSSProperties = {
-  border: 0,
-  background: "transparent",
-  cursor: "pointer",
-  fontSize: 18,
-  lineHeight: 1,
-  color: c.textTertiary,
-  padding: "0 4px",
-};
-
 const MAP: Record<string, string> = {
-  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i",
-  й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t",
-  у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ы: "y", э: "e",
-  ю: "yu", я: "ya", ь: "", ъ: "", " ": "-",
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "g",
+  д: "d",
+  е: "e",
+  ё: "e",
+  ж: "zh",
+  з: "z",
+  и: "i",
+  й: "y",
+  к: "k",
+  л: "l",
+  м: "m",
+  н: "n",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  у: "u",
+  ф: "f",
+  х: "h",
+  ц: "c",
+  ч: "ch",
+  ш: "sh",
+  щ: "sch",
+  ы: "y",
+  э: "e",
+  ю: "yu",
+  я: "ya",
+  ь: "",
+  ъ: "",
+  " ": "-",
 };
 
-/** «Горячие блюда» → «goryachie-blyuda»: код категории нужен латиницей. */
 function translit(value: string): string {
   return value
     .toLowerCase()
@@ -712,4 +102,799 @@ function translit(value: string): string {
     .replace(/[^a-z0-9-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function toDraft(dish: Dish): DishDraft {
+  return {
+    calories: dish.calories,
+    carbs_g: dish.carbs_g,
+    category_id: dish.category_id,
+    composition: dish.composition,
+    description: dish.description,
+    fats_g: dish.fats_g,
+    image_url: dish.image_url,
+    is_active: dish.is_active,
+    is_new: dish.is_new,
+    is_spicy: dish.is_spicy,
+    is_vegetarian: dish.is_vegetarian,
+    name: dish.name,
+    price_kopecks: dish.price_kopecks,
+    proteins_g: dish.proteins_g,
+    sort_order: dish.sort_order,
+    volume_ml: dish.volume_ml,
+    weight_grams: dish.weight_grams,
+  };
+}
+
+function normalizeDraft(draft: DishDraft): DishDraft {
+  return {
+    ...draft,
+    composition: draft.composition?.trim() || null,
+    description: draft.description?.trim() || null,
+    name: draft.name.trim(),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
+
+function intNullable(value: string): number | null {
+  const clean = value.replace(/\D/g, "");
+  return clean === "" ? null : Number(clean);
+}
+
+function decimalNullable(value: string): number | null {
+  const clean = value.replace(",", ".").replace(/[^\d.]/g, "");
+  return clean === "" ? null : Number(clean);
+}
+
+function rubToKopecks(value: string): number {
+  return Number(value.replace(/\D/g, "") || 0) * 100;
+}
+
+function categoryName(categoryById: Map<string, Category>, id: string): string {
+  return categoryById.get(id)?.name ?? "Без категории";
+}
+
+function Metric({ label, note, value }: { label: string; note: string; value: string }) {
+  return (
+    <div className="metric-card">
+      <div className="metric-label">{label}</div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-note">{note}</div>
+    </div>
+  );
+}
+
+function DishThumb({ dish }: { dish: Dish }) {
+  return (
+    <div className="dish-thumb">
+      {dish.image_url ? <img src={mediaUrl(dish.image_url) ?? undefined} alt="" /> : <ImageOff size={16} aria-hidden />}
+    </div>
+  );
+}
+
+function DishDrawer({
+  categories,
+  dish,
+  onClose,
+  onSubmit,
+  pending,
+}: {
+  categories: Category[];
+  dish: Dish | null;
+  onClose: () => void;
+  onSubmit: (draft: DishDraft) => void;
+  pending: boolean;
+}) {
+  const [draft, setDraft] = useState<DishDraft>(() =>
+    dish ? toDraft(dish) : emptyDraft(categories[0]?.id ?? ""),
+  );
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    setDraft(dish ? toDraft(dish) : emptyDraft(categories[0]?.id ?? ""));
+  }, [categories, dish]);
+
+  const set = <K extends keyof DishDraft>(key: K, value: DishDraft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const url = await api.uploadImage(file);
+      set("image_url", url);
+      toast.success("Фото блюда загружено");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const canSave = draft.name.trim().length >= 2 && draft.price_kopecks > 0 && draft.category_id.length > 0;
+
+  return (
+    <DetailDrawer
+      badge={draft.is_active ? <Badge text="в продаже" tone="ok" /> : <Badge text="снято" tone="muted" />}
+      footer={
+        <>
+          <Button disabled={pending || uploading} variant="ghost" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button
+            disabled={pending || uploading || !canSave}
+            onClick={() => onSubmit(normalizeDraft(draft))}
+          >
+            {pending ? "Сохраняем..." : "Сохранить"}
+          </Button>
+        </>
+      }
+      subtitle={dish ? "Правка карточки блюда" : "Создание позиции меню"}
+      title={dish?.name ?? "Новое блюдо"}
+      onClose={onClose}
+    >
+      <div className="drawer-form">
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Фото</h3>
+          <div className="dish-preview">
+            {draft.image_url ? (
+              <img src={mediaUrl(draft.image_url) ?? undefined} alt="" />
+            ) : (
+              <div className="dish-preview-empty">
+                <Utensils size={24} aria-hidden />
+              </div>
+            )}
+            <div className="drawer-section">
+              <label className="upload-button">
+                <ImageUp size={15} aria-hidden />
+                {uploading ? "Загружаем..." : "Загрузить"}
+                <input
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={uploading}
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void upload(file);
+                  }}
+                />
+              </label>
+              {draft.image_url ? (
+                <Button size="xs" variant="ghost" onClick={() => set("image_url", null)}>
+                  Убрать фото
+                </Button>
+              ) : null}
+              <div className="row-sub">Квадратное фото блюда лучше читается в карточках меню.</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Основное</h3>
+          <div className="drawer-form-grid">
+            <label className="field" data-wide="true">
+              <span className="field-label">Название</span>
+              <input className="input" value={draft.name} onChange={(event) => set("name", event.target.value)} />
+            </label>
+            <div className="field">
+              <span className="field-label">Категория</span>
+              <Select
+                value={draft.category_id}
+                options={categories.map((category) => ({ label: category.name, value: category.id }))}
+                onChange={(value) => set("category_id", value)}
+              />
+            </div>
+            <label className="field">
+              <span className="field-label">Цена, ₽</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.price_kopecks === 0 ? "" : Math.round(draft.price_kopecks / 100)}
+                onChange={(event) => set("price_kopecks", rubToKopecks(event.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Порядок</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.sort_order}
+                onChange={(event) => set("sort_order", intNullable(event.target.value) ?? 0)}
+              />
+            </label>
+            <label className="inline-check">
+              <input
+                checked={draft.is_active}
+                type="checkbox"
+                onChange={(event) => set("is_active", event.target.checked)}
+              />
+              В продаже
+            </label>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Порция и КБЖУ</h3>
+          <div className="drawer-form-grid">
+            <label className="field">
+              <span className="field-label">Вес, г</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.weight_grams ?? ""}
+                onChange={(event) => set("weight_grams", intNullable(event.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Объём, мл</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.volume_ml ?? ""}
+                onChange={(event) => set("volume_ml", intNullable(event.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Калории</span>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={draft.calories ?? ""}
+                onChange={(event) => set("calories", intNullable(event.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Белки, г</span>
+              <input
+                className="input"
+                inputMode="decimal"
+                value={draft.proteins_g ?? ""}
+                onChange={(event) => set("proteins_g", decimalNullable(event.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Жиры, г</span>
+              <input
+                className="input"
+                inputMode="decimal"
+                value={draft.fats_g ?? ""}
+                onChange={(event) => set("fats_g", decimalNullable(event.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Углеводы, г</span>
+              <input
+                className="input"
+                inputMode="decimal"
+                value={draft.carbs_g ?? ""}
+                onChange={(event) => set("carbs_g", decimalNullable(event.target.value))}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Метки</h3>
+          <div className="checkbox-grid">
+            <label className="inline-check">
+              <input
+                checked={draft.is_new}
+                type="checkbox"
+                onChange={(event) => set("is_new", event.target.checked)}
+              />
+              Новинка
+            </label>
+            <label className="inline-check">
+              <input
+                checked={draft.is_spicy}
+                type="checkbox"
+                onChange={(event) => set("is_spicy", event.target.checked)}
+              />
+              Острое
+            </label>
+            <label className="inline-check">
+              <input
+                checked={draft.is_vegetarian}
+                type="checkbox"
+                onChange={(event) => set("is_vegetarian", event.target.checked)}
+              />
+              Вегетарианское
+            </label>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3 className="drawer-section-title">Описание</h3>
+          <label className="field">
+            <span className="field-label">Для гостя</span>
+            <textarea
+              className="textarea"
+              value={draft.description ?? ""}
+              onChange={(event) => set("description", event.target.value || null)}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Состав</span>
+            <textarea
+              className="textarea"
+              value={draft.composition ?? ""}
+              onChange={(event) => set("composition", event.target.value || null)}
+            />
+          </label>
+        </section>
+      </div>
+    </DetailDrawer>
+  );
+}
+
+export function MenuTab() {
+  const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
+  const [filter, setFilter] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [newCategory, setNewCategory] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [deleteDishTarget, setDeleteDishTarget] = useState<Dish | null>(null);
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<Category | null>(null);
+
+  const categories = useQuery({ queryKey: ["categories"], queryFn: api.categories });
+  const dishes = useQuery({ queryKey: ["dishes"], queryFn: api.dishes });
+  const stopList = useQuery({ queryKey: ["stop-list"], queryFn: api.stopList });
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["categories"] });
+    void queryClient.invalidateQueries({ queryKey: ["dishes"] });
+    void queryClient.invalidateQueries({ queryKey: ["stop-list"] });
+  };
+
+  const saveDish = useMutation({
+    mutationFn: ({ draft, id }: { draft: DishDraft; id: string | null }) =>
+      id === null ? api.createDish(draft) : api.updateDish(id, draft),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (dish) => {
+      setCreating(false);
+      setSelectedId(dish.id);
+      refresh();
+      toast.success("Блюдо сохранено");
+    },
+  });
+
+  const removeDish = useMutation({
+    mutationFn: api.deleteDish,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      setDeleteDishTarget(null);
+      setSelectedId(null);
+      refresh();
+      toast.success("Блюдо удалено");
+    },
+  });
+
+  const addCategory = useMutation({
+    mutationFn: (name: string) =>
+      api.createCategory({
+        name,
+        slug: translit(name),
+        sort_order: (categories.data?.length ?? 0) + 1,
+      }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (category) => {
+      setNewCategory("");
+      setFilter(category.id);
+      refresh();
+      toast.success("Категория создана");
+    },
+  });
+
+  const toggleCategory = useMutation({
+    mutationFn: ({ category, is_active }: { category: Category; is_active: boolean }) =>
+      api.updateCategory(category.id, { is_active }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: refresh,
+  });
+
+  const togglePopular = useMutation({
+    mutationFn: ({ category, show_in_popular }: { category: Category; show_in_popular: boolean }) =>
+      api.updateCategory(category.id, { show_in_popular }),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: refresh,
+  });
+
+  const removeCategory = useMutation({
+    mutationFn: api.deleteCategory,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      setDeleteCategoryTarget(null);
+      setFilter(null);
+      refresh();
+      toast.success("Категория удалена");
+    },
+  });
+
+  const removeStop = useMutation({
+    mutationFn: api.removeStop,
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: () => {
+      refresh();
+      toast.success("Блюдо вернули в меню");
+    },
+  });
+
+  const categoryById = useMemo(
+    () => new Map((categories.data ?? []).map((category) => [category.id, category])),
+    [categories.data],
+  );
+
+  const rows = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("ru-RU");
+    return [...(dishes.data ?? [])]
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ru-RU"))
+      .filter((dish) => {
+        const text = `${dish.name} ${dish.description ?? ""} ${dish.composition ?? ""} ${categoryName(
+          categoryById,
+          dish.category_id,
+        )}`.toLocaleLowerCase("ru-RU");
+        return (!filter || dish.category_id === filter) && text.includes(needle);
+      });
+  }, [categoryById, dishes.data, filter, search]);
+
+  const selected = selectedId ? (dishes.data ?? []).find((dish) => dish.id === selectedId) ?? null : null;
+  const activeCount = (dishes.data ?? []).filter((dish) => dish.is_active).length;
+  const noPhoto = (dishes.data ?? []).filter((dish) => !dish.image_url).length;
+  const stopCount = stopList.data?.length ?? 0;
+
+  const dishColumns = useMemo(
+    () =>
+      dishColumn.columns([
+        dishColumn.accessor("name", {
+          header: "Блюдо",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <div className="dish-row-title">
+                <DishThumb dish={dish} />
+                <div className="min-w-0">
+                  <div className="row-main">{info.getValue()}</div>
+                  <div className="row-sub">
+                    {dish.weight_grams ? `${dish.weight_grams} г` : dish.volume_ml ? `${dish.volume_ml} мл` : "Порция не задана"}
+                    {dish.calories ? ` · ${dish.calories} ккал` : ""}
+                  </div>
+                </div>
+              </div>
+            );
+          },
+        }),
+        dishColumn.accessor("category_id", {
+          header: "Категория",
+          cell: (info) => categoryName(categoryById, info.getValue()),
+        }),
+        dishColumn.accessor("price_kopecks", {
+          header: "Цена",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => <span className="mono">{formatPrice(info.getValue())}</span>,
+        }),
+        dishColumn.display({
+          id: "flags",
+          header: "Метки",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <div className="chips-line">
+                {dish.is_new ? <Badge text="new" tone="accent" /> : null}
+                {dish.is_spicy ? <Badge text="острое" tone="warn" /> : null}
+                {dish.is_vegetarian ? <Badge text="veg" tone="ok" /> : null}
+                {!dish.image_url ? <Badge text="без фото" tone="muted" /> : null}
+              </div>
+            );
+          },
+        }),
+        dishColumn.accessor("is_active", {
+          header: "Статус",
+          cell: (info) =>
+            info.getValue() ? <Badge text="в продаже" tone="ok" /> : <Badge text="снято" tone="muted" />,
+        }),
+        dishColumn.accessor("sort_order", {
+          header: "Порядок",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => <span className="mono">{info.getValue()}</span>,
+        }),
+        dishColumn.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <div className="cell-actions">
+                <IconButton
+                  label="Править"
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setCreating(false);
+                    setSelectedId(dish.id);
+                  }}
+                >
+                  <Edit3 size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  label={dish.is_active ? "Снять с продажи" : "Вернуть в продажу"}
+                  size="xs"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    saveDish.mutate({
+                      id: dish.id,
+                      draft: normalizeDraft({ ...toDraft(dish), is_active: !dish.is_active }),
+                    });
+                  }}
+                >
+                  {dish.is_active ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
+                </IconButton>
+                <IconButton
+                  label="Удалить"
+                  size="xs"
+                  variant="danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteDishTarget(dish);
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden />
+                </IconButton>
+              </div>
+            );
+          },
+        }),
+      ]),
+    [categoryById, saveDish],
+  );
+
+  const stopColumns = useMemo(
+    () =>
+      stopColumn.columns([
+        stopColumn.accessor("dish_name", {
+          header: "Блюдо",
+          cell: (info) => <span className="row-main">{info.getValue()}</span>,
+        }),
+        stopColumn.accessor("restaurant_name", {
+          header: "Ресторан",
+          cell: (info) => <span className="row-sub">{info.getValue()}</span>,
+        }),
+        stopColumn.accessor("comment", {
+          header: "Комментарий",
+          cell: (info) => info.getValue() ?? <span className="row-muted">нет</span>,
+        }),
+        stopColumn.display({
+          id: "actions",
+          header: "",
+          meta: { align: "right" },
+          cell: (info) => (
+            <Button size="xs" variant="ghost" onClick={() => removeStop.mutate(info.row.original.id)}>
+              <RotateCcw size={14} aria-hidden />
+              Вернуть
+            </Button>
+          ),
+        }),
+      ]),
+    [removeStop],
+  );
+
+  return (
+    <div className="page-stack">
+      <Section
+        title="Меню"
+        action={
+          <Button
+            disabled={(categories.data ?? []).length === 0}
+            onClick={() => {
+              setCreating(true);
+              setSelectedId(null);
+            }}
+          >
+            <Plus size={15} aria-hidden />
+            Новое блюдо
+          </Button>
+        }
+        description="Категории, блюда, карточки для приложения и стоп-лист по ресторанам."
+      >
+        <div className="metric-strip">
+          <Metric label="Блюд" note="в каталоге" value={String(dishes.data?.length ?? 0)} />
+          <Metric label="В продаже" note="видны гостям" value={String(activeCount)} />
+          <Metric label="Без фото" note="нужно оформить" value={String(noPhoto)} />
+          <Metric label="Стоп-лист" note="по точкам" value={String(stopCount)} />
+        </div>
+      </Section>
+
+      <Section title="Категории">
+        <div className="surface-toolbar">
+          <label className="field">
+            <span className="field-label">Новая категория</span>
+            <input
+              className="input"
+              placeholder="Например, Пицца"
+              value={newCategory}
+              onChange={(event) => setNewCategory(event.target.value)}
+            />
+          </label>
+          <Button
+            disabled={newCategory.trim().length < 2 || addCategory.isPending}
+            onClick={() => addCategory.mutate(newCategory.trim())}
+          >
+            <Plus size={15} aria-hidden />
+            Добавить
+          </Button>
+          <span className="toolbar-spacer" />
+          <Button variant={filter === null ? "primary" : "ghost"} onClick={() => setFilter(null)}>
+            Все блюда
+          </Button>
+        </div>
+
+        {categories.error ? (
+          <div className="error-state">
+            <h2>Не удалось загрузить категории</h2>
+            <p>{errorMessage(categories.error)}</p>
+          </div>
+        ) : (
+          <div className="category-grid">
+            {(categories.data ?? []).map((category) => (
+              <div key={category.id} className="category-card" data-active={filter === category.id}>
+                <button className="category-main" type="button" onClick={() => setFilter(category.id)}>
+                  <span className="row-main">{category.name}</span>
+                  <span className="row-sub">
+                    {category.dishes_count} блюд · порядок {category.sort_order}
+                  </span>
+                  <span className="chips-line">
+                    {category.is_active ? <Badge text="видна" tone="ok" /> : <Badge text="скрыта" tone="muted" />}
+                    {category.show_in_popular ? (
+                      <Badge text="часто заказывают" tone="accent" />
+                    ) : (
+                      <Badge text="не в хитах" tone="muted" />
+                    )}
+                  </span>
+                </button>
+                <div className="cell-actions">
+                  <IconButton
+                    label={category.show_in_popular ? "Убрать из популярных" : "Добавить в популярные"}
+                    size="xs"
+                    variant="ghost"
+                    onClick={() =>
+                      togglePopular.mutate({
+                        category,
+                        show_in_popular: !category.show_in_popular,
+                      })
+                    }
+                  >
+                    {category.show_in_popular ? <StarOff size={14} aria-hidden /> : <Star size={14} aria-hidden />}
+                  </IconButton>
+                  <IconButton
+                    label={category.is_active ? "Скрыть категорию" : "Показать категорию"}
+                    size="xs"
+                    variant="ghost"
+                    onClick={() =>
+                      toggleCategory.mutate({
+                        category,
+                        is_active: !category.is_active,
+                      })
+                    }
+                  >
+                    {category.is_active ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
+                  </IconButton>
+                  <IconButton
+                    label="Удалить категорию"
+                    size="xs"
+                    variant="danger"
+                    onClick={() => setDeleteCategoryTarget(category)}
+                  >
+                    <Trash2 size={14} aria-hidden />
+                  </IconButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section title="Блюда">
+        <div className="surface-toolbar">
+          <label className="field toolbar-field">
+            <span className="field-label">Поиск</span>
+            <span className="search-control">
+              <Search className="search-icon" size={15} aria-hidden />
+              <input
+                className="input"
+                placeholder="Поиск блюда"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </span>
+          </label>
+          <span className="toolbar-spacer" />
+          <DensityToggle density={density} onChange={setDensity} />
+        </div>
+
+        {dishes.error ? (
+          <div className="error-state">
+            <h2>Не удалось загрузить блюда</h2>
+            <p>{errorMessage(dishes.error)}</p>
+          </div>
+        ) : (
+          <DataTable
+            columns={dishColumns}
+            data={rows}
+            density={density}
+            getRowId={(row) => row.id}
+            isLoading={dishes.isPending}
+            onRowClick={(dish) => {
+              setCreating(false);
+              setSelectedId(dish.id);
+            }}
+            pageSize={20}
+            selectedId={selectedId}
+            empty={
+              <div className="empty-state">
+                <h2>Блюд не найдено</h2>
+                <p>Создайте блюдо или измените фильтр категории и поиск.</p>
+              </div>
+            }
+          />
+        )}
+      </Section>
+
+      <Section title="Стоп-лист">
+        <DataTable
+          columns={stopColumns}
+          data={stopList.data ?? []}
+          density={density}
+          getRowId={(row) => row.id}
+          isLoading={stopList.isPending}
+          pageSize={10}
+          empty={
+            <div className="empty-state">
+              <h2>Сейчас всё есть в наличии</h2>
+              <p>Когда ресторан поставит блюдо в стоп-лист, оно появится здесь.</p>
+            </div>
+          }
+        />
+      </Section>
+
+      {creating || selected ? (
+        <DishDrawer
+          categories={categories.data ?? []}
+          dish={creating ? null : selected}
+          pending={saveDish.isPending}
+          onClose={() => {
+            setCreating(false);
+            setSelectedId(null);
+          }}
+          onSubmit={(draft) => saveDish.mutate({ draft, id: creating ? null : selected?.id ?? null })}
+        />
+      ) : null}
+
+      {deleteDishTarget ? (
+        <ConfirmDialog
+          busy={removeDish.isPending}
+          message={`Удалить блюдо «${deleteDishTarget.name}»?`}
+          title="Удалить блюдо"
+          onCancel={() => setDeleteDishTarget(null)}
+          onConfirm={() => removeDish.mutate(deleteDishTarget.id)}
+        />
+      ) : null}
+
+      {deleteCategoryTarget ? (
+        <ConfirmDialog
+          busy={removeCategory.isPending}
+          message={`Удалить категорию «${deleteCategoryTarget.name}»? Если в ней есть блюда, сервер может отказать.`}
+          title="Удалить категорию"
+          onCancel={() => setDeleteCategoryTarget(null)}
+          onConfirm={() => removeCategory.mutate(deleteCategoryTarget.id)}
+        />
+      ) : null}
+    </div>
+  );
 }

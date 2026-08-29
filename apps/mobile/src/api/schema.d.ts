@@ -1495,6 +1495,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/iiko/menu-tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Дерево номенклатуры сети
+         * @description Где искать блюда каждой категории и что считать мусором.
+         *
+         *     Настройка общая на сеть: в iiko chain товары заводят централизованно,
+         *     поэтому ветки у точек совпадают.
+         */
+        get: operations["iiko_menu_tree_api_v1_admin_iiko_menu_tree_get"];
+        /** Сохранить дерево номенклатуры */
+        put: operations["iiko_save_menu_tree_api_v1_admin_iiko_menu_tree_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/iiko/links/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Перенести сопоставление на другую точку
+         * @description Настроили одну точку — остальные получают то же самое одним нажатием.
+         */
+        post: operations["iiko_copy_links_api_v1_admin_iiko_links_copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integrations/iiko/orders/pending": {
         parameters: {
             query?: never;
@@ -1829,6 +1873,11 @@ export interface components {
             linked_dishes: number;
             /** Linked Extras */
             linked_extras: number;
+            /**
+             * Unlinked Dishes
+             * @default 0
+             */
+            unlinked_dishes: number;
             /** Products */
             products: number;
             /** Pending Orders */
@@ -2184,6 +2233,16 @@ export interface components {
             phone: string;
             /** Code */
             code: string;
+        };
+        /**
+         * CopyLinksResult
+         * @description Итог переноса сопоставления с одного ресторана на другой.
+         */
+        CopyLinksResult: {
+            /** Copied */
+            copied: number;
+            /** Skipped */
+            skipped: number;
         };
         /**
          * DeliveryResolve
@@ -3072,6 +3131,11 @@ export interface components {
             group_path: string | null;
             /** Product Type */
             product_type: string | null;
+            /**
+             * Price Kopecks
+             * @default 0
+             */
+            price_kopecks: number;
             /** Is Active */
             is_active: boolean;
             /** Has Sizes */
@@ -3107,6 +3171,12 @@ export interface components {
             product_id: string | null;
             /** Product Name */
             product_name: string | null;
+            /** Product Code */
+            product_code?: string | null;
+            /** Product Group Path */
+            product_group_path?: string | null;
+            /** Product Type */
+            product_type?: string | null;
             /** Size Id */
             size_id: string | null;
             /** Modifier Group Id */
@@ -3174,6 +3244,35 @@ export interface components {
             matched: number;
             /** Skipped */
             skipped: number;
+        };
+        /**
+         * MenuBranchRow
+         * @description Категория меню и ветки кассы, в которых искать её блюда.
+         */
+        MenuBranchRow: {
+            /**
+             * Category Id
+             * Format: uuid
+             */
+            category_id: string;
+            /** Name */
+            name: string;
+            /** Dishes */
+            dishes: number;
+            /** Linked */
+            linked: number;
+            /** Iiko Group Paths */
+            iiko_group_paths: string[];
+        };
+        /** MenuBranchWrite */
+        MenuBranchWrite: {
+            /**
+             * Category Id
+             * Format: uuid
+             */
+            category_id: string;
+            /** Iiko Group Paths */
+            iiko_group_paths?: string[];
         };
         /** MenuCategoryRead */
         MenuCategoryRead: {
@@ -3251,6 +3350,11 @@ export interface components {
              */
             type: string;
             /**
+             * Price
+             * @default 0
+             */
+            price: number;
+            /**
              * Isactive
              * @default true
              */
@@ -3267,6 +3371,34 @@ export interface components {
             restaurant_id: string | null;
             /** Categories */
             categories: components["schemas"]["MenuCategoryRead"][];
+        };
+        /** MenuTreeRead */
+        MenuTreeRead: {
+            /** Branches */
+            branches: components["schemas"]["MenuBranchRow"][];
+            /** Deny Markers */
+            deny_markers: string[];
+            /** Extra Group Paths */
+            extra_group_paths: string[];
+            /** Keep Unknown Groups */
+            keep_unknown_groups: boolean;
+        };
+        /**
+         * MenuTreeWrite
+         * @description Настройка дерева сети целиком: ветки категорий и общие правила.
+         */
+        MenuTreeWrite: {
+            /** Branches */
+            branches?: components["schemas"]["MenuBranchWrite"][];
+            /** Deny Markers */
+            deny_markers?: string[];
+            /** Extra Group Paths */
+            extra_group_paths?: string[];
+            /**
+             * Keep Unknown Groups
+             * @default false
+             */
+            keep_unknown_groups: boolean;
         };
         /**
          * MessageRead
@@ -3329,6 +3461,27 @@ export interface components {
             error: string;
             /** Missingproducts */
             missingProducts?: string[];
+        };
+        /**
+         * OrderChangeRead
+         * @description Строка состава после правки ресторана: что стало с этой позицией.
+         */
+        OrderChangeRead: {
+            /** Name */
+            name: string;
+            /** State */
+            state: string;
+            /** Quantity */
+            quantity: number;
+            /** Was Quantity */
+            was_quantity?: number | null;
+            /**
+             * Total Kopecks
+             * @default 0
+             */
+            total_kopecks: number;
+            /** Image Url */
+            image_url?: string | null;
         };
         /** OrderCreate */
         OrderCreate: {
@@ -3463,6 +3616,8 @@ export interface components {
             iiko_items?: components["schemas"]["IikoOrderItemRead"][];
             /** Iiko Items Changed At */
             iiko_items_changed_at?: string | null;
+            /** Changes */
+            changes?: components["schemas"]["OrderChangeRead"][];
             /** Subtotal Kopecks */
             subtotal_kopecks: number;
             /** Delivery Kopecks */
@@ -8422,6 +8577,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_menu_tree_api_v1_admin_iiko_menu_tree_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MenuTreeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_save_menu_tree_api_v1_admin_iiko_menu_tree_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MenuTreeWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    iiko_copy_links_api_v1_admin_iiko_links_copy_post: {
+        parameters: {
+            query: {
+                source_id: string;
+                target_id: string;
+                overwrite?: boolean;
+            };
+            header?: {
+                "X-Tenant-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopyLinksResult"];
                 };
             };
             /** @description Validation Error */

@@ -1,7 +1,11 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Search, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { api, ApiError, formatPrice, type RestaurantDish } from "./api";
-import { Badge, Button, c, radius, spacing, styles, typography } from "./ui";
+import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
+import { Badge, Button, Section } from "./ui";
 
 type Props = {
   restaurantId: string;
@@ -9,200 +13,255 @@ type Props = {
   onClose: () => void;
 };
 
-/**
- * Меню конкретного ресторана: своя цена и продаётся ли блюдо в этой точке.
- * Пустая цена означает «как у сети» — строка-исключение тогда не хранится.
- */
+const column = createAdminColumnHelper<RestaurantDish>();
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Действие не выполнено";
+}
+
 export function RestaurantMenu({ restaurantId, restaurantName, onClose }: Props) {
-  const [rows, setRows] = useState<RestaurantDish[]>([]);
+  const queryClient = useQueryClient();
+  const [density, setDensity] = useTableDensity();
   const [search, setSearch] = useState("");
-  const [failure, setFailure] = useState<string | null>(null);
+  const [rows, setRows] = useState<RestaurantDish[]>([]);
   const [busyDish, setBusyDish] = useState<string | null>(null);
 
-  const load = async () => {
-    try {
-      setRows(await api.restaurantMenu(restaurantId));
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось загрузить меню");
-    }
-  };
+  const menu = useQuery({
+    queryKey: ["restaurant-menu", restaurantId],
+    queryFn: () => api.restaurantMenu(restaurantId),
+  });
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurantId]);
+    setRows(menu.data ?? []);
+  }, [menu.data]);
 
-  // Стоп-лист — состояние на сегодня: блюдо остаётся в меню приложения,
-  // но с подписью «закончилось». Снятое с продажи гость вообще не видит
-  const toggleStop = async (dish: RestaurantDish) => {
-    setBusyDish(dish.dish_id);
-    setFailure(null);
-    try {
+  const invalidate = () =>
+    void queryClient.invalidateQueries({ queryKey: ["restaurant-menu", restaurantId] });
+
+  const saveDish = useMutation({
+    mutationFn: (dish: RestaurantDish) =>
+      api.setRestaurantDish(restaurantId, {
+        dish_id: dish.dish_id,
+        is_available: dish.is_available,
+        price_kopecks: dish.price_kopecks,
+      }),
+    onMutate: (dish) => setBusyDish(dish.dish_id),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSettled: () => setBusyDish(null),
+    onSuccess: (saved) => {
+      setRows((current) =>
+        current.map((row) =>
+          row.dish_id === saved.dish_id ? { ...saved, in_stop_list: row.in_stop_list } : row,
+        ),
+      );
+      invalidate();
+    },
+  });
+
+  const toggleStop = useMutation({
+    mutationFn: async (dish: RestaurantDish) => {
       if (dish.in_stop_list) {
         const entries = await api.stopList();
         const entry = entries.find(
           (row) => row.dish_id === dish.dish_id && row.restaurant_id === restaurantId,
         );
         if (entry) await api.removeStop(entry.id);
-      } else {
-        await api.addStop(restaurantId, dish.dish_id);
+        return { dishId: dish.dish_id, inStopList: false };
       }
 
+      await api.addStop(restaurantId, dish.dish_id);
+      return { dishId: dish.dish_id, inStopList: true };
+    },
+    onMutate: (dish) => setBusyDish(dish.dish_id),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSettled: () => setBusyDish(null),
+    onSuccess: ({ dishId, inStopList }) => {
       setRows((current) =>
-        current.map((row) =>
-          row.dish_id === dish.dish_id ? { ...row, in_stop_list: !row.in_stop_list } : row,
-        ),
+        current.map((row) => (row.dish_id === dishId ? { ...row, in_stop_list: inStopList } : row)),
       );
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось изменить стоп-лист");
-    } finally {
-      setBusyDish(null);
-    }
-  };
-
-  const save = async (dish: RestaurantDish, price: number | null, available: boolean) => {
-    setBusyDish(dish.dish_id);
-    setFailure(null);
-    try {
-      const saved = await api.setRestaurantDish(restaurantId, {
-        dish_id: dish.dish_id,
-        price_kopecks: price,
-        is_available: available,
-      });
-      setRows((current) =>
-        current.map((row) =>
-          row.dish_id === dish.dish_id ? { ...saved, in_stop_list: row.in_stop_list } : row,
-        ),
-      );
-    } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Не удалось сохранить");
-    } finally {
-      setBusyDish(null);
-    }
-  };
+      toast.success(inStopList ? "Блюдо добавлено в стоп-лист" : "Блюдо вернули в продажу");
+    },
+  });
 
   const visible = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return rows;
-    return rows.filter(
-      (row) =>
-        row.name.toLowerCase().includes(query) || row.category_name.toLowerCase().includes(query),
+    const needle = search.trim().toLocaleLowerCase("ru-RU");
+    return rows.filter((row) =>
+      `${row.name} ${row.category_name}`.toLocaleLowerCase("ru-RU").includes(needle),
     );
   }, [rows, search]);
 
   const changed = rows.filter(
     (row) => !row.is_available || row.price_kopecks !== row.base_price_kopecks,
   ).length;
+  const stopped = rows.filter((row) => row.in_stop_list).length;
+  const unavailable = rows.filter((row) => !row.is_available).length;
+  const categories = new Set(rows.map((row) => row.category_name)).size;
+
+  const columns = useMemo(
+    () =>
+      column.columns([
+        column.accessor("name", {
+          header: "Блюдо",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <div>
+                <div className="row-main">{info.getValue()}</div>
+                <div className="row-sub">
+                  {dish.category_name}
+                  {dish.in_stop_list ? " · " : ""}
+                  {dish.in_stop_list ? <Badge text="стоп-лист" tone="warn" /> : null}
+                </div>
+              </div>
+            );
+          },
+        }),
+        column.accessor("base_price_kopecks", {
+          header: "Цена сети",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => <span className="mono">{formatPrice(info.getValue())}</span>,
+        }),
+        column.accessor("price_kopecks", {
+          header: "Цена здесь",
+          meta: { align: "right" },
+          sortFn: "basic",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <input
+                className="input table-price-input"
+                disabled={busyDish === dish.dish_id}
+                inputMode="numeric"
+                value={Math.round(info.getValue() / 100)}
+                onBlur={() => saveDish.mutate(dish)}
+                onChange={(event) =>
+                  setRows((current) =>
+                    current.map((row) =>
+                      row.dish_id === dish.dish_id
+                        ? { ...row, price_kopecks: Number(event.target.value.replace(/\D/g, "") || 0) * 100 }
+                        : row,
+                    ),
+                  )
+                }
+              />
+            );
+          },
+        }),
+        column.accessor("is_available", {
+          header: "Продаётся",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <label className="inline-check">
+                <input
+                  checked={info.getValue()}
+                  disabled={busyDish === dish.dish_id}
+                  type="checkbox"
+                  onChange={(event) => saveDish.mutate({ ...dish, is_available: event.target.checked })}
+                />
+                {info.getValue() ? "да" : "нет"}
+              </label>
+            );
+          },
+        }),
+        column.accessor("in_stop_list", {
+          header: "Сегодня",
+          cell: (info) => {
+            const dish = info.row.original;
+            return (
+              <label className="inline-check">
+                <input
+                  checked={info.getValue()}
+                  disabled={busyDish === dish.dish_id || !dish.is_available}
+                  type="checkbox"
+                  onChange={() => toggleStop.mutate(dish)}
+                />
+                {info.getValue() ? "закончилось" : "есть"}
+              </label>
+            );
+          },
+        }),
+      ]),
+    [busyDish, saveDish, toggleStop],
+  );
 
   return (
-    <div style={{ ...styles.card, padding: spacing.lg, display: "grid", gap: spacing.base }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <article className="split-detail">
+      <div className="section-head">
         <div>
-          <div style={{ fontSize: typography.h3.fontSize, fontWeight: 600 }}>
-            Меню: {restaurantName}
-          </div>
-          <div style={{ color: c.textSecondary, fontSize: typography.caption.fontSize }}>
-            Блюд {rows.length}, отличий от общего меню {changed}
-          </div>
+          <h2 className="section-title">Меню точки</h2>
+          <p className="section-copy">{restaurantName}</p>
         </div>
-        <Button tone="quiet" onClick={onClose}>
-          Закрыть
+        <Button variant="ghost" onClick={onClose}>
+          <ArrowLeft size={15} aria-hidden />
+          К карточке
         </Button>
       </div>
 
-      <input
-        style={{ ...styles.input, maxWidth: 360 }}
-        placeholder="Поиск по блюду или категории"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
-
-      {failure ? <div style={{ color: c.danger }}>{failure}</div> : null}
-
-      <div style={{ maxHeight: 520, overflowY: "auto", borderRadius: radius.md }}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Блюдо</th>
-              <th style={styles.th}>Цена сети</th>
-              <th style={styles.th}>Цена здесь</th>
-              <th style={styles.th}>Продаётся</th>
-              <th style={styles.th}>Закончилось сегодня</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((dish) => (
-              <tr key={dish.dish_id}>
-                <td style={styles.td}>
-                  <div style={{ fontWeight: 600 }}>{dish.name}</div>
-                  <div style={{ color: c.textTertiary, fontSize: typography.caption.fontSize }}>
-                    {dish.category_name}
-                    {dish.in_stop_list ? " · " : ""}
-                    {dish.in_stop_list ? <Badge text="в стоп-листе" tone="warn" /> : null}
-                  </div>
-                </td>
-
-                <td style={{ ...styles.td, color: c.textSecondary }}>
-                  {formatPrice(dish.base_price_kopecks)}
-                </td>
-
-                <td style={styles.td}>
-                  <input
-                    style={{ ...styles.input, width: 110 }}
-                    inputMode="numeric"
-                    disabled={busyDish === dish.dish_id}
-                    value={Math.round(dish.price_kopecks / 100)}
-                    onChange={(event) =>
-                      setRows((current) =>
-                        current.map((row) =>
-                          row.dish_id === dish.dish_id
-                            ? {
-                                ...row,
-                                price_kopecks:
-                                  Number(event.target.value.replace(/\D/g, "") || 0) * 100,
-                              }
-                            : row,
-                        ),
-                      )
-                    }
-                    onBlur={() => void save(dish, dish.price_kopecks, dish.is_available)}
-                  />
-                </td>
-
-                <td style={styles.td}>
-                  <label style={{ display: "flex", alignItems: "center", gap: spacing.sm }}>
-                    <input
-                      type="checkbox"
-                      checked={dish.is_available}
-                      disabled={busyDish === dish.dish_id}
-                      onChange={(event) =>
-                        void save(dish, dish.price_kopecks, event.target.checked)
-                      }
-                    />
-                    <span style={{ color: dish.is_available ? c.textPrimary : c.textTertiary }}>
-                      {dish.is_available ? "да" : "нет"}
-                    </span>
-                  </label>
-                </td>
-
-                <td style={styles.td}>
-                  <label style={{ display: "flex", alignItems: "center", gap: spacing.sm }}>
-                    <input
-                      type="checkbox"
-                      checked={dish.in_stop_list}
-                      disabled={busyDish === dish.dish_id || !dish.is_available}
-                      onChange={() => void toggleStop(dish)}
-                    />
-                    <span style={{ color: dish.in_stop_list ? c.warning : c.textTertiary }}>
-                      {dish.in_stop_list ? "в стоп-листе" : "есть"}
-                    </span>
-                  </label>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="metric-strip">
+        <div className="metric-card">
+          <div className="metric-label">Блюд</div>
+          <div className="metric-value">{rows.length}</div>
+          <div className="metric-note">в меню точки</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Отличий</div>
+          <div className="metric-value">{changed}</div>
+          <div className="metric-note">цена или доступность</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Стоп-лист</div>
+          <div className="metric-value">{stopped}</div>
+          <div className="metric-note">закончилось сегодня</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Разделов</div>
+          <div className="metric-value">{categories}</div>
+          <div className="metric-note">{unavailable > 0 ? `${unavailable} скрыто` : "всё продаётся"}</div>
+        </div>
       </div>
-    </div>
+
+      <Section title="Позиции">
+        <div className="surface-toolbar">
+          <label className="field toolbar-field">
+            <span className="field-label">Поиск</span>
+            <span className="search-control">
+              <Search className="search-icon" size={15} aria-hidden />
+              <input
+                className="input"
+                placeholder="Поиск позиции"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </span>
+          </label>
+          <DensityToggle density={density} onChange={setDensity} />
+        </div>
+
+        {menu.error ? (
+          <div className="error-state">
+            <h2>Не удалось загрузить меню</h2>
+            <p>{errorMessage(menu.error)}</p>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={visible}
+            density={density}
+            getRowId={(row) => row.dish_id}
+            isLoading={menu.isPending}
+            pageSize={20}
+            empty={
+              <div className="empty-state">
+                <Utensils size={20} aria-hidden />
+                <h2>Ничего не найдено</h2>
+                <p>Проверьте поиск по названию блюда или разделу меню.</p>
+              </div>
+            }
+          />
+        )}
+      </Section>
+    </article>
   );
 }

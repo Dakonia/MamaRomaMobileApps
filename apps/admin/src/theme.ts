@@ -4,43 +4,43 @@
  * сине-серый, на котором цветные зоны и статусы видно сразу.
  */
 export const admin = {
-  background: "#F4F6F9",
-  surface: "#FFFFFF",
-  surfaceSunken: "#EEF1F6",
-  surfaceRaised: "#F9FAFC",
+  background: "var(--bg)",
+  surface: "var(--surface)",
+  surfaceSunken: "var(--sunken)",
+  surfaceRaised: "var(--surface)",
 
-  textPrimary: "#161B26",
-  textSecondary: "#4A5468",
-  textTertiary: "#7B8598",
-  textOnAccent: "#FFFFFF",
+  textPrimary: "var(--ink)",
+  textSecondary: "var(--ink-2)",
+  textTertiary: "var(--ink-3)",
+  textOnAccent: "var(--on-acc)",
 
-  border: "#DDE3EC",
-  borderStrong: "#C3CCDA",
-  divider: "#E9EDF3",
+  border: "var(--line)",
+  borderStrong: "var(--line-2)",
+  divider: "var(--line)",
 
-  accent: "#2D5BD7",
-  accentPressed: "#2249B4",
-  accentSubtle: "#E7EDFC",
+  accent: "var(--acc)",
+  accentPressed: "var(--acc-hover)",
+  accentSubtle: "var(--acc-sub)",
 
-  success: "#1B7F5A",
-  successSubtle: "#E4F2EC",
-  warning: "#B8770B",
-  warningSubtle: "#FBF0DA",
-  danger: "#C0392B",
-  dangerSubtle: "#FBE9E7",
+  success: "var(--ok)",
+  successSubtle: "var(--ok-sub)",
+  warning: "var(--warn)",
+  warningSubtle: "var(--warn-sub)",
+  danger: "var(--bad)",
+  dangerSubtle: "var(--bad-sub)",
 
-  skeleton: "#E5EAF2",
-  scrim: "rgba(22, 27, 38, 0.55)",
+  skeleton: "var(--skeleton)",
+  scrim: "var(--scrim)",
 } as const;
 
 /** Цвета зон на карте: различимые между собой и не из палитры бренда. */
 export const zoneColors = [
-  "#2D5BD7",
-  "#0E9F8C",
-  "#B8770B",
-  "#8E44AD",
-  "#C0392B",
-  "#3C7A1E",
-  "#D3562B",
-  "#1F6F9E",
+  "#1E3A8A",
+  "#0F766E",
+  "#B45309",
+  "#7E22CE",
+  "#B91C1C",
+  "#3F6212",
+  "#C2410C",
+  "#0369A1",
 ] as const;
