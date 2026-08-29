@@ -545,6 +545,8 @@ class FeedbackRow(BaseModel):
     restaurant_name: str
     guest_name: str | None
     guest_phone: str
+    guest_deleted: bool = False
+    contact_erased: bool = False
     rating: int
     tags: list[str]
     comment: str | None

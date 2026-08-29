@@ -11,7 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useEffect } from 'react';
 
-import { useRefreshing } from '@/store/refreshing';
+import { refreshingTop, useRefreshing } from '@/store/refreshing';
 import { useTheme } from '@/theme/theme-provider';
 
 /** Цвета самой пиццы: это рисунок, а не элемент интерфейса. */
@@ -30,8 +30,8 @@ const PEPPERONI = [0, 72, 144, 216, 288];
  */
 export function PizzaSpinner() {
   const theme = useTheme();
-  const active = useRefreshing((state) => state.active);
-  const top = useRefreshing((state) => state.top);
+  const top = useRefreshing((state) => refreshingTop(state.running));
+  const active = top !== null;
 
   const spin = useSharedValue(0);
 

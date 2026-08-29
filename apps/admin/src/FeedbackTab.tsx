@@ -24,16 +24,28 @@ function priorityLabel(rating: number): string {
   return "Низкий";
 }
 
+function isDeletedMarker(value: string): boolean {
+  return value.trim().toLocaleLowerCase("ru-RU").startsWith("deleted-");
+}
+
+function isGuestDeleted(row: Feedback): boolean {
+  return row.guest_deleted || isDeletedMarker(row.guest_phone);
+}
+
 function guestName(row: Feedback): string {
+  if (isGuestDeleted(row)) return "Гость удалён";
   const name = row.guest_name?.trim();
-  if (!name || name.toLocaleLowerCase("ru-RU") === "deleted") return "Гость без имени";
-  return name;
+  return name || "Гость без имени";
 }
 
 function guestPhone(row: Feedback): string {
-  const phone = row.guest_phone.trim();
-  if (!phone || phone.toLocaleLowerCase("ru-RU").startsWith("deleted-")) return "Телефон скрыт";
-  return phone;
+  if (row.contact_erased || isGuestDeleted(row)) return "Контакты очищены";
+  return row.guest_phone.trim() || "Без телефона";
+}
+
+function deleteMarker(row: Feedback): string | null {
+  if (!isDeletedMarker(row.guest_phone)) return null;
+  return row.guest_phone.replace(/^deleted-/i, "");
 }
 
 function Stars({ rating }: { rating: number }) {
@@ -159,6 +171,11 @@ export function FeedbackTab() {
               <div>
                 <div className="row-main">{guestName(row)}</div>
                 <div className="row-sub">{guestPhone(row)}</div>
+                {isGuestDeleted(row) ? (
+                  <div className="chips-line mt-1">
+                    <Badge text="аккаунт удалён" tone="muted" />
+                  </div>
+                ) : null}
               </div>
             );
           },
@@ -367,6 +384,20 @@ export function FeedbackTab() {
                 <span className="detail-label">Телефон</span>
                 <span>{guestPhone(selected)}</span>
               </div>
+              {isGuestDeleted(selected) ? (
+                <>
+                  <div className="detail-row">
+                    <span className="detail-label">Статус</span>
+                    <Badge text="гость удалён" tone="muted" />
+                  </div>
+                  {deleteMarker(selected) ? (
+                    <div className="detail-row">
+                      <span className="detail-label">Маркер</span>
+                      <code className="table-code">{deleteMarker(selected)}</code>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </section>
 

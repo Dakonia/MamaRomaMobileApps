@@ -255,6 +255,8 @@ export type Feedback = {
   restaurant_name: string;
   guest_name: string | null;
   guest_phone: string;
+  guest_deleted: boolean;
+  contact_erased: boolean;
   rating: number;
   tags: string[];
   comment: string | null;

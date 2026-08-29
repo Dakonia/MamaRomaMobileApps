@@ -1,32 +1,71 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { RefreshControl } from 'react-native';
 
 import { useRefreshing } from '@/store/refreshing';
 import { useTheme } from '@/theme/theme-provider';
 
 /**
+ * Дольше этого обновление не показываем. Запросы продолжают идти и данные
+ * приедут, но крутящийся без конца значок — это уже не «загружаем», а «висим».
+ */
+const PATIENCE_MS = 15_000;
+
+/**
  * Общий жест «потянуть, чтобы обновить». Экран отдаёт список своих запросов и,
- * если у него плавающая шапка, её высоту — чтобы спиннер вышел из-под неё.
+ * если у него плавающая шапка, её высоту — чтобы значок вышел из-под неё.
  * Вид и состояние берутся отсюда: тогда жест везде одинаковый.
  */
 export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
   const theme = useTheme();
+  const id = useId();
   const [refreshing, setRefreshing] = useState(false);
 
+  // Чтобы обещание, отставшее от жизни экрана, не включало значок заново
+  const alive = useRef(true);
+  const busy = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const finish = useCallback(() => {
+    busy.current = false;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+
+    useRefreshing.getState().stop(id);
+    if (alive.current) setRefreshing(false);
+  }, [id]);
+
   const onRefresh = useCallback(() => {
+    // Пока предыдущее обновление не закончилось, второе не начинаем
+    if (busy.current) return;
+
+    busy.current = true;
     setRefreshing(true);
-    void reload().finally(() => setRefreshing(false));
-  }, [reload]);
+    useRefreshing.getState().start(id, offset);
 
-  // Пока идёт обновление, поверх приложения крутится пицца
+    // Страховка от запроса, который не вернётся никогда
+    timer.current = setTimeout(() => {
+      if (__DEV__) {
+        console.warn(`Обновление длится дольше ${PATIENCE_MS / 1000} с — значок убран`);
+      }
+      finish();
+    }, PATIENCE_MS);
+
+    void Promise.resolve()
+      .then(reload)
+      .catch(() => undefined)
+      .finally(finish);
+  }, [finish, id, offset, reload]);
+
+  // Экран закрыли посреди обновления — запись о нём убираем сами
   useEffect(() => {
-    const { start, stop } = useRefreshing.getState();
+    alive.current = true;
 
-    if (refreshing) start(offset);
-    else stop();
-
-    return stop;
-  }, [refreshing, offset]);
+    return () => {
+      alive.current = false;
+      if (timer.current) clearTimeout(timer.current);
+      useRefreshing.getState().stop(id);
+    };
+  }, [id]);
 
   return (
     <RefreshControl
