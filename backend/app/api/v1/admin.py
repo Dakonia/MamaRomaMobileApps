@@ -1460,6 +1460,19 @@ async def _extra_read(session: SessionDep, extra: DishExtra) -> DishExtraAdminRe
             category_extra_links.c.extra_id == extra.id
         )
     )
+    dishes = await session.execute(
+        select(
+            Dish.id,
+            Dish.name,
+            Dish.category_id,
+            Dish.is_active,
+            MenuCategory.name.label("category_name"),
+        )
+        .join(dish_extra_links, dish_extra_links.c.dish_id == Dish.id)
+        .join(MenuCategory, MenuCategory.id == Dish.category_id)
+        .where(dish_extra_links.c.extra_id == extra.id, Dish.tenant_id == extra.tenant_id)
+        .order_by(MenuCategory.sort_order, Dish.sort_order, Dish.name)
+    )
     return DishExtraAdminRead(
         id=extra.id,
         name=extra.name,
@@ -1467,6 +1480,16 @@ async def _extra_read(session: SessionDep, extra: DishExtra) -> DishExtraAdminRe
         is_active=extra.is_active,
         dishes_count=total or 0,
         category_ids=list(categories),
+        linked_dishes=[
+            {
+                "id": row.id,
+                "name": row.name,
+                "category_id": row.category_id,
+                "category_name": row.category_name,
+                "is_active": row.is_active,
+            }
+            for row in dishes
+        ],
     )
 
 
@@ -1487,6 +1510,32 @@ async def extras(
     for row in await session.execute(select(category_extra_links)):
         sections.setdefault(row.extra_id, []).append(row.category_id)
 
+    linked_dishes: dict[UUID, list[dict[str, object]]] = {}
+    linked_rows = await session.execute(
+        select(
+            dish_extra_links.c.extra_id,
+            Dish.id,
+            Dish.name,
+            Dish.category_id,
+            Dish.is_active,
+            MenuCategory.name.label("category_name"),
+        )
+        .join(Dish, Dish.id == dish_extra_links.c.dish_id)
+        .join(MenuCategory, MenuCategory.id == Dish.category_id)
+        .where(Dish.tenant_id == tenant.id)
+        .order_by(MenuCategory.sort_order, Dish.sort_order, Dish.name)
+    )
+    for row in linked_rows:
+        linked_dishes.setdefault(row.extra_id, []).append(
+            {
+                "id": row.id,
+                "name": row.name,
+                "category_id": row.category_id,
+                "category_name": row.category_name,
+                "is_active": row.is_active,
+            }
+        )
+
     rows = await session.scalars(
         select(DishExtra).where(DishExtra.tenant_id == tenant.id).order_by(DishExtra.name)
     )
@@ -1498,6 +1547,7 @@ async def extras(
             is_active=row.is_active,
             dishes_count=counts.get(row.id, 0),
             category_ids=sections.get(row.id, []),
+            linked_dishes=linked_dishes.get(row.id, []),
         )
         for row in rows
     ]

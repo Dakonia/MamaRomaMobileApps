@@ -269,6 +269,14 @@ export type FeedbackSummary = {
   by_rating: Record<string, number>;
 };
 
+export type DishExtraLinkedDish = {
+  category_id: string;
+  category_name: string;
+  id: string;
+  is_active: boolean;
+  name: string;
+};
+
 export type DishExtra = {
   id: string;
   name: string;
@@ -276,6 +284,7 @@ export type DishExtra = {
   is_active: boolean;
   dishes_count: number;
   category_ids: string[];
+  linked_dishes: DishExtraLinkedDish[];
 };
 
 export type PromoCode = {

@@ -200,15 +200,24 @@ export default function BookingScreen() {
   const restaurant = restaurants.data?.find((item) => item.id === cart.restaurantId);
 
   /**
-   * Залы сети для случая, когда ресторан ещё не выбран: берём по одному кадру
-   * у первых точек с фотографиями — получается витрина вместо пустоты.
+   * Залы сети для случая, когда ресторан ещё не выбран: по кадру с шести точек,
+   * выбранных вразнобой. Постоянная шестёрка примелькалась бы, а остальные
+   * двадцать восемь залов гость не увидел бы никогда.
+   *
+   * Порядок замирает, пока экран открыт: тасовать кадры под пальцем нельзя.
    */
-  const hallShots = (restaurants.data ?? [])
-    .map((item) => item.photos?.[0] ?? item.image_url)
-    .filter((path): path is string => Boolean(path))
-    .slice(0, 6)
-    .map((path) => mediaUrl(path))
-    .filter((uri): uri is string => Boolean(uri));
+  const hallShots = useMemo(
+    () =>
+      (restaurants.data ?? [])
+        .map((item) => ({ item, order: Math.random() }))
+        .sort((left, right) => left.order - right.order)
+        .map(({ item }) => item.photos?.[0] ?? item.image_url)
+        .filter((path): path is string => Boolean(path))
+        .slice(0, 6)
+        .map((path) => mediaUrl(path))
+        .filter((uri): uri is string => Boolean(uri)),
+    [restaurants.data],
+  );
 
   const slots = useQuery({
     queryKey: ['slots', cart.restaurantId, selectedDate],

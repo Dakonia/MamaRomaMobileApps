@@ -427,6 +427,14 @@ class ExtraCategoriesWrite(BaseModel):
     category_ids: list[UUID] = []
 
 
+class DishExtraLinkedDishRead(BaseModel):
+    id: UUID
+    name: str
+    category_id: UUID
+    category_name: str
+    is_active: bool
+
+
 class DishExtraAdminRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -438,6 +446,8 @@ class DishExtraAdminRead(BaseModel):
     dishes_count: int = 0
     # Разделы, где добавка предлагается ко всем блюдам
     category_ids: list[UUID] = []
+    # Конкретные блюда, куда добавка привязана точечно
+    linked_dishes: list[DishExtraLinkedDishRead] = []
 
 
 # --- Уведомления ---------------------------------------------------------
