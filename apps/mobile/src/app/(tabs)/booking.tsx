@@ -13,7 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { api, type ApiError, type Reservation, type Slot } from '@/api/client';
+import { api, mediaUrl, type ApiError, type Reservation, type Slot } from '@/api/client';
 import { BookingDone } from '@/components/booking-done';
 import { HallGallery } from '@/components/hall-gallery';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';
@@ -199,6 +199,17 @@ export default function BookingScreen() {
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() });
   const restaurant = restaurants.data?.find((item) => item.id === cart.restaurantId);
 
+  /**
+   * Залы сети для случая, когда ресторан ещё не выбран: берём по одному кадру
+   * у первых точек с фотографиями — получается витрина вместо пустоты.
+   */
+  const hallShots = (restaurants.data ?? [])
+    .map((item) => item.photos?.[0] ?? item.image_url)
+    .filter((path): path is string => Boolean(path))
+    .slice(0, 6)
+    .map((path) => mediaUrl(path))
+    .filter((uri): uri is string => Boolean(uri));
+
   const slots = useQuery({
     queryKey: ['slots', cart.restaurantId, selectedDate],
     queryFn: () => api.slots(cart.restaurantId ?? '', selectedDate),
@@ -282,6 +293,7 @@ export default function BookingScreen() {
       >
         <HallGallery
           restaurant={restaurant}
+          network={hallShots}
           loading={restaurants.isPending}
           open={
             restaurant ? isOpenNow(restaurant.opens_at, restaurant.closes_at) && !restaurant.is_paused : false

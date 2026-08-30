@@ -22,6 +22,11 @@ const AUTOPLAY_MS = 4200;
 
 type Props = {
   restaurant?: Restaurant;
+  /**
+   * Залы сети: показываем, пока ресторан не выбран. Раньше на этом месте была
+   * чёрная дыра — гость открывал бронь и упирался в пустоту.
+   */
+  network?: string[];
   loading?: boolean;
   open: boolean;
   onChange: () => void;
@@ -84,7 +89,7 @@ function Frame({
  * Витрина зала: несколько снимков ресторана листаются сами, поверх — название,
  * часы и переход к списку. Гость выбирает стол глазами, а не по адресу.
  */
-export function HallGallery({ restaurant, loading, open, onChange }: Props) {
+export function HallGallery({ restaurant, network, loading, open, onChange }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -98,12 +103,14 @@ export function HallGallery({ restaurant, loading, open, onChange }: Props) {
     .map((path) => mediaUrl(path))
     .filter((uri): uri is string => Boolean(uri));
 
-  // Больше восьми кадров карусели никто не пролистывает, а память они занимают
-  const shots = (
+  const own =
     photos.length > 0
       ? photos
-      : [mediaUrl(restaurant?.image_url)].filter((uri): uri is string => Boolean(uri))
-  ).slice(0, 8);
+      : [mediaUrl(restaurant?.image_url)].filter((uri): uri is string => Boolean(uri));
+
+  // Больше восьми кадров карусели никто не пролистывает, а память они занимают.
+  // Ресторан не выбран — крутим залы сети: это и есть приглашение выбрать
+  const shots = (own.length > 0 ? own : (network ?? [])).slice(0, 8);
 
   const onScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -184,6 +191,7 @@ export function HallGallery({ restaurant, loading, open, onChange }: Props) {
         ]}
       >
         <View style={[styles.row, { gap: theme.spacing.sm }]}>
+          {restaurant ? (
           <View
             style={[
               styles.badge,
@@ -201,6 +209,7 @@ export function HallGallery({ restaurant, loading, open, onChange }: Props) {
               {open ? 'Открыт' : 'Закрыт'}
             </Text>
           </View>
+          ) : null}
 
           <View style={styles.grow} />
 
@@ -229,8 +238,16 @@ export function HallGallery({ restaurant, loading, open, onChange }: Props) {
           </Text>
 
           <Text numberOfLines={1} style={[theme.typography.h1, { color: '#FFFFFF' }]}>
-            {restaurant?.name ?? 'Выберите ресторан'}
+            {restaurant?.name ?? 'Стол на ваше имя'}
           </Text>
+
+          {/* Пока ресторана нет, объясняем, что будет дальше, — иначе экран
+              выглядит как ошибка, а не как первый шаг */}
+          {restaurant ? null : (
+            <Text style={[theme.typography.caption, { color: 'rgba(255,255,255,0.85)' }]}>
+              Выберите ресторан — покажем зал и свободное время
+            </Text>
+          )}
 
           {restaurant?.metro ? (
             <View style={[styles.row, { gap: theme.spacing.xs }]}>
