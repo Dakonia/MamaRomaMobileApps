@@ -15,7 +15,7 @@ import Animated, {
 
 import { api, mediaUrl, type ApiError, type Reservation, type Slot } from '@/api/client';
 import { BookingDone } from '@/components/booking-done';
-import { HallGallery } from '@/components/hall-gallery';
+import { HallGallery, HALL_HEIGHT } from '@/components/hall-gallery';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { PressableScale } from '@/components/pressable-scale';
 import { PrimaryButton } from '@/components/primary-button';
@@ -27,6 +27,8 @@ import { track } from '@/lib/analytics';
 import { keyboardScroll } from '@/lib/keyboard';
 import { useCart } from '@/store/cart';
 import { useSession } from '@/store/session';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { useRefresher } from '@/components/refresher';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -74,6 +76,7 @@ function DayCard({
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const pick = useDerivedValue(() => withSpring(selected ? 1 : 0, { damping: 15, stiffness: 170 }));
 
   // Карточка не растёт, а приподнимается: расти ей некуда — она упирается в край
@@ -180,6 +183,7 @@ function SlotChip({
 
 export default function BookingScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const cart = useCart();
   const session = useSession();
   const queryClient = useQueryClient();
@@ -250,9 +254,14 @@ export default function BookingScreen() {
 
   // Занятое и уже прошедшее время не показываем: выбрать его нельзя,
   // а страницу оно растягивает вдвое
-  const refresher = useRefresher(async () => {
-    await Promise.all([slots.refetch(), restaurants.refetch()]);
-  });
+  const refresher = useRefresher(
+    async () => {
+      await Promise.all([slots.refetch(), restaurants.refetch()]);
+    },
+    // Сверху во весь экран лежит снимок зала: поверх него значок выглядел
+    // как соринка на фотографии
+    HALL_HEIGHT + insets.top,
+  );
 
   const rows = (slots.data ?? []).filter((slot) => slot.is_available);
   const groups = [

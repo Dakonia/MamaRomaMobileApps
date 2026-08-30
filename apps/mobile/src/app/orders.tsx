@@ -2,12 +2,13 @@ import { FlashList } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, type Order } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
+import { useRefresher } from '@/components/refresher';
 import { OrderHistoryCard } from '@/components/order-history-card';
 import { PressableScale } from '@/components/pressable-scale';
 import { ScreenHeader } from '@/components/screen-header';
@@ -42,6 +43,9 @@ export default function OrdersScreen() {
   const [filter, setFilter] = useState<Filter>('all');
 
   const orders = useQuery({ queryKey: ['orders'], queryFn: () => api.orders() });
+
+  // Под заголовком экрана, а не поверх него
+  const refresher = useRefresher(() => orders.refetch(), insets.top + theme.spacing.xxl);
 
   const rows = useMemo<Row[]>(() => {
     const all = orders.data ?? [];
@@ -139,15 +143,7 @@ export default function OrdersScreen() {
             paddingHorizontal: theme.layout.screenPadding,
             paddingBottom: insets.bottom + theme.spacing.huge,
           }}
-          refreshControl={
-            <RefreshControl
-              refreshing={orders.isRefetching}
-              onRefresh={() => {
-                void orders.refetch();
-              }}
-              tintColor={theme.colors.brand}
-            />
-          }
+          refreshControl={refresher}
           ListHeaderComponent={
             spent > 0 ? (
               <Animated.View

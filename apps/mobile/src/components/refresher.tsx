@@ -14,6 +14,13 @@ import { useTheme } from '@/theme/theme-provider';
 const PATIENCE_MS = 15_000;
 
 /**
+ * Меньше этого значок не живёт. Запрос из кэша возвращается за сотню
+ * миллисекунд, и пицца успевала только моргнуть — выглядело так, будто жест
+ * не сработал.
+ */
+const AT_LEAST_MS = 700;
+
+/**
  * Общий жест «потянуть, чтобы обновить». Экран отдаёт список своих запросов и,
  * если у него плавающая шапка, её высоту — чтобы значок вышел из-под неё.
  * Вид и состояние берутся отсюда: тогда жест везде одинаковый.
@@ -29,13 +36,22 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
   const busy = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const started = useRef(0);
+
   const finish = useCallback(() => {
     busy.current = false;
     if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
 
-    useRefreshing.getState().stop(id);
-    if (alive.current) setRefreshing(false);
+    const left = AT_LEAST_MS - (Date.now() - started.current);
+
+    const hide = () => {
+      timer.current = null;
+      useRefreshing.getState().stop(id);
+      if (alive.current) setRefreshing(false);
+    };
+
+    if (left > 0) timer.current = setTimeout(hide, left);
+    else hide();
   }, [id]);
 
   const onRefresh = useCallback(() => {
@@ -43,6 +59,7 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
     if (busy.current) return;
 
     busy.current = true;
+    started.current = Date.now();
     setRefreshing(true);
     useRefreshing.getState().start(id, offset);
 

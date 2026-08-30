@@ -4,7 +4,6 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +24,9 @@ import { api, mediaUrl, type Promotion } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { PressableScale } from '@/components/pressable-scale';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useRefresher } from '@/components/refresher';
 import { ScreenHeader } from '@/components/screen-header';
 import { Skeleton } from '@/components/skeleton';
 import { useCart } from '@/store/cart';
@@ -142,10 +144,15 @@ export default function PromosScreen() {
     shadowOpacity: scrolled.value * 0.08,
   }));
 
+  const insets = useSafeAreaInsets();
+
   const promos = useQuery({
     queryKey: ['promotions', 'all'],
     queryFn: () => api.promotions(),
   });
+
+  // Значок обновления встаёт под заголовком, а не поверх него
+  const refresher = useRefresher(() => promos.refetch(), insets.top + theme.spacing.xxl);
 
   const restaurant = useQuery({
     queryKey: ['restaurant', cart.restaurantId],
@@ -482,15 +489,7 @@ export default function PromosScreen() {
           gap: theme.spacing.lg,
         }}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={promos.isRefetching}
-            onRefresh={() => {
-              void promos.refetch();
-            }}
-            tintColor={theme.colors.brand}
-          />
-        }
+        refreshControl={refresher}
       >
         {active.key === 'elsewhere' && restaurant.data ? (
           <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>

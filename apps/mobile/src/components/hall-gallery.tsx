@@ -17,7 +17,10 @@ import { PressableScale } from '@/components/pressable-scale';
 import { Skeleton } from '@/components/skeleton';
 import { useTheme } from '@/theme/theme-provider';
 
-const HEIGHT = 300;
+/** Высота галереи: её знает и экран брони — чтобы не класть ничего поверх. */
+export const HALL_HEIGHT = 300;
+
+const HEIGHT = HALL_HEIGHT;
 const AUTOPLAY_MS = 4200;
 
 type Props = {

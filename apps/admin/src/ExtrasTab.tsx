@@ -120,10 +120,12 @@ function ExtraDrawer({
 }) {
   const [draft, setDraft] = useState(() => toDraft(extra ?? undefined));
   const [dishSearch, setDishSearch] = useState("");
+  const [dishCategoryId, setDishCategoryId] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(toDraft(extra ?? undefined));
     setDishSearch("");
+    setDishCategoryId(linkedDishes(extra).at(0)?.category_id ?? null);
   }, [extra]);
 
   const set = <K extends keyof ExtraDraft>(key: K, value: ExtraDraft[K]) =>
@@ -144,6 +146,16 @@ function ExtraDrawer({
       dish_ids: current.dish_ids.includes(dishId)
         ? current.dish_ids.filter((id) => id !== dishId)
         : [...current.dish_ids, dishId],
+    }));
+  };
+
+  const setCategoryDishes = (categoryId: string, shouldPick: boolean) => {
+    const categoryDishIds = dishes.filter((dish) => dish.category_id === categoryId).map((dish) => dish.id);
+    setDraft((current) => ({
+      ...current,
+      dish_ids: shouldPick
+        ? Array.from(new Set([...current.dish_ids, ...categoryDishIds]))
+        : current.dish_ids.filter((dishId) => !categoryDishIds.includes(dishId)),
     }));
   };
 
@@ -172,18 +184,24 @@ function ExtraDrawer({
     });
   const affectedDishIds = new Set([...sectionDishes.map((dish) => dish.id), ...draft.dish_ids]);
   const affectedCount = affectedDishIds.size || directCount;
-  const filteredDishes = dishes.filter((dish) => {
-    const needle = dishSearch.trim().toLocaleLowerCase("ru-RU");
-    if (!needle) return true;
-    const categoryName = categoryById.get(dish.category_id)?.name ?? "";
-    return `${dish.name} ${categoryName}`.toLocaleLowerCase("ru-RU").includes(needle);
-  });
-  const dishGroups = sortedCategories
+  const directDishIds = new Set(draft.dish_ids);
+  const dishPickerGroups = sortedCategories
     .map((category) => ({
       category,
-      dishes: filteredDishes.filter((dish) => dish.category_id === category.id),
+      dishes: dishes.filter((dish) => dish.category_id === category.id),
     }))
-    .filter((group) => group.dishes.length > 0);
+    .filter((group) => group.dishes.length > 0)
+    .map((group) => ({
+      ...group,
+      selectedCount: group.dishes.filter((dish) => directDishIds.has(dish.id)).length,
+    }));
+  const activeDishGroup =
+    dishPickerGroups.find((group) => group.category.id === dishCategoryId) ?? null;
+  const activeDishNeedle = dishSearch.trim().toLocaleLowerCase("ru-RU");
+  const activeDishes = activeDishGroup
+    ? activeDishGroup.dishes.filter((dish) => dish.name.toLocaleLowerCase("ru-RU").includes(activeDishNeedle))
+    : [];
+  const activeSelectedCount = activeDishGroup?.selectedCount ?? 0;
   const editorTitle = draft.name.trim() || "Новая добавка";
   const priceKopecks = rubToKopecks(draft.price_rub);
   const canSave = draft.name.trim().length >= 2;
@@ -380,49 +398,100 @@ function ExtraDrawer({
                   tone={directCount > 0 ? "accent" : "muted"}
                 />
               </div>
-              <label className="field">
-                <span className="field-label">Поиск блюда</span>
-                <span className="search-control">
-                  <Search className="search-icon" size={15} aria-hidden />
-                  <input
-                    className="input"
-                    placeholder="Название блюда или раздел"
-                    value={dishSearch}
-                    onChange={(event) => setDishSearch(event.target.value)}
-                  />
-                </span>
-              </label>
-              {dishGroups.length > 0 ? (
-                <div className="extra-dish-groups">
-                  {dishGroups.map((group) => (
-                    <div key={group.category.id} className="extra-dish-group">
-                      <div className="extra-dish-group-head">
-                        <span>{group.category.name}</span>
-                        <small>
-                          {group.dishes.length} {plural(group.dishes.length, "блюдо", "блюда", "блюд")}
-                        </small>
-                      </div>
-                      <div className="extra-dish-grid">
-                        {group.dishes.map((dish) => {
-                          const checked = draft.dish_ids.includes(dish.id);
-                          const alreadyFromCategory = draft.category_ids.includes(dish.category_id);
-                          return (
-                            <label key={dish.id} className="extra-dish-card" data-checked={checked}>
-                              <input checked={checked} type="checkbox" onChange={() => toggleDish(dish.id)} />
-                              <span className="extra-dish-copy">
-                                <span className="row-main">{dish.name}</span>
-                                <span className="row-sub">
-                                  {formatPrice(dish.price_kopecks)}
-                                  {alreadyFromCategory ? " · уже есть через раздел" : ""}
-                                  {dish.is_active ? "" : " · снято с продажи"}
-                                </span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+              {dishPickerGroups.length > 0 ? (
+                <div className="extra-dish-picker">
+                  <div className="extra-dish-category-list" aria-label="Разделы для точечной привязки">
+                    {dishPickerGroups.map((group) => (
+                      <button
+                        key={group.category.id}
+                        className="extra-dish-category-button"
+                        data-active={group.category.id === dishCategoryId}
+                        type="button"
+                        onClick={() => {
+                          setDishCategoryId(group.category.id);
+                          setDishSearch("");
+                        }}
+                      >
+                        <span className="extra-dish-category-copy">
+                          <span className="row-main">{group.category.name}</span>
+                          <span className="row-sub">
+                            {group.dishes.length} {plural(group.dishes.length, "блюдо", "блюда", "блюд")}
+                          </span>
+                        </span>
+                        {group.selectedCount > 0 ? <Badge text={String(group.selectedCount)} tone="accent" /> : null}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="extra-dish-picker-panel">
+                    {activeDishGroup ? (
+                      <>
+                        <div className="extra-dish-picker-head">
+                          <div className="min-w-0">
+                            <div className="row-main">{activeDishGroup.category.name}</div>
+                            <div className="row-sub">
+                              {activeSelectedCount} выбрано из {activeDishGroup.dishes.length}
+                            </div>
+                          </div>
+                          <div className="extra-dish-picker-actions">
+                            <Button
+                              disabled={activeSelectedCount === activeDishGroup.dishes.length}
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => setCategoryDishes(activeDishGroup.category.id, true)}
+                            >
+                              Выбрать все
+                            </Button>
+                            <Button
+                              disabled={activeSelectedCount === 0}
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => setCategoryDishes(activeDishGroup.category.id, false)}
+                            >
+                              Очистить
+                            </Button>
+                          </div>
+                        </div>
+                        <label className="field">
+                          <span className="field-label">Поиск в разделе</span>
+                          <span className="search-control">
+                            <Search className="search-icon" size={15} aria-hidden />
+                            <input
+                              className="input"
+                              placeholder={`Блюдо в разделе ${activeDishGroup.category.name}`}
+                              value={dishSearch}
+                              onChange={(event) => setDishSearch(event.target.value)}
+                            />
+                          </span>
+                        </label>
+                        {activeDishes.length > 0 ? (
+                          <div className="extra-dish-grid">
+                            {activeDishes.map((dish) => {
+                              const checked = draft.dish_ids.includes(dish.id);
+                              const alreadyFromCategory = draft.category_ids.includes(dish.category_id);
+                              return (
+                                <label key={dish.id} className="extra-dish-card" data-checked={checked}>
+                                  <input checked={checked} type="checkbox" onChange={() => toggleDish(dish.id)} />
+                                  <span className="extra-dish-copy">
+                                    <span className="row-main">{dish.name}</span>
+                                    <span className="row-sub">
+                                      {formatPrice(dish.price_kopecks)}
+                                      {alreadyFromCategory ? " · уже есть через раздел" : ""}
+                                      {dish.is_active ? "" : " · снято с продажи"}
+                                    </span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="extra-empty-note">В этом разделе блюдо не найдено</div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="extra-empty-note">Выберите раздел, чтобы отметить конкретные блюда</div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="extra-empty-note">Блюда не найдены</div>

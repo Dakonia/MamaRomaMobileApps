@@ -71,9 +71,12 @@ export default function ProfileScreen() {
   });
 
   // Потянуть вниз: баланс, заказы и брони разом
-  const refresher = useRefresher(async () => {
-    await Promise.all([session.restore(), orders.refetch()]);
-  });
+  const refresher = useRefresher(
+    async () => {
+      await Promise.all([session.restore(), orders.refetch()]);
+    },
+    insets.top + theme.spacing.xxl,
+  );
 
   // Какое из двух окон открыто: выход или удаление аккаунта
   const [asking, setAsking] = useState<'exit' | 'delete' | null>(null);
