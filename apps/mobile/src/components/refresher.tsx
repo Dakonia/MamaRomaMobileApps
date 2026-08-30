@@ -1,11 +1,10 @@
 import { onlineManager } from '@tanstack/react-query';
 import { usePathname } from 'expo-router';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef } from 'react';
 import { RefreshControl } from 'react-native';
 
 import { queryClient } from '@/lib/query-client';
 import { useRefreshing } from '@/store/refreshing';
-import { useTheme } from '@/theme/theme-provider';
 
 /**
  * Дольше этого обновление не показываем. Запросы продолжают идти и данные
@@ -21,18 +20,20 @@ const PATIENCE_MS = 15_000;
 const AT_LEAST_MS = 700;
 
 /**
+ * Насколько значок опускается под заголовок экрана. Заголовки у нас одной
+ * высоты, поэтому число общее: экрану остаётся прибавить свой вырез.
+ */
+export const UNDER_HEADER = 56;
+
+/**
  * Общий жест «потянуть, чтобы обновить». Экран отдаёт список своих запросов и,
  * если у него плавающая шапка, её высоту — чтобы значок вышел из-под неё.
  * Вид и состояние берутся отсюда: тогда жест везде одинаковый.
  */
 export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
-  const theme = useTheme();
   const id = useId();
   const screen = usePathname();
-  const [refreshing, setRefreshing] = useState(false);
 
-  // Чтобы обещание, отставшее от жизни экрана, не включало значок заново
-  const alive = useRef(true);
   const busy = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -47,7 +48,6 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
     const hide = () => {
       timer.current = null;
       useRefreshing.getState().stop(id);
-      if (alive.current) setRefreshing(false);
     };
 
     if (left > 0) timer.current = setTimeout(hide, left);
@@ -60,7 +60,6 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
 
     busy.current = true;
     started.current = Date.now();
-    setRefreshing(true);
     useRefreshing.getState().start(id, offset);
 
     // Страховка от запроса, который не вернётся никогда
@@ -93,26 +92,28 @@ export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
   }, [finish, id, offset, reload, screen]);
 
   // Экран закрыли посреди обновления — запись о нём убираем сами
-  useEffect(() => {
-    alive.current = true;
-
-    return () => {
-      alive.current = false;
+  useEffect(
+    () => () => {
       if (timer.current) clearTimeout(timer.current);
       useRefreshing.getState().stop(id);
-    };
-  }, [id]);
+    },
+    [id],
+  );
 
+  /**
+   * Системный кружок не показываем вовсе. Раньше он оставался в состоянии
+   * «обновляется» вместе с нашей пиццей: гость видел сначала палочки, потом
+   * поверх них пиццу, и вдобавок два значка стояли в разных местах. Здесь
+   * RefreshControl нужен только ради самого жеста, поэтому он всегда считает,
+   * что обновления нет, а цвета у него прозрачные.
+   */
   return (
     <RefreshControl
-      refreshing={refreshing}
+      refreshing={false}
       onRefresh={onRefresh}
-      // Системный кружок гасим: вместо него крутится своя пицца
-      tintColor="transparent"
-      colors={['transparent']}
-      progressBackgroundColor="transparent"
-      style={{ backgroundColor: 'transparent' }}
-      progressViewOffset={offset + theme.spacing.md}
+      tintColor="rgba(0,0,0,0)"
+      colors={['rgba(0,0,0,0)']}
+      progressBackgroundColor="rgba(0,0,0,0)"
     />
   );
 }

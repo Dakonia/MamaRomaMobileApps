@@ -1270,7 +1270,7 @@ textarea:focus-visible {
 }
 
 .table-page-size {
-  width: 88px;
+  width: 112px;
 }
 
 .table-page-size .select-menu {
@@ -1278,8 +1278,8 @@ textarea:focus-visible {
   right: 0;
   bottom: calc(100% + 5px);
   left: auto;
-  width: 112px;
-  min-width: 112px;
+  width: 136px;
+  min-width: 136px;
 }
 
 .table-price-input {
@@ -1822,6 +1822,472 @@ textarea:focus-visible {
   background: var(--sunken);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.promos-layout.page-layout-with-drawer[data-drawer-open="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.drawer-overlay.promo-editor-overlay {
+  display: block;
+}
+
+.promo-drawer-shell {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: min(900px, calc(100vw - 54px));
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--sh-3);
+}
+
+.promo-drawer-head {
+  min-height: 72px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.promo-drawer-title-block {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.promo-drawer-title-block h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: 0;
+}
+
+.promo-drawer-subline {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.promo-drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.promo-preview-panel {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 18px;
+  overflow: auto;
+  background: var(--sunken);
+  border-right: 1px solid var(--line);
+}
+
+.promo-editor-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--sh-2);
+}
+
+.promo-editor-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
+}
+
+.promo-editor-media img,
+.promo-editor-empty {
+  width: 100%;
+  height: 100%;
+}
+
+.promo-editor-media img {
+  display: block;
+  object-fit: cover;
+}
+
+.promo-editor-empty {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+
+.promo-editor-label {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--acc);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-editor-card-body {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.promo-editor-card-body h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0;
+}
+
+.promo-editor-card-body p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.promo-preview-facts {
+  display: grid;
+  gap: 8px;
+}
+
+.promo-preview-facts span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.promo-preview-facts small {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+
+.promo-preview-facts strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-preview-scope {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.promo-form-panel {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  overflow: auto;
+  background: var(--surface);
+}
+
+.promo-form-section {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.promo-form-section:last-child {
+  border-bottom: 0;
+}
+
+.promo-form-section-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.promo-form-section-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+.promo-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.promo-field-wide {
+  grid-column: 1 / -1;
+}
+
+.promo-upload-field {
+  align-content: end;
+}
+
+.promo-upload-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.promo-description-input {
+  min-height: 108px;
+}
+
+.promo-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.promo-toggle-card {
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.promo-toggle-card:hover {
+  border-color: var(--line-2);
+  background: var(--sunken);
+}
+
+.promo-toggle-card[data-active="true"] {
+  border-color: color-mix(in srgb, var(--acc) 34%, var(--line));
+  background: var(--acc-sub);
+}
+
+.promo-toggle-card input {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  accent-color: var(--acc);
+}
+
+.promo-toggle-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--ink-2);
+  background: var(--sunken);
+}
+
+.promo-toggle-card[data-active="true"] .promo-toggle-icon {
+  color: var(--acc);
+  background: var(--surface);
+}
+
+.promo-toggle-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.promo-toggle-copy span {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.promo-toggle-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-scope-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.promo-scope-mode {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.promo-scope-mode:hover {
+  border-color: var(--line-2);
+  background: var(--sunken);
+}
+
+.promo-scope-mode[data-active="true"] {
+  border-color: color-mix(in srgb, var(--acc) 34%, var(--line));
+  background: var(--acc-sub);
+}
+
+.promo-scope-mode > svg {
+  color: var(--acc);
+}
+
+.promo-scope-mode span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.promo-scope-mode strong,
+.promo-scope-mode small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-scope-mode strong {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.promo-scope-mode small {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.promo-restaurant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.promo-restaurant-card {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.promo-restaurant-card:hover {
+  border-color: var(--line-2);
+  background: var(--sunken);
+}
+
+.promo-restaurant-card[data-checked="true"] {
+  border-color: color-mix(in srgb, var(--acc) 34%, var(--line));
+  background: var(--acc-sub);
+}
+
+.promo-restaurant-card input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--acc);
+}
+
+.promo-restaurant-card .row-main,
+.promo-row-description,
+.promo-scope-cell .row-main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promo-scope-cell {
+  min-width: 220px;
+  display: grid;
+  gap: 5px;
+}
+
+.promo-drawer-foot {
+  min-height: 64px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 -8px 20px -18px rgba(28, 25, 23, .65);
 }
 
 .bordered-list {
@@ -4346,6 +4812,10 @@ textarea:focus-visible {
     width: 100vw;
   }
 
+  .promo-drawer-shell {
+    width: 100vw;
+  }
+
   .detail-drawer.reservation-drawer,
   .detail-drawer.feedback-drawer {
     width: 100vw;
@@ -4353,9 +4823,14 @@ textarea:focus-visible {
 
   .dish-drawer-body,
   .extra-drawer-body,
+  .promo-drawer-body,
   .extra-dish-picker,
   .dish-form-grid,
   .extra-form-grid,
+  .promo-form-grid,
+  .promo-toggle-grid,
+  .promo-scope-mode-grid,
+  .promo-restaurant-grid,
   .extra-category-grid,
   .extra-dish-grid,
   .dish-nutrition-grid,
@@ -4365,19 +4840,27 @@ textarea:focus-visible {
   }
 
   .dish-drawer-body,
-  .extra-drawer-body {
+  .extra-drawer-body,
+  .promo-drawer-body {
     overflow: auto;
+  }
+
+  .promo-drawer-body {
+    display: block;
   }
 
   .dish-preview-panel,
   .extra-preview-panel,
+  .promo-preview-panel,
   .dish-form-panel,
-  .extra-form-panel {
+  .extra-form-panel,
+  .promo-form-panel {
     overflow: visible;
   }
 
   .dish-preview-panel,
-  .extra-preview-panel {
+  .extra-preview-panel,
+  .promo-preview-panel {
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }

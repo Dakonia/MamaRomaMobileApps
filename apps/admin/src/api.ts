@@ -156,6 +156,7 @@ export type PromotionDraft = {
   label: string | null;
   image_url: string | null;
   restaurant_ids: string[];
+  starts_at: string | null;
   ends_at: string | null;
   sort_order: number;
   is_active: boolean;

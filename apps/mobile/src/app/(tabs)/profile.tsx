@@ -36,7 +36,7 @@ import { formatPhone, formatPrice, phoneToUri } from '@/lib/format';
 import { formatPhone as formatGuestPhone } from '@/lib/phone';
 import { tenant } from '@/lib/tenant';
 import { useSession } from '@/store/session';
-import { useRefresher } from '@/components/refresher';
+import { UNDER_HEADER, useRefresher } from '@/components/refresher';
 import { useTheme } from '@/theme/theme-provider';
 
 type Shortcut = {
@@ -75,7 +75,7 @@ export default function ProfileScreen() {
     async () => {
       await Promise.all([session.restore(), orders.refetch()]);
     },
-    insets.top + theme.spacing.xxl,
+    insets.top + UNDER_HEADER,
   );
 
   // Какое из двух окон открыто: выход или удаление аккаунта

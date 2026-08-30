@@ -71,7 +71,7 @@ export function DensityToggle({
           type="button"
           onClick={() => onChange("compact")}
         >
-          Компактно
+          Больше строк
         </button>
         <button
           data-active={density === "regular"}
@@ -79,7 +79,7 @@ export function DensityToggle({
           type="button"
           onClick={() => onChange("regular")}
         >
-          Обычно
+          Крупнее
         </button>
       </div>
     </div>
@@ -223,7 +223,7 @@ export function DataTable<TData extends RowData>({
         <Select
           className="table-page-size"
           value={String(table.state.pagination.pageSize)}
-          options={[10, 20, 50, 100].map((size) => ({ label: `${size}`, value: String(size) }))}
+          options={[10, 20, 50, 100].map((size) => ({ label: `${size} строк`, value: String(size) }))}
           onChange={(value) => table.setPageSize(Number(value))}
         />
         <Button

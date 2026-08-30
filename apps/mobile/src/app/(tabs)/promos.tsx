@@ -26,7 +26,7 @@ import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { PressableScale } from '@/components/pressable-scale';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useRefresher } from '@/components/refresher';
+import { UNDER_HEADER, useRefresher } from '@/components/refresher';
 import { ScreenHeader } from '@/components/screen-header';
 import { Skeleton } from '@/components/skeleton';
 import { useCart } from '@/store/cart';
@@ -152,7 +152,7 @@ export default function PromosScreen() {
   });
 
   // Значок обновления встаёт под заголовком, а не поверх него
-  const refresher = useRefresher(() => promos.refetch(), insets.top + theme.spacing.xxl);
+  const refresher = useRefresher(() => promos.refetch(), insets.top + UNDER_HEADER);
 
   const restaurant = useQuery({
     queryKey: ['restaurant', cart.restaurantId],
