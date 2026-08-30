@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 
-import { api } from '@/api/client';
+import { api, mediaUrl } from '@/api/client';
 import { enablePush } from '@/lib/push';
 import { queryClient } from '@/lib/query-client';
 import { useAppearance } from '@/store/appearance';
@@ -74,6 +74,28 @@ const WARM: (() => Promise<unknown>)[] = [
       queryKey: ['promotions', 'all'],
       queryFn: () => api.promotions(),
     }),
+
+  /**
+   * Снимки залов кладём в кэш заранее: гость заходит в бронь и видит карточки
+   * без картинок, которые доезжают у него на глазах.
+   *
+   * Берём ровно те шесть, что показываются первыми, — это около полумегабайта.
+   * Дальше кадры тянутся по мере надобности, а на следующих запусках всё уже
+   * лежит на диске и качать нечего.
+   */
+  async () => {
+    const restaurants = await queryClient.fetchQuery({
+      queryKey: ['restaurants'],
+      queryFn: () => api.restaurants(),
+    });
+
+    const shots = restaurants
+      .slice(0, 6)
+      .map((item) => mediaUrl(item.photos?.[0] ?? item.image_url))
+      .filter((uri): uri is string => Boolean(uri));
+
+    if (shots.length > 0) await Image.prefetch(shots);
+  },
 ];
 
 /**
