@@ -843,6 +843,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ category_ids: categoryIds }),
     }),
+  setExtraDishes: (id: string, dishIds: string[]) =>
+    request<DishExtra>(`/admin/extras/${id}/dishes`, {
+      method: "PUT",
+      body: JSON.stringify({ dish_ids: dishIds }),
+    }),
   deleteExtra: (id: string) => request<void>(`/admin/extras/${id}`, { method: "DELETE" }),
 
   promoCodes: () => request<PromoCode[]>("/admin/promo-codes"),

@@ -427,6 +427,10 @@ class ExtraCategoriesWrite(BaseModel):
     category_ids: list[UUID] = []
 
 
+class ExtraDishesWrite(BaseModel):
+    dish_ids: list[UUID] = []
+
+
 class DishExtraLinkedDishRead(BaseModel):
     id: UUID
     name: str

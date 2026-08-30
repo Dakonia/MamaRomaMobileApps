@@ -62,6 +62,7 @@ from app.schemas.admin import (
     DishPatch,
     DishWrite,
     ExtraCategoriesWrite,
+    ExtraDishesWrite,
     FeedbackRow,
     FeedbackSummary,
     GuestAdminRead,
@@ -1613,6 +1614,41 @@ async def set_extra_categories(
         links = [{"category_id": category_id, "extra_id": extra.id} for category_id in rows]
         if links:
             await session.execute(insert(category_extra_links), links)
+
+    await session.commit()
+    return await _extra_read(session, extra)
+
+
+@router.put("/extras/{extra_id}/dishes", summary="Блюда, где предлагается добавка")
+async def set_extra_dishes(
+    extra_id: UUID,
+    payload: ExtraDishesWrite,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> DishExtraAdminRead:
+    extra = await session.scalar(
+        select(DishExtra).where(DishExtra.id == extra_id, DishExtra.tenant_id == tenant.id)
+    )
+    if extra is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Добавка не найдена")
+
+    dish_ids = list(dict.fromkeys(payload.dish_ids))
+    if dish_ids:
+        existing = set(
+            await session.scalars(
+                select(Dish.id).where(Dish.tenant_id == tenant.id, Dish.id.in_(dish_ids))
+            )
+        )
+        if set(dish_ids) - existing:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Часть блюд не найдена")
+
+    await session.execute(delete(dish_extra_links).where(dish_extra_links.c.extra_id == extra.id))
+    if dish_ids:
+        await session.execute(
+            insert(dish_extra_links),
+            [{"dish_id": dish_id, "extra_id": extra.id} for dish_id in dish_ids],
+        )
 
     await session.commit()
     return await _extra_read(session, extra)
