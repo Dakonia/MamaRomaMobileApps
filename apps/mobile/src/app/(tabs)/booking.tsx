@@ -15,7 +15,7 @@ import Animated, {
 
 import { api, mediaUrl, type ApiError, type Reservation, type Slot } from '@/api/client';
 import { BookingDone } from '@/components/booking-done';
-import { HallGallery, HALL_HEIGHT } from '@/components/hall-gallery';
+import { HallGallery } from '@/components/hall-gallery';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { PressableScale } from '@/components/pressable-scale';
 import { PrimaryButton } from '@/components/primary-button';
@@ -254,14 +254,9 @@ export default function BookingScreen() {
 
   // Занятое и уже прошедшее время не показываем: выбрать его нельзя,
   // а страницу оно растягивает вдвое
-  const refresher = useRefresher(
-    async () => {
-      await Promise.all([slots.refetch(), restaurants.refetch()]);
-    },
-    // Сверху во весь экран лежит снимок зала: поверх него значок выглядел
-    // как соринка на фотографии
-    HALL_HEIGHT + insets.top,
-  );
+  const refresher = useRefresher(async () => {
+    await Promise.all([slots.refetch(), restaurants.refetch()]);
+  });
 
   const rows = (slots.data ?? []).filter((slot) => slot.is_available);
   const groups = [

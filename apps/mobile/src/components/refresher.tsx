@@ -1,119 +1,70 @@
-import { onlineManager } from '@tanstack/react-query';
-import { usePathname } from 'expo-router';
-import { useCallback, useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl } from 'react-native';
 
-import { queryClient } from '@/lib/query-client';
-import { useRefreshing } from '@/store/refreshing';
+import { useTheme } from '@/theme/theme-provider';
 
 /**
- * Дольше этого обновление не показываем. Запросы продолжают идти и данные
+ * Дольше этого «обновляется» не держим. Запросы продолжают идти и данные
  * приедут, но крутящийся без конца значок — это уже не «загружаем», а «висим».
  */
 const PATIENCE_MS = 15_000;
 
 /**
- * Меньше этого значок не живёт. Запрос из кэша возвращается за сотню
- * миллисекунд, и пицца успевала только моргнуть — выглядело так, будто жест
- * не сработал.
- */
-const AT_LEAST_MS = 700;
-
-/**
- * Насколько значок опускается под заголовок экрана. Заголовки у нас одной
- * высоты, поэтому число общее: экрану остаётся прибавить свой вырез.
- */
-export const UNDER_HEADER = 56;
-
-/**
  * Общий жест «потянуть, чтобы обновить». Экран отдаёт список своих запросов и,
  * если у него плавающая шапка, её высоту — чтобы значок вышел из-под неё.
- * Вид и состояние берутся отсюда: тогда жест везде одинаковый.
+ *
+ * Значок системный. Свой рисованный мы пробовали, но спрятать системный поверх
+ * него не выходит: он остаётся видимым и в Expo Go, и в сборке. Два значка на
+ * одном жесте выглядят хуже любого рисунка, поэтому оставлен один — тот, что
+ * платформа умеет ставить на правильное место и держать список оттянутым.
  */
 export function useRefresher(reload: () => Promise<unknown>, offset = 0) {
-  const id = useId();
-  const screen = usePathname();
+  const theme = useTheme();
+  const [refreshing, setRefreshing] = useState(false);
 
   const busy = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const started = useRef(0);
+  const alive = useRef(true);
 
   const finish = useCallback(() => {
     busy.current = false;
     if (timer.current) clearTimeout(timer.current);
-
-    const left = AT_LEAST_MS - (Date.now() - started.current);
-
-    const hide = () => {
-      timer.current = null;
-      useRefreshing.getState().stop(id);
-    };
-
-    if (left > 0) timer.current = setTimeout(hide, left);
-    else hide();
-  }, [id]);
+    timer.current = null;
+    if (alive.current) setRefreshing(false);
+  }, []);
 
   const onRefresh = useCallback(() => {
     // Пока предыдущее обновление не закончилось, второе не начинаем
     if (busy.current) return;
 
     busy.current = true;
-    started.current = Date.now();
-    useRefreshing.getState().start(id, offset);
+    setRefreshing(true);
 
     // Страховка от запроса, который не вернётся никогда
-    timer.current = setTimeout(() => {
-      if (__DEV__) {
-        // Кто именно не отвечает: без этого причину приходится угадывать.
-        // paused — запрос стоит, потому что React Query считает нас офлайн,
-        // fetching — ушёл и не вернулся
-        const busyQueries = queryClient
-          .getQueryCache()
-          .getAll()
-          .filter((query) => query.state.fetchStatus !== 'idle')
-          .map((query) => `${JSON.stringify(query.queryKey)} — ${query.state.fetchStatus}`);
-
-        console.warn(
-          [
-            `Обновление на ${screen} висит дольше ${PATIENCE_MS / 1000} с`,
-            `сеть: ${onlineManager.isOnline() ? 'онлайн' : 'офлайн'}`,
-            busyQueries.length > 0 ? `застряли: ${busyQueries.join(', ')}` : 'застрявших запросов нет',
-          ].join('. '),
-        );
-      }
-      finish();
-    }, PATIENCE_MS);
+    timer.current = setTimeout(finish, PATIENCE_MS);
 
     void Promise.resolve()
       .then(reload)
       .catch(() => undefined)
       .finally(finish);
-  }, [finish, id, offset, reload, screen]);
+  }, [finish, reload]);
 
-  // Экран закрыли посреди обновления — запись о нём убираем сами
   useEffect(
     () => () => {
+      alive.current = false;
       if (timer.current) clearTimeout(timer.current);
-      useRefreshing.getState().stop(id);
     },
-    [id],
+    [],
   );
 
-  /**
-   * Системный кружок не показываем вовсе. Раньше он оставался в состоянии
-   * «обновляется» вместе с нашей пиццей: гость видел сначала палочки, потом
-   * поверх них пиццу, и вдобавок два значка стояли в разных местах. Здесь
-   * RefreshControl нужен только ради самого жеста, поэтому он всегда считает,
-   * что обновления нет, а цвета у него прозрачные.
-   */
   return (
     <RefreshControl
-      refreshing={false}
+      refreshing={refreshing}
       onRefresh={onRefresh}
-      tintColor="rgba(0,0,0,0)"
-      colors={['rgba(0,0,0,0)']}
-      progressBackgroundColor="rgba(0,0,0,0)"
+      tintColor={theme.colors.brand}
+      colors={[theme.colors.brand]}
+      progressBackgroundColor={theme.colors.surface}
+      progressViewOffset={offset}
     />
   );
 }

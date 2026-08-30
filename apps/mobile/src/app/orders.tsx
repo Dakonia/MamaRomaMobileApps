@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, type Order } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
-import { UNDER_HEADER, useRefresher } from '@/components/refresher';
+import { useRefresher } from '@/components/refresher';
 import { OrderHistoryCard } from '@/components/order-history-card';
 import { PressableScale } from '@/components/pressable-scale';
 import { ScreenHeader } from '@/components/screen-header';
@@ -45,7 +45,7 @@ export default function OrdersScreen() {
   const orders = useQuery({ queryKey: ['orders'], queryFn: () => api.orders() });
 
   // Под заголовком экрана, а не поверх него
-  const refresher = useRefresher(() => orders.refetch(), insets.top + UNDER_HEADER);
+  const refresher = useRefresher(() => orders.refetch());
 
   const rows = useMemo<Row[]>(() => {
     const all = orders.data ?? [];
