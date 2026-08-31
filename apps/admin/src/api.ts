@@ -312,6 +312,8 @@ export type SyncChange = {
   title: string;
   summary: string;
   group: string | null;
+  external_id: string;
+  payload: Record<string, unknown>;
   applied: boolean;
 };
 
@@ -480,6 +482,10 @@ export type Guest = {
   spent_kopecks: number;
   tier_title: string;
   points_balance: number;
+  card_number: string;
+  feedback_count: number;
+  average_rating: number | null;
+  last_order_at: string | null;
 };
 
 export type GuestAddress = {
@@ -492,6 +498,25 @@ export type GuestAddress = {
   is_default: boolean;
 };
 
+export type GuestFeedback = {
+  id: string;
+  order_id: string;
+  order_number: string;
+  restaurant_name: string;
+  rating: number;
+  tags: string[];
+  comment: string | null;
+  created_at: string;
+};
+
+export type GuestOrderItem = {
+  id: string;
+  name: string;
+  quantity: number;
+  total_kopecks: number;
+  extras: string[];
+};
+
 export type GuestOrder = {
   id: string;
   number: string;
@@ -501,7 +526,15 @@ export type GuestOrder = {
   restaurant_name: string;
   address_text: string | null;
   total_kopecks: number;
-  items: string[];
+  delivery_kopecks: number;
+  discount_kopecks: number;
+  points_spent: number;
+  points_earned: number;
+  promo_code: string | null;
+  persons_count: number | null;
+  comment: string | null;
+  items: GuestOrderItem[];
+  feedback: GuestFeedback | null;
 };
 
 export type GuestReservation = {
@@ -525,6 +558,7 @@ export type GuestCard = {
   orders: GuestOrder[];
   reservations: GuestReservation[];
   points: GuestPoints[];
+  feedbacks: GuestFeedback[];
 };
 
 export type ReservationStatus = "requested" | "confirmed" | "seated" | "completed" | "cancelled" | "no_show";
@@ -785,7 +819,10 @@ export const api = {
     outline: [number, number][];
     delivery_price_kopecks: number;
     min_order_kopecks: number;
+    min_order_weekend_kopecks?: number | null;
+    free_delivery_from_kopecks?: number | null;
     delivery_minutes: number | null;
+    sort_order?: number;
   }) => request<Zone>("/admin/zones", { method: "POST", body: JSON.stringify(payload) }),
 
   restaurantMenu: (restaurantId: string) =>
@@ -819,6 +856,8 @@ export const api = {
       is_blocked: boolean;
     }>,
   ) => request<Guest>(`/admin/guests/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  adjustGuestPoints: (id: string, payload: { points: number; comment: string | null }) =>
+    request<GuestPoints>(`/admin/guests/${id}/points`, { method: "POST", body: JSON.stringify(payload) }),
   deleteGuest: (id: string) => request<void>(`/admin/guests/${id}`, { method: "DELETE" }),
 
   promotions: () => request<Promotion[]>("/admin/promotions"),

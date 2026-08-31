@@ -251,6 +251,11 @@ class GuestPatch(BaseModel):
     is_blocked: bool | None = None
 
 
+class GuestPointsAdjust(BaseModel):
+    points: int = Field(ge=-100_000, le=100_000)
+    comment: str | None = Field(default=None, max_length=200)
+
+
 class GuestAdminRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -269,6 +274,28 @@ class GuestAdminRead(BaseModel):
     tier_title: str = ""
     points_balance: int = 0
     card_number: str = ""
+    feedback_count: int = 0
+    average_rating: float | None = None
+    last_order_at: datetime | None = None
+
+
+class GuestFeedbackRead(BaseModel):
+    id: UUID
+    order_id: UUID
+    order_number: str
+    restaurant_name: str
+    rating: int
+    tags: list[str]
+    comment: str | None
+    created_at: datetime
+
+
+class GuestOrderItemRead(BaseModel):
+    id: UUID
+    name: str
+    quantity: int
+    total_kopecks: int
+    extras: list[str]
 
 
 class GuestOrderRead(BaseModel):
@@ -280,7 +307,15 @@ class GuestOrderRead(BaseModel):
     restaurant_name: str
     address_text: str | None
     total_kopecks: int
-    items: list[str]
+    delivery_kopecks: int
+    discount_kopecks: int
+    points_spent: int
+    points_earned: int
+    promo_code: str | None
+    persons_count: int | None
+    comment: str | None
+    items: list[GuestOrderItemRead]
+    feedback: GuestFeedbackRead | None = None
 
 
 class GuestReservationRead(BaseModel):
@@ -306,6 +341,7 @@ class GuestCardRead(BaseModel):
     orders: list[GuestOrderRead]
     reservations: list[GuestReservationRead]
     points: list[GuestPointsRead]
+    feedbacks: list[GuestFeedbackRead]
 
 
 class ZoneRead(BaseModel):
@@ -644,6 +680,8 @@ class LinkRow(BaseModel):
     product_type: str | None = None
     size_id: str | None
     modifier_group_id: str | None
+    our_price_kopecks: int = 0
+    iiko_price_kopecks: int = 0
     # Подходящие товары кассы: чтобы связать в одно нажатие, не открывая поиск
     suggestions: list[IikoProductRow] = Field(default_factory=list)
 

@@ -1,18 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  BadgeCheck,
+  AlertTriangle,
+  ArrowRight,
   Building2,
   CheckCircle2,
+  CircleDollarSign,
   Copy,
+  Filter,
+  Hash,
   Link2,
   ListTree,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
+  Store,
   Trash2,
   Unlink,
   Utensils,
+  Wand2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -31,24 +38,25 @@ import {
   type MenuTree,
 } from "./api";
 import { DataTable, DensityToggle, createAdminColumnHelper, useTableDensity } from "./components/patterns/DataTable";
-import { Badge, Button, IconButton, Section, Select } from "./ui";
+import { Badge, Button, IconButton, Section, Select, cn } from "./ui";
 
 type Pane = "bridges" | "links" | "tree" | "queue";
-type MatchFilter = "unmatched" | "matched" | "all";
+type MatchFilter = "unmatched" | "matched" | "price" | "all";
 type LinkKindFilter = "all" | "dish" | "extra";
+type TreeGroupScope = "suggested" | "free" | "selected" | "all";
+type TreeTargetKind = "category" | "extras" | "deny";
 
 type DraftPick = {
   code?: string | null;
   groupPath?: string | null;
   id: string;
   name: string;
+  priceKopecks?: number;
   productType?: string | null;
 };
 
 const bridgeColumn = createAdminColumnHelper<Bridge>();
-const linkColumn = createAdminColumnHelper<IikoLink>();
 const queueColumn = createAdminColumnHelper<Handoff>();
-const branchColumn = createAdminColumnHelper<MenuBranch>();
 
 function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Действие не выполнено";
@@ -85,8 +93,85 @@ function currentPick(row: IikoLink, draft: Record<string, DraftPick>): DraftPick
     groupPath: row.product_group_path,
     id: row.product_id,
     name: row.product_name,
+    priceKopecks: row.iiko_price_kopecks,
     productType: row.product_type,
   };
+}
+
+function pickFromProduct(product: IikoProduct): DraftPick {
+  return {
+    code: product.code,
+    groupPath: product.group_path,
+    id: product.product_id,
+    name: product.name,
+    priceKopecks: product.price_kopecks,
+    productType: product.product_type,
+  };
+}
+
+function rowCategory(row: IikoLink): string {
+  return row.group ?? "Без категории";
+}
+
+function kindLabel(kind: IikoLink["kind"]): string {
+  return kind === "dish" ? "Блюдо" : "Добавка";
+}
+
+function iikoPrice(pick: DraftPick | null): number {
+  return pick?.priceKopecks ?? 0;
+}
+
+function priceDelta(row: IikoLink, pick: DraftPick | null): number | null {
+  const theirPrice = iikoPrice(pick);
+  if (!pick || row.our_price_kopecks <= 0 || theirPrice <= 0) return null;
+  return theirPrice - row.our_price_kopecks;
+}
+
+function hasPriceDiff(row: IikoLink, pick: DraftPick | null): boolean {
+  const delta = priceDelta(row, pick);
+  return delta !== null && delta !== 0;
+}
+
+function priceDeltaLabel(delta: number | null): string {
+  if (delta === null) return "нет цены";
+  if (delta === 0) return "совпадает";
+  return `${delta > 0 ? "+" : "-"}${formatPrice(Math.abs(delta))}`;
+}
+
+function linkBadge(row: IikoLink, pick: DraftPick | null, changed: boolean) {
+  if (!pick) return <Badge text="нет связи" tone="warn" />;
+  if (changed) return <Badge text="черновик" tone="accent" />;
+  if (hasPriceDiff(row, pick)) return <Badge text="цена отличается" tone="warn" />;
+  return <Badge text="готово" tone="ok" />;
+}
+
+function compactSearch(value: string): string {
+  return value.toLocaleLowerCase("ru-RU").replace(/[\s.,;:()№#₽"']/g, "");
+}
+
+function priceSearchParts(value: number): string[] {
+  if (value <= 0) return [];
+  return [formatPrice(value), String(Math.round(value / 100)), String(value)];
+}
+
+function linkMatchesSearch(row: IikoLink, pick: DraftPick | null, search: string): boolean {
+  const needle = search.trim().toLocaleLowerCase("ru-RU");
+  if (!needle) return true;
+
+  const fields = [
+    row.name,
+    rowCategory(row),
+    row.product_name ?? "",
+    row.product_code ?? "",
+    row.product_group_path ?? "",
+    pick?.name ?? "",
+    pick?.code ?? "",
+    pick?.groupPath ?? "",
+    ...priceSearchParts(row.our_price_kopecks),
+    ...priceSearchParts(iikoPrice(pick)),
+  ];
+  const haystack = fields.join(" ").toLocaleLowerCase("ru-RU");
+  return haystack.includes(needle) || compactSearch(haystack).includes(compactSearch(needle));
 }
 
 function bridgeStatus(row: Bridge) {
@@ -371,21 +456,54 @@ function Bridges({ onOpenLinks }: { onOpenLinks: (restaurantId: string) => void 
   );
 }
 
+function ProductCandidate({
+  onPick,
+  product,
+  row,
+}: {
+  onPick: (product: IikoProduct) => void;
+  product: IikoProduct;
+  row: IikoLink;
+}) {
+  const delta = priceDelta(row, pickFromProduct(product));
+
+  return (
+    <button
+      className="iiko-candidate-button"
+      data-price={delta === 0 ? "same" : delta === null ? "unknown" : "diff"}
+      title={product.group_path ?? product.group_name ?? ""}
+      type="button"
+      onClick={() => onPick(product)}
+    >
+      <span className="row-main">{product.name}</span>
+      <span className="row-sub">
+        {product.code ? `код ${product.code}` : "без кода"}
+        {product.product_type ? ` · ${product.product_type}` : ""}
+      </span>
+      <span className="iiko-candidate-meta">
+        <strong>{formatPrice(product.price_kopecks)}</strong>
+        <small>{priceDeltaLabel(delta)}</small>
+      </span>
+    </button>
+  );
+}
+
 function ProductPicker({
   groups,
   onClose,
   onPick,
   restaurantId,
-  title,
+  row,
 }: {
   groups: string[];
   onClose: () => void;
   onPick: (product: IikoProduct) => void;
   restaurantId: string;
-  title: string;
+  row: IikoLink;
 }) {
-  const [query, setQuery] = useState(title);
-  const [typed, setTyped] = useState(title);
+  const [query, setQuery] = useState(row.name);
+  const [typed, setTyped] = useState(row.name);
+  const priceQuery = row.our_price_kopecks > 0 ? String(Math.round(row.our_price_kopecks / 100)) : "";
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(typed), 300);
@@ -397,58 +515,86 @@ function ProductPicker({
     queryFn: () => api.searchIikoProducts(restaurantId, query, groups),
   });
 
+  const products = found.data ?? [];
+
   return (
     <>
       <div className="command-overlay" onClick={onClose} />
-      <section aria-modal="true" className="picker-dialog" role="dialog">
-        <div className="picker-head">
-          <div>
-            <h2 className="drawer-title">{title}</h2>
-            <div className="row-sub">
-              {groups.length > 0 ? `Поиск в выбранных группах: ${groups.length}` : "Поиск по всей номенклатуре"}
+      <section aria-modal="true" className="iiko-picker-dialog" role="dialog">
+        <div className="iiko-picker-head">
+          <div className="iiko-picker-title">
+            <span className="iiko-match-icon" data-kind={row.kind}>
+              {row.kind === "dish" ? <Utensils size={16} aria-hidden /> : <CircleDollarSign size={16} aria-hidden />}
+            </span>
+            <div className="min-w-0">
+              <span className="metric-label">{kindLabel(row.kind)} в приложении</span>
+              <h2>{row.name}</h2>
+              <div className="row-sub">
+                {rowCategory(row)} · {formatPrice(row.our_price_kopecks)}
+              </div>
             </div>
           </div>
-          <span className="toolbar-spacer" />
-          <Button variant="ghost" onClick={onClose}>
-            Закрыть
-          </Button>
+          <IconButton label="Закрыть поиск" size="sm" variant="quiet" onClick={onClose}>
+            <X size={16} aria-hidden />
+          </IconButton>
         </div>
 
-        <div className="picker-search">
-          <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)]" size={15} aria-hidden />
-          <input
-            autoFocus
-            className="input pl-9"
-            placeholder="Название товара в кассе"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-          />
+        <div className="iiko-picker-search">
+          <label className="field">
+            <span className="field-label">Поиск товара iiko</span>
+            <span className="search-control">
+              <Search className="search-icon" size={15} aria-hidden />
+              <input
+                autoFocus
+                className="input"
+                placeholder="Название, код, цена, группа"
+                value={typed}
+                onChange={(event) => setTyped(event.target.value)}
+              />
+            </span>
+          </label>
+          <div className="iiko-quick-search">
+            <Button size="xs" variant="ghost" onClick={() => setTyped(row.name)}>
+              <Search size={14} aria-hidden />
+              По названию
+            </Button>
+            {priceQuery ? (
+              <Button size="xs" variant="ghost" onClick={() => setTyped(priceQuery)}>
+                <CircleDollarSign size={14} aria-hidden />
+                По цене
+              </Button>
+            ) : null}
+            <span className="row-sub">{groups.length > 0 ? `${groups.length} групп` : "вся касса"}</span>
+          </div>
         </div>
 
-        <div className="picker-results">
+        <div className="iiko-picker-results">
           {found.isPending ? (
             <div className="empty-state">
-              <h2>Ищем товары</h2>
-              <p>Сервер просматривает номенклатуру выбранной кассы.</p>
+              <h2>Идёт поиск</h2>
+              <p>Проверяем номенклатуру выбранной точки.</p>
             </div>
-          ) : (found.data ?? []).length === 0 ? (
+          ) : products.length === 0 ? (
             <div className="empty-state">
               <h2>Ничего не нашлось</h2>
-              <p>Попробуйте часть названия, код или снимите ограничение по группам.</p>
+              <p>Попробуйте цену, код товара или другую ветку номенклатуры.</p>
             </div>
           ) : (
-            (found.data ?? []).map((product) => (
+            products.map((product) => (
               <button
                 key={product.product_id}
-                className="picker-row"
+                className="iiko-picker-row"
+                data-price={priceDelta(row, pickFromProduct(product)) === 0 ? "same" : "diff"}
                 type="button"
                 onClick={() => onPick(product)}
               >
-                <span className="row-main">{product.name}</span>
-                <span className="row-sub">
-                  {product.group_path ?? product.group_name ?? "без группы"}
-                  {product.code ? ` · код ${product.code}` : ""}
-                  {product.price_kopecks > 0 ? ` · ${formatPrice(product.price_kopecks)}` : ""}
+                <span className="iiko-picker-row-main">
+                  <strong>{product.name}</strong>
+                  <small>{product.group_path ?? product.group_name ?? "без группы"}</small>
+                </span>
+                <span className="iiko-picker-row-meta">
+                  <span className="mono">{formatPrice(product.price_kopecks)}</span>
+                  <small>{product.code ? `код ${product.code}` : "без кода"}</small>
                 </span>
               </button>
             ))
@@ -456,6 +602,110 @@ function ProductPicker({
         </div>
       </section>
     </>
+  );
+}
+
+function IikoMatchCard({
+  changed,
+  onClear,
+  onPick,
+  onSearch,
+  pick,
+  row,
+}: {
+  changed: boolean;
+  onClear: () => void;
+  onPick: (product: IikoProduct) => void;
+  onSearch: () => void;
+  pick: DraftPick | null;
+  row: IikoLink;
+}) {
+  const delta = priceDelta(row, pick);
+  const state = !pick ? "missing" : hasPriceDiff(row, pick) ? "price" : "ready";
+
+  return (
+    <article className="iiko-match-card" data-state={state}>
+      <div className="iiko-match-side">
+        <div className="iiko-match-kicker">
+          <Badge text={kindLabel(row.kind)} tone={row.kind === "dish" ? "accent" : "muted"} />
+          {linkBadge(row, pick, changed)}
+        </div>
+        <h3>{row.name}</h3>
+        <div className="iiko-match-subline">
+          <ListTree size={14} aria-hidden />
+          <span>{rowCategory(row)}</span>
+        </div>
+        <div className="iiko-price-card">
+          <span>Цена в приложении</span>
+          <strong>{formatPrice(row.our_price_kopecks)}</strong>
+        </div>
+      </div>
+
+      <div className="iiko-match-arrow" aria-hidden>
+        <ArrowRight size={17} />
+      </div>
+
+      <div className="iiko-match-side">
+        {pick ? (
+          <>
+            <div className="iiko-match-kicker">
+              <Badge text="товар iiko" tone="ok" />
+              {pick.code ? (
+                <span className="iiko-code-pill">
+                  <Hash size={12} aria-hidden />
+                  {pick.code}
+                </span>
+              ) : null}
+            </div>
+            <h3 className={cn(changed && "iiko-draft-title")}>{pick.name}</h3>
+            <div className="iiko-match-subline">
+              <Store size={14} aria-hidden />
+              <span>{pick.groupPath || "без группы"}</span>
+            </div>
+            <div className="iiko-price-compare" data-state={delta === 0 ? "same" : delta === null ? "unknown" : "diff"}>
+              <span>
+                <small>iiko</small>
+                <strong>{iikoPrice(pick) > 0 ? formatPrice(iikoPrice(pick)) : "нет цены"}</strong>
+              </span>
+              <span>
+                <small>разница</small>
+                <strong>{priceDeltaLabel(delta)}</strong>
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="iiko-empty-match">
+            <AlertTriangle size={17} aria-hidden />
+            <strong>Товар iiko не выбран</strong>
+            <span>Заказ с этой позицией не сможет уйти на кассу.</span>
+          </div>
+        )}
+      </div>
+
+      <div className="iiko-match-actions">
+        <Button size="xs" variant="ghost" onClick={onSearch}>
+          <Search size={14} aria-hidden />
+          {pick ? "Сменить" : "Найти"}
+        </Button>
+        {pick ? (
+          <Button size="xs" variant="danger" onClick={onClear}>
+            <Unlink size={14} aria-hidden />
+            Снять
+          </Button>
+        ) : null}
+      </div>
+
+      {row.suggestions.length > 0 ? (
+        <div className="iiko-candidates">
+          <span className="metric-label">Кандидаты</span>
+          <div className="iiko-candidate-grid">
+            {row.suggestions.slice(0, 4).map((product) => (
+              <ProductCandidate key={product.product_id} product={product} row={row} onPick={onPick} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -469,11 +719,15 @@ function Links({
   const queryClient = useQueryClient();
   const [density, setDensity] = useTableDensity();
   const [search, setSearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
   const [matchFilter, setMatchFilter] = useState<MatchFilter>("unmatched");
   const [kindFilter, setKindFilter] = useState<LinkKindFilter>("dish");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [draft, setDraft] = useState<Record<string, DraftPick>>({});
   const [picking, setPicking] = useState<IikoLink | null>(null);
+  const [copySource, setCopySource] = useState("");
+  const [copyOverwrite, setCopyOverwrite] = useState(false);
+  const [showAllGroups, setShowAllGroups] = useState(false);
 
   const bridges = useQuery({
     queryKey: ["iiko-bridges"],
@@ -489,9 +743,10 @@ function Links({
     onRestaurantChange(preferred);
   }, [bridges.data, onRestaurantChange, restaurantId]);
 
+  const bridgeRows = bridges.data ?? [];
   const currentBridge = useMemo(
-    () => (bridges.data ?? []).find((row) => row.restaurant_id === restaurantId) ?? null,
-    [bridges.data, restaurantId],
+    () => bridgeRows.find((row) => row.restaurant_id === restaurantId) ?? null,
+    [bridgeRows, restaurantId],
   );
 
   const [groups, setGroups] = useState<string[]>([]);
@@ -511,6 +766,8 @@ function Links({
     }
     setDraft({});
     setCategoryFilter("all");
+    setCopySource("");
+    setGroupSearch("");
     setSearch("");
   }, [restaurantId, storageKey]);
 
@@ -555,7 +812,8 @@ function Links({
     enabled: restaurantId !== "",
   });
 
-  const selectedProductId = (row: IikoLink) => currentPick(row, draft)?.id ?? "";
+  const pickForRow = (row: IikoLink) => currentPick(row, draft);
+  const selectedProductId = (row: IikoLink) => pickForRow(row)?.id ?? "";
   const isRowLinked = (row: IikoLink) => selectedProductId(row) !== "";
 
   const save = useMutation({
@@ -586,50 +844,18 @@ function Links({
     },
   });
 
+  const copyLinks = useMutation({
+    mutationFn: () => api.copyIikoLinks(copySource, restaurantId, copyOverwrite),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSuccess: (result) => {
+      setDraft({});
+      void queryClient.invalidateQueries({ queryKey: ["iiko-links", restaurantId] });
+      void queryClient.invalidateQueries({ queryKey: ["iiko-bridges"] });
+      toast.success(`Перенесено ${result.copied}, пропущено ${result.skipped}`);
+    },
+  });
+
   const allRows = links.data ?? [];
-  const categoryStats = useMemo(() => {
-    const byCategory = new Map<string, { dishes: number; extras: number; linked: number; name: string; total: number }>();
-
-    for (const row of allRows) {
-      const name = row.group ?? "Без категории";
-      const current = byCategory.get(name) ?? { dishes: 0, extras: 0, linked: 0, name, total: 0 };
-      current.total += 1;
-      if (isRowLinked(row)) current.linked += 1;
-      if (row.kind === "dish") current.dishes += 1;
-      if (row.kind === "extra") current.extras += 1;
-      byCategory.set(name, current);
-    }
-
-    return [...byCategory.values()].sort((a, b) => b.total - a.total);
-  }, [allRows, draft]);
-
-  useEffect(() => {
-    if (categoryFilter === "all") return;
-    if (!categoryStats.some((item) => item.name === categoryFilter)) setCategoryFilter("all");
-  }, [categoryFilter, categoryStats]);
-
-  const rows = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase("ru-RU");
-    return allRows.filter((row) => {
-      const linked = isRowLinked(row);
-      if (matchFilter === "unmatched" && linked) return false;
-      if (matchFilter === "matched" && !linked) return false;
-      if (kindFilter !== "all" && row.kind !== kindFilter) return false;
-      if (categoryFilter !== "all" && (row.group ?? "Без категории") !== categoryFilter) return false;
-      if (!needle) return true;
-      const haystack = [
-        row.name,
-        row.group ?? "",
-        row.product_name ?? "",
-        row.product_code ?? "",
-        row.product_group_path ?? "",
-      ]
-        .join(" ")
-        .toLocaleLowerCase("ru-RU");
-      return haystack.includes(needle);
-    });
-  }, [allRows, categoryFilter, draft, kindFilter, matchFilter, search]);
-
   const total = allRows.length;
   const linked = allRows.filter(isRowLinked).length;
   const unlinked = total - linked;
@@ -637,204 +863,233 @@ function Links({
   const dishLinked = allRows.filter((row) => row.kind === "dish" && isRowLinked(row)).length;
   const extraTotal = allRows.filter((row) => row.kind === "extra").length;
   const extraLinked = allRows.filter((row) => row.kind === "extra" && isRowLinked(row)).length;
+  const priceMismatches = allRows.filter((row) => isRowLinked(row) && hasPriceDiff(row, pickForRow(row))).length;
   const changed = Object.keys(draft).length;
+  const progress = total > 0 ? Math.round((linked / total) * 100) : 0;
 
-  const columns = useMemo(
+  const categoryStats = useMemo(() => {
+    const byCategory = new Map<
+      string,
+      { dishes: number; extras: number; linked: number; name: string; priceDiffs: number; total: number }
+    >();
+
+    for (const row of allRows) {
+      const name = rowCategory(row);
+      const current = byCategory.get(name) ?? { dishes: 0, extras: 0, linked: 0, name, priceDiffs: 0, total: 0 };
+      const pick = pickForRow(row);
+      current.total += 1;
+      if (pick) current.linked += 1;
+      if (hasPriceDiff(row, pick)) current.priceDiffs += 1;
+      if (row.kind === "dish") current.dishes += 1;
+      if (row.kind === "extra") current.extras += 1;
+      byCategory.set(name, current);
+    }
+
+    return [...byCategory.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "ru"));
+  }, [allRows, draft]);
+
+  useEffect(() => {
+    if (categoryFilter === "all") return;
+    if (!categoryStats.some((item) => item.name === categoryFilter)) setCategoryFilter("all");
+  }, [categoryFilter, categoryStats]);
+
+  const rows = useMemo(
     () =>
-      linkColumn.columns([
-        linkColumn.accessor("name", {
-          header: "Позиция",
-          cell: (info) => {
-            const row = info.row.original;
-            return (
-              <div>
-                <div className="row-main">{info.getValue()}</div>
-                <div className="row-sub">
-                  {row.kind === "dish" ? row.group ?? "Без категории" : "Добавка"}
-                  {row.kind === "extra" ? " · нужна группа модификатора" : ""}
-                </div>
-              </div>
-            );
-          },
-        }),
-        linkColumn.display({
-          id: "product",
-          header: "Товар iiko",
-          cell: (info) => {
-            const row = info.row.original;
-            const picked = currentPick(row, draft);
-            const changedRow = draft[keyOf(row)] !== undefined;
-            const priceDiff =
-              picked !== null &&
-              row.iiko_price_kopecks > 0 &&
-              row.our_price_kopecks !== row.iiko_price_kopecks;
-
-            return picked ? (
-              <div>
-                <div className={changedRow ? "row-main text-[var(--acc)]" : "row-main"}>{picked.name}</div>
-                <div className="row-sub">
-                  {picked.code ? `код ${picked.code}` : "без кода"}
-                  {picked.productType ? ` · ${picked.productType}` : ""}
-                </div>
-                {picked.groupPath ? <div className="iiko-product-path">{picked.groupPath}</div> : null}
-                {priceDiff ? (
-                  <div className="chips-line mt-1">
-                    <Badge text="цена отличается" tone="warn" />
-                    <span className="row-sub">
-                      у нас {formatPrice(row.our_price_kopecks)}, iiko {formatPrice(row.iiko_price_kopecks)}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <Badge text="нет связи" tone="warn" />
-            );
-          },
-        }),
-        linkColumn.display({
-          id: "actions",
-          header: "Действие",
-          cell: (info) => {
-            const row = info.row.original;
-            const key = keyOf(row);
-            const picked = currentPick(row, draft);
-            return (
-              <div className="iiko-link-actions">
-                <div className="drawer-actions">
-                  <Button size="xs" variant="ghost" onClick={() => setPicking(row)}>
-                    <Search size={14} aria-hidden />
-                    {picked ? "Сменить" : "Найти"}
-                  </Button>
-                  {picked ? (
-                    <Button
-                      size="xs"
-                      variant="danger"
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          [key]: { id: "", name: "" },
-                        }))
-                      }
-                    >
-                      <Unlink size={14} aria-hidden />
-                      Снять
-                    </Button>
-                  ) : null}
-                </div>
-                {row.suggestions.length > 0 ? (
-                  <div className="suggestion-chips">
-                    {row.suggestions.slice(0, 4).map((product) => (
-                      <button
-                        key={product.product_id}
-                        className="suggestion-chip"
-                        title={product.group_path ?? product.group_name ?? ""}
-                        type="button"
-                        onClick={() =>
-                          setDraft((current) => ({
-                            ...current,
-                            [key]: {
-                              code: product.code,
-                              groupPath: product.group_path,
-                              id: product.product_id,
-                              name: product.name,
-                              productType: product.product_type,
-                            },
-                          }))
-                        }
-                      >
-                        {product.name}
-                        {product.code ? ` · ${product.code}` : ""}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            );
-          },
-        }),
-      ]),
-    [draft],
+      allRows.filter((row) => {
+        const pick = pickForRow(row);
+        const linkedRow = Boolean(pick);
+        if (matchFilter === "unmatched" && linkedRow) return false;
+        if (matchFilter === "matched" && !linkedRow) return false;
+        if (matchFilter === "price" && !hasPriceDiff(row, pick)) return false;
+        if (kindFilter !== "all" && row.kind !== kindFilter) return false;
+        if (categoryFilter !== "all" && rowCategory(row) !== categoryFilter) return false;
+        return linkMatchesSearch(row, pick, search);
+      }),
+    [allRows, categoryFilter, draft, kindFilter, matchFilter, search],
   );
 
+  const groupNeedle = groupSearch.trim().toLocaleLowerCase("ru-RU");
+  const groupRows = useMemo(() => {
+    const source = allGroups.data ?? [];
+    const filtered = source.filter((group) => {
+      if (!groupNeedle) return group.is_preset || groups.includes(group.path);
+      return `${group.name} ${group.path}`.toLocaleLowerCase("ru-RU").includes(groupNeedle);
+    });
+    return filtered.slice(0, showAllGroups || groupNeedle ? 80 : 18);
+  }, [allGroups.data, groupNeedle, groups, showAllGroups]);
+  const hiddenGroups = Math.max(0, (allGroups.data ?? []).length - groupRows.length);
+
+  const copyOptions = bridgeRows.filter((row) => row.restaurant_id !== restaurantId && row.linked_dishes + row.linked_extras > 0);
+  const selectedCategory = categoryStats.find((item) => item.name === categoryFilter);
+
   return (
-    <div className="page-stack">
+    <div className="page-stack iiko-links-page">
       <Section
+        className="iiko-link-overview"
         title="Сопоставление iiko"
         action={
-          <div className="surface-toolbar">
+          <div className="surface-toolbar iiko-restaurant-toolbar">
             <div className="field">
               <span className="field-label">Ресторан</span>
               <Select
                 value={restaurantId}
                 options={[
                   { label: "Выберите ресторан", value: "" },
-                  ...(bridges.data ?? []).map((row) => ({ label: row.restaurant_name, value: row.restaurant_id })),
+                  ...bridgeRows.map((row) => ({
+                    label: row.restaurant_name,
+                    description: `${row.linked_dishes} блюд · ${row.products} товаров`,
+                    value: row.restaurant_id,
+                  })),
                 ]}
                 onChange={onRestaurantChange}
               />
             </div>
-            <Button disabled={restaurantId === ""} variant="ghost" onClick={() => saveGroups(presetGroups)}>
-              Группы Mama Roma
-            </Button>
-            <Button disabled={restaurantId === ""} variant="ghost" onClick={() => saveGroups([])}>
-              Вся касса
-            </Button>
           </div>
         }
       >
         {restaurantId === "" ? (
           <div className="empty-state">
             <h2>Выберите ресторан</h2>
-            <p>После выбора загрузятся группы iiko и позиции, которые требуют связи.</p>
+            <p>После выбора загрузятся товары кассы, группы поиска и позиции меню.</p>
           </div>
         ) : (
           <>
-            <div className="metric-strip">
-              <Metric
-                label="Ресторан"
-                note={currentBridge && isOnline(currentBridge.last_seen_at) ? "плагин на связи" : "нет свежей связи"}
-                value={currentBridge?.restaurant_name ?? "—"}
-              />
-              <Metric label="Блюда" note={`не связано ${Math.max(dishTotal - dishLinked, 0)}`} value={`${dishLinked}/${dishTotal}`} />
-              <Metric label="Добавки" note="модификаторы" value={`${extraLinked}/${extraTotal}`} />
+            <div className="iiko-match-summary">
+              <div className="iiko-progress-card">
+                <div className="iiko-progress-head">
+                  <span>
+                    <strong>{currentBridge?.restaurant_name ?? "Ресторан"}</strong>
+                    <small>{currentBridge && isOnline(currentBridge.last_seen_at) ? "плагин на связи" : sinceLabel(currentBridge?.last_seen_at ?? null)}</small>
+                  </span>
+                  <Badge text={`${progress}%`} tone={unlinked === 0 ? "ok" : "accent"} />
+                </div>
+                <div className="iiko-progress-track">
+                  <span style={{ width: `${progress}%` }} />
+                </div>
+                <div className="iiko-progress-foot">
+                  <span>{linked}/{total} связей</span>
+                  <span>{unlinked} без товара</span>
+                  <span>{priceMismatches} цен проверить</span>
+                </div>
+              </div>
+
+              <Metric label="Блюда" note={`без связи ${Math.max(dishTotal - dishLinked, 0)}`} value={`${dishLinked}/${dishTotal}`} />
+              <Metric label="Добавки" note="модификаторы iiko" value={`${extraLinked}/${extraTotal}`} />
               <Metric
                 label="Номенклатура"
-                note={groups.length > 0 ? `групп выбрано ${groups.length}` : "поиск по всей кассе"}
+                note={groups.length > 0 ? `${groups.length} групп в поиске` : "поиск по всей кассе"}
                 value={String(currentBridge?.products ?? 0)}
               />
-            </div>
-
-            <div className="iiko-group-chips">
-              {(allGroups.data ?? [])
-                .filter((group) => group.is_preset)
-                .map((group) => {
-                  const picked = groups.includes(group.path);
-                  return (
-                    <button
-                      key={group.path}
-                      className="filter-chip"
-                      data-active={picked}
-                      title={group.path}
-                      type="button"
-                      onClick={() => pickGroup(group.path)}
-                    >
-                      {group.name} · {group.products}
-                    </button>
-                  );
-                })}
             </div>
           </>
         )}
       </Section>
 
       {restaurantId !== "" ? (
+        <div className="iiko-secondary-tools">
+          <details className="iiko-transfer-panel">
+            <summary>
+              <span className="iiko-transfer-copy">
+                <Copy size={16} aria-hidden />
+                <span>
+                  <strong>Сопоставить как в другой точке</strong>
+                  <small>По тем же блюдам, добавкам и кодам товаров</small>
+                </span>
+              </span>
+              <strong>{copySource ? "источник выбран" : "выбрать источник"}</strong>
+            </summary>
+            <div className="iiko-transfer-controls">
+              <Select
+                value={copySource}
+                placeholder="Ресторан-источник"
+                options={[
+                  { label: "Ресторан-источник", value: "" },
+                  ...copyOptions.map((row) => ({
+                    label: row.restaurant_name,
+                    description: `${row.linked_dishes} блюд · ${row.linked_extras} добавок`,
+                    value: row.restaurant_id,
+                  })),
+                ]}
+                onChange={setCopySource}
+              />
+              <label className="inline-check">
+                <input checked={copyOverwrite} type="checkbox" onChange={() => setCopyOverwrite((value) => !value)} />
+                Перезаписать текущие
+              </label>
+              <Button disabled={!copySource || copyLinks.isPending} onClick={() => copyLinks.mutate()}>
+                <Copy size={15} aria-hidden />
+                {copyLinks.isPending ? "Переносим..." : "Перенести"}
+              </Button>
+            </div>
+          </details>
+
+          <details className="iiko-groups-panel">
+            <summary>
+              <span>
+                <ListTree size={15} aria-hidden />
+                Группы поиска
+              </span>
+              <strong>{groups.length > 0 ? `${groups.length} выбрано` : "вся касса"}</strong>
+            </summary>
+            <div className="iiko-groups-toolbar">
+              <label className="field toolbar-field">
+                <span className="field-label">Найти группу</span>
+                <span className="search-control">
+                  <Search className="search-icon" size={15} aria-hidden />
+                  <input
+                    className="input"
+                    placeholder="Пицца, модификаторы, кухня"
+                    value={groupSearch}
+                    onChange={(event) => setGroupSearch(event.target.value)}
+                  />
+                </span>
+              </label>
+              <Button disabled={presetGroups.length === 0} variant="ghost" onClick={() => saveGroups(presetGroups)}>
+                <ListTree size={15} aria-hidden />
+                Группы меню
+              </Button>
+              <Button variant="ghost" onClick={() => saveGroups([])}>
+                <Store size={15} aria-hidden />
+                Вся касса
+              </Button>
+            </div>
+            <div className="iiko-group-grid">
+              {groupRows.map((group) => {
+                const picked = groups.includes(group.path);
+                return (
+                  <button
+                    key={group.path}
+                    className="iiko-group-button"
+                    data-active={picked}
+                    data-preset={group.is_preset}
+                    title={group.path}
+                    type="button"
+                    onClick={() => pickGroup(group.path)}
+                  >
+                    <span>{group.name}</span>
+                    <small>{group.products} товаров</small>
+                  </button>
+                );
+              })}
+            </div>
+            {hiddenGroups > 0 && !groupNeedle ? (
+              <Button size="xs" variant="ghost" onClick={() => setShowAllGroups((value) => !value)}>
+                {showAllGroups ? "Свернуть группы" : `Показать ещё ${hiddenGroups}`}
+              </Button>
+            ) : null}
+          </details>
+        </div>
+      ) : null}
+
+      {restaurantId !== "" ? (
         <Section
-          title={`Позиции · связано ${linked} из ${total}`}
+          className="iiko-link-positions"
+          title={`Позиции · ${linked} из ${total}`}
           action={
             <div className="surface-toolbar">
               <Button disabled={auto.isPending} variant="ghost" onClick={() => auto.mutate()}>
-                <BadgeCheck size={15} aria-hidden />
-                {auto.isPending ? "Ищем..." : "Автосвязать точные"}
+                <Wand2 size={15} aria-hidden />
+                {auto.isPending ? "Ищем..." : "Автосвязать"}
               </Button>
               <Button disabled={changed === 0 || save.isPending} onClick={() => save.mutate()}>
                 <CheckCircle2 size={15} aria-hidden />
@@ -843,14 +1098,14 @@ function Links({
             </div>
           }
         >
-          <div className="surface-toolbar">
+          <div className="surface-toolbar iiko-filter-toolbar">
             <label className="field toolbar-field">
               <span className="field-label">Поиск</span>
               <span className="search-control">
                 <Search className="search-icon" size={15} aria-hidden />
                 <input
                   className="input"
-                  placeholder="Поиск связи"
+                  placeholder="Название, код, цена 1430, группа"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
@@ -859,6 +1114,9 @@ function Links({
             <div className="filter-chips" aria-label="Статус связи">
               <button className="filter-chip" data-active={matchFilter === "unmatched"} type="button" onClick={() => setMatchFilter("unmatched")}>
                 Нет связи
+              </button>
+              <button className="filter-chip" data-active={matchFilter === "price"} type="button" onClick={() => setMatchFilter("price")}>
+                Цена отличается
               </button>
               <button className="filter-chip" data-active={matchFilter === "matched"} type="button" onClick={() => setMatchFilter("matched")}>
                 Есть связь
@@ -882,51 +1140,96 @@ function Links({
             <DensityToggle density={density} onChange={setDensity} />
           </div>
 
-          <div className="iiko-link-layout">
-            <aside className="iiko-category-list">
-              <button
-                className="iiko-category-card"
-                data-active={categoryFilter === "all"}
-                type="button"
-                onClick={() => setCategoryFilter("all")}
-              >
-                <span className="row-main">Все категории</span>
-                <span className="row-sub">нет связи {unlinked}</span>
-              </button>
-              {categoryStats.map((item) => {
-                const missing = item.total - item.linked;
+          <div className="iiko-category-grid">
+            <button
+              className="iiko-category-card"
+              data-active={categoryFilter === "all"}
+              type="button"
+              onClick={() => setCategoryFilter("all")}
+            >
+              <span className="row-main">Все категории</span>
+              <span className="row-sub">нет связи {unlinked}</span>
+              <span className="iiko-category-progress"><i style={{ width: `${progress}%` }} /></span>
+            </button>
+            {categoryStats.map((item) => {
+              const missing = item.total - item.linked;
+              const categoryProgress = item.total > 0 ? Math.round((item.linked / item.total) * 100) : 0;
+              return (
+                <button
+                  key={item.name}
+                  className="iiko-category-card"
+                  data-active={categoryFilter === item.name}
+                  type="button"
+                  onClick={() => setCategoryFilter((current) => (current === item.name ? "all" : item.name))}
+                >
+                  <span className="row-main">{item.name}</span>
+                  <span className="row-sub">
+                    {item.linked}/{item.total} · {missing > 0 ? `${missing} без связи` : "готово"}
+                  </span>
+                  <span className="iiko-category-progress"><i style={{ width: `${categoryProgress}%` }} /></span>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedCategory ? (
+            <div className="iiko-category-focus">
+              <Filter size={15} aria-hidden />
+              <span>{selectedCategory.name}</span>
+              <strong>{selectedCategory.linked}/{selectedCategory.total}</strong>
+              {selectedCategory.priceDiffs > 0 ? <Badge text={`${selectedCategory.priceDiffs} цен проверить`} tone="warn" /> : null}
+            </div>
+          ) : null}
+
+          {links.isPending ? (
+            <div className="iiko-match-list" data-density={density}>
+              {Array.from({ length: 5 }, (_, index) => (
+                <div key={index} className="skeleton skeleton-card" />
+              ))}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="empty-state">
+              <h2>Ничего не найдено</h2>
+              <p>Смените фильтр, категорию или поисковую строку.</p>
+            </div>
+          ) : (
+            <div className="iiko-match-list" data-density={density}>
+              {rows.map((row) => {
+                const key = keyOf(row);
                 return (
-                  <button
-                    key={item.name}
-                    className="iiko-category-card"
-                    data-active={categoryFilter === item.name}
-                    type="button"
-                    onClick={() => setCategoryFilter(item.name)}
-                  >
-                    <span className="row-main">{item.name}</span>
-                    <span className="row-sub">
-                      {item.linked}/{item.total} · {missing > 0 ? `нет связи ${missing}` : "готово"}
-                    </span>
-                  </button>
+                  <IikoMatchCard
+                    key={key}
+                    changed={draft[key] !== undefined}
+                    pick={pickForRow(row)}
+                    row={row}
+                    onClear={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        [key]: { id: "", name: "", priceKopecks: 0 },
+                      }))
+                    }
+                    onPick={(product) =>
+                      setDraft((current) => ({
+                        ...current,
+                        [key]: pickFromProduct(product),
+                      }))
+                    }
+                    onSearch={() => setPicking(row)}
+                  />
                 );
               })}
-            </aside>
+            </div>
+          )}
 
-            <DataTable
-              columns={columns}
-              data={rows}
-              density={density}
-              getRowId={(row) => keyOf(row)}
-              isLoading={links.isPending}
-              pageSize={20}
-              empty={
-                <div className="empty-state">
-                  <h2>Ничего не найдено</h2>
-                  <p>Смените фильтр, категорию или поисковую строку.</p>
-                </div>
-              }
-            />
-          </div>
+          {changed > 0 ? (
+            <div className="iiko-save-strip">
+              <span>{changed} изменений не сохранено</span>
+              <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                <CheckCircle2 size={15} aria-hidden />
+                {save.isPending ? "Сохраняем..." : "Сохранить"}
+              </Button>
+            </div>
+          ) : null}
         </Section>
       ) : null}
 
@@ -934,18 +1237,12 @@ function Links({
         <ProductPicker
           groups={groups}
           restaurantId={restaurantId}
-          title={picking.name}
+          row={picking}
           onClose={() => setPicking(null)}
           onPick={(product) => {
             setDraft((current) => ({
               ...current,
-              [keyOf(picking)]: {
-                code: product.code,
-                groupPath: product.group_path,
-                id: product.product_id,
-                name: product.name,
-                productType: product.product_type,
-              },
+              [keyOf(picking)]: pickFromProduct(product),
             }));
             setPicking(null);
           }}
@@ -1099,31 +1396,230 @@ function Queue() {
 }
 
 function split(value: string): string[] {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  return cleanTreePaths(
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  );
 }
 
-function Tree() {
-  const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [deny, setDeny] = useState<string | null>(null);
-  const [extras, setExtras] = useState<string | null>(null);
-  const [keepUnknown, setKeepUnknown] = useState<boolean | null>(null);
+function cleanTreePaths(paths: string[]): string[] {
+  return [...new Set(paths.map((path) => path.trim()).filter((path) => path.length > 0))];
+}
 
+function treeTargetKey(categoryId: string): string {
+  return `category:${categoryId}`;
+}
+
+function treeTargetKind(targetKey: string): TreeTargetKind {
+  if (targetKey === "extras") return "extras";
+  if (targetKey === "deny") return "deny";
+  return "category";
+}
+
+function treePathTitle(path: string): string {
+  const parts = path.split("/").map((part) => part.trim()).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function treePathParent(path: string): string {
+  const parts = path.split("/").map((part) => part.trim()).filter(Boolean);
+  return parts.slice(0, -1).join(" / ");
+}
+
+function normalizeTreeTerm(value: string): string {
+  return value
+    .toLocaleLowerCase("ru-RU")
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9]+/g, " ")
+    .trim();
+}
+
+function treeGroupMatchesTarget(kind: TreeTargetKind, branch: MenuBranch | null, group: IikoGroup): boolean {
+  const source = normalizeTreeTerm(`${group.name} ${group.path}`);
+  if (!source) return false;
+
+  if (kind === "category" && branch) {
+    const words = normalizeTreeTerm(branch.name)
+      .split(" ")
+      .filter((word) => word.length > 2);
+    return words.some((word) => source.includes(word));
+  }
+
+  if (kind === "extras") return /добав|модиф|соус|сыр|тест|топп|опц/.test(source);
+  return /архив|служ|заготов|сырье|тара|посуд|old|test|тест|стоп|удален/.test(source);
+}
+
+function Tree({
+  onRestaurantChange,
+  restaurantId,
+}: {
+  onRestaurantChange: (id: string) => void;
+  restaurantId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<Record<string, string[]>>({});
+  const [deny, setDeny] = useState<string[] | null>(null);
+  const [extras, setExtras] = useState<string[] | null>(null);
+  const [keepUnknown, setKeepUnknown] = useState<boolean | null>(null);
+  const [targetKey, setTargetKey] = useState("");
+  const [categorySearch, setCategorySearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupScope, setGroupScope] = useState<TreeGroupScope>("suggested");
+  const [showAllGroups, setShowAllGroups] = useState(false);
+
+  const bridges = useQuery({
+    queryKey: ["iiko-bridges"],
+    queryFn: api.bridges,
+    refetchInterval: 30000,
+  });
   const tree = useQuery({ queryKey: ["iiko-menu-tree"], queryFn: api.menuTree });
+  const groups = useQuery({
+    queryKey: ["iiko-groups", restaurantId],
+    queryFn: () => api.iikoGroups(restaurantId),
+    enabled: restaurantId !== "",
+  });
+
+  useEffect(() => {
+    if (restaurantId !== "" || !bridges.data || bridges.data.length === 0) return;
+    const preferred =
+      bridges.data.find((row) => row.is_registered && row.products > 0)?.restaurant_id ??
+      bridges.data[0].restaurant_id;
+    onRestaurantChange(preferred);
+  }, [bridges.data, onRestaurantChange, restaurantId]);
+
+  const data = tree.data;
+  const branches = data?.branches ?? [];
+
+  useEffect(() => {
+    if (branches.length === 0) return;
+    if (targetKey === "extras" || targetKey === "deny") return;
+    const selectedId = targetKey.replace("category:", "");
+    if (!selectedId || !branches.some((branch) => branch.category_id === selectedId)) {
+      setTargetKey(treeTargetKey(branches[0].category_id));
+    }
+  }, [branches, targetKey]);
+
+  useEffect(() => {
+    setGroupSearch("");
+    setGroupScope("suggested");
+    setShowAllGroups(false);
+  }, [targetKey]);
+
+  const bridgeRows = bridges.data ?? [];
+  const keep = keepUnknown ?? data?.keep_unknown_groups ?? false;
+  const extraPaths = cleanTreePaths(extras ?? data?.extra_group_paths ?? []);
+  const denyPaths = cleanTreePaths(deny ?? data?.deny_markers ?? []);
+  const kind = treeTargetKind(targetKey);
+  const selectedBranchId = targetKey.replace("category:", "");
+  const selectedBranch =
+    kind === "category"
+      ? branches.find((branch) => branch.category_id === selectedBranchId) ?? branches[0] ?? null
+      : null;
+  const activeTargetKey = selectedBranch ? treeTargetKey(selectedBranch.category_id) : targetKey;
+
+  const pathsForBranch = (branch: MenuBranch) =>
+    cleanTreePaths(draft[branch.category_id] ?? branch.iiko_group_paths);
+
+  const selectedPaths =
+    kind === "extras"
+      ? extraPaths
+      : kind === "deny"
+        ? denyPaths
+        : selectedBranch
+          ? pathsForBranch(selectedBranch)
+          : [];
+  const selectedSet = new Set(selectedPaths);
+
+  const setSelectedPaths = (next: string[]) => {
+    const cleaned = cleanTreePaths(next);
+    if (kind === "extras") {
+      setExtras(cleaned);
+      return;
+    }
+    if (kind === "deny") {
+      setDeny(cleaned);
+      return;
+    }
+    if (!selectedBranch) return;
+    setDraft((current) => ({ ...current, [selectedBranch.category_id]: cleaned }));
+  };
+
+  const pathOwners = useMemo(() => {
+    const owners = new Map<string, string[]>();
+    const addOwner = (path: string, owner: string) => {
+      const current = owners.get(path) ?? [];
+      if (!current.includes(owner)) owners.set(path, [...current, owner]);
+    };
+
+    for (const branch of branches) {
+      for (const path of pathsForBranch(branch)) addOwner(path, branch.name);
+    }
+    for (const path of extraPaths) addOwner(path, "Добавки");
+    for (const path of denyPaths) addOwner(path, "Исключено");
+
+    return owners;
+  }, [branches, denyPaths, draft, extraPaths]);
+
+  const targetName =
+    kind === "extras"
+      ? "Ветки добавок"
+      : kind === "deny"
+        ? "Исключить из меню"
+        : selectedBranch?.name ?? "Категория";
+  const targetHint =
+    kind === "extras"
+      ? "Модификаторы, соусы, тесто, сыр и другие добавки."
+      : kind === "deny"
+        ? "Служебные, архивные и технические группы, которые не должны попадать в меню."
+        : "Группы iiko, где лежат блюда этой категории.";
+
+  const hasChanges =
+    Object.keys(draft).length > 0 ||
+    extras !== null ||
+    deny !== null ||
+    keepUnknown !== null;
+  const configuredBranches = branches.filter((branch) => pathsForBranch(branch).length > 0).length;
+  const totalBranchPaths = branches.reduce((sum, branch) => sum + pathsForBranch(branch).length, 0);
+  const totalGroups = groups.data?.length ?? 0;
+  const visibleBranches = branches.filter((branch) => {
+    const needle = normalizeTreeTerm(categorySearch);
+    if (!needle) return true;
+    return normalizeTreeTerm(branch.name).includes(needle);
+  });
+  const groupNeedle = normalizeTreeTerm(groupSearch);
+  const matchingGroups = (groups.data ?? []).filter((group) => {
+    const path = group.path || group.name;
+    if (!path) return false;
+    const groupText = normalizeTreeTerm(`${group.name} ${group.path}`);
+    if (groupNeedle && !groupText.includes(groupNeedle)) return false;
+    const owners = pathOwners.get(path) ?? [];
+    const selected = selectedSet.has(path);
+    const suggested = treeGroupMatchesTarget(kind, selectedBranch, group);
+    if (groupScope === "selected") return selected;
+    if (groupScope === "free") return selected || owners.length === 0;
+    if (groupScope === "suggested") return selected || suggested;
+    return true;
+  });
+  const visibleGroups = matchingGroups.slice(0, showAllGroups ? 160 : 48);
+  const hiddenGroups = Math.max(0, matchingGroups.length - visibleGroups.length);
+  const suggestedPaths = cleanTreePaths(
+    (groups.data ?? [])
+      .filter((group) => treeGroupMatchesTarget(kind, selectedBranch, group))
+      .map((group) => group.path || group.name),
+  );
 
   const save = useMutation({
-    mutationFn: (data: MenuTree) =>
+    mutationFn: (payload: MenuTree) =>
       api.saveMenuTree({
-        branches: data.branches.map((branch) => ({
+        branches: payload.branches.map((branch) => ({
           category_id: branch.category_id,
-          iiko_group_paths: split(draft[branch.category_id] ?? branch.iiko_group_paths.join("\n")),
+          iiko_group_paths: pathsForBranch(branch),
         })),
-        deny_markers: split(deny ?? data.deny_markers.join("\n")),
-        extra_group_paths: split(extras ?? data.extra_group_paths.join("\n")),
-        keep_unknown_groups: keepUnknown ?? data.keep_unknown_groups,
+        deny_markers: denyPaths,
+        extra_group_paths: extraPaths,
+        keep_unknown_groups: keep,
       }),
     onError: (error) => toast.error(errorMessage(error)),
     onSuccess: () => {
@@ -1137,121 +1633,304 @@ function Tree() {
     },
   });
 
-  const columns = useMemo(
-    () =>
-      branchColumn.columns([
-        branchColumn.accessor("name", {
-          header: "Категория",
-          cell: (info) => <span className="row-main">{info.getValue()}</span>,
-        }),
-        branchColumn.display({
-          id: "linked",
-          header: "Связано",
-          cell: (info) => {
-            const branch = info.row.original;
-            return (
-              <div>
-                <div className="mono row-main">
-                  {branch.linked} из {branch.dishes}
-                </div>
-                <div className="row-sub">
-                  {branch.dishes - branch.linked > 0 ? `нет связи ${branch.dishes - branch.linked}` : "готово"}
-                </div>
-              </div>
-            );
-          },
-        }),
-        branchColumn.display({
-          id: "paths",
-          header: "Ветки кассы",
-          cell: (info) => {
-            const branch = info.row.original;
-            return (
-              <textarea
-                className="textarea iiko-tree-textarea"
-                rows={Math.max(2, branch.iiko_group_paths.length + 1)}
-                value={draft[branch.category_id] ?? branch.iiko_group_paths.join("\n")}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    [branch.category_id]: event.target.value,
-                  }))
-                }
-              />
-            );
-          },
-        }),
-      ]),
-    [draft],
-  );
-
-  const data = tree.data;
-  const keep = keepUnknown ?? data?.keep_unknown_groups ?? false;
+  const togglePath = (path: string) => {
+    setSelectedPaths(
+      selectedSet.has(path)
+        ? selectedPaths.filter((item) => item !== path)
+        : [...selectedPaths, path],
+    );
+  };
 
   return (
-    <div className="page-stack">
+    <div className="page-stack iiko-tree-page">
       <Section
+        className="iiko-tree-overview"
         title="Дерево меню"
         action={
-          <Button disabled={!data || save.isPending} onClick={() => data && save.mutate(data)}>
-            <CheckCircle2 size={15} aria-hidden />
-            {save.isPending ? "Сохраняем..." : "Сохранить"}
-          </Button>
+          <div className="surface-toolbar iiko-tree-actions">
+            <label className="field">
+              <span className="field-label">Группы из ресторана</span>
+              <Select
+                value={restaurantId}
+                options={[
+                  { label: "Выберите ресторан", value: "" },
+                  ...bridgeRows.map((row) => ({
+                    label: row.restaurant_name,
+                    description: `${row.products} товаров · ${row.linked_dishes} связей`,
+                    value: row.restaurant_id,
+                  })),
+                ]}
+                onChange={onRestaurantChange}
+              />
+            </label>
+            <Button disabled={!data || !hasChanges || save.isPending} onClick={() => data && save.mutate(data)}>
+              <CheckCircle2 size={15} aria-hidden />
+              {save.isPending ? "Сохраняем..." : hasChanges ? "Сохранить" : "Сохранено"}
+            </Button>
+          </div>
         }
-        description="Где в iiko искать блюда каждой категории и какие ветки исключать."
       >
-        <div className="info-band">
-          Ветка — начало пути группы в кассе. По одной в строке. Настройка общая для сети,
-          потому что товары заводятся централизованно.
-        </div>
-
         {tree.error ? (
           <div className="error-state">
             <h2>Не удалось загрузить дерево меню</h2>
             <p>{errorMessage(tree.error)}</p>
           </div>
         ) : (
-          <DataTable
-            columns={columns}
-            data={data?.branches ?? []}
-            density="regular"
-            getRowId={(row) => row.category_id}
-            isLoading={tree.isPending}
-            pageSize={20}
-          />
+          <div className="iiko-tree-summary">
+            <div className="iiko-tree-summary-card">
+              <ListTree size={17} aria-hidden />
+              <span>
+                <strong>{configuredBranches}/{branches.length}</strong>
+                <small>категорий настроено</small>
+              </span>
+            </div>
+            <div className="iiko-tree-summary-card">
+              <Link2 size={17} aria-hidden />
+              <span>
+                <strong>{totalBranchPaths}</strong>
+                <small>веток блюд</small>
+              </span>
+            </div>
+            <div className="iiko-tree-summary-card">
+              <Store size={17} aria-hidden />
+              <span>
+                <strong>{totalGroups}</strong>
+                <small>{restaurantId ? "групп iiko в точке" : "выберите ресторан"}</small>
+              </span>
+            </div>
+            <div className="iiko-tree-summary-card">
+              <Utensils size={17} aria-hidden />
+              <span>
+                <strong>{extraPaths.length}</strong>
+                <small>веток добавок</small>
+              </span>
+            </div>
+          </div>
         )}
       </Section>
 
-      {data ? (
-        <Section title="Общие правила сети">
-          <div className="tree-rules-grid">
-            <label className="field">
-              <span className="field-label">Мусорные метки</span>
-              <textarea
-                className="textarea iiko-rules-textarea"
-                value={deny ?? data.deny_markers.join("\n")}
-                onChange={(event) => setDeny(event.target.value)}
-              />
-              <span className="row-sub">Ветку пропускаем, если путь содержит такой фрагмент.</span>
-            </label>
-
-            <label className="field">
-              <span className="field-label">Ветки добавок</span>
-              <textarea
-                className="textarea iiko-rules-textarea"
-                value={extras ?? data.extra_group_paths.join("\n")}
-                onChange={(event) => setExtras(event.target.value)}
-              />
-              <span className="row-sub">Где лежат модификаторы: соусы, тесто, сыр и прочие добавки.</span>
-            </label>
+      {tree.isPending ? (
+        <Section title="Настройка веток">
+          <div className="iiko-tree-layout">
+            <div className="skeleton skeleton-card" />
+            <div className="skeleton skeleton-card" />
           </div>
+        </Section>
+      ) : data ? (
+        <Section className="iiko-tree-builder" title="Настройка веток">
+          <div className="iiko-tree-layout">
+            <aside className="iiko-tree-sidebar">
+              <label className="field">
+                <span className="field-label">Категория приложения</span>
+                <span className="search-control">
+                  <Search className="search-icon" size={15} aria-hidden />
+                  <input
+                    className="input"
+                    placeholder="Пицца, салаты, паста"
+                    value={categorySearch}
+                    onChange={(event) => setCategorySearch(event.target.value)}
+                  />
+                </span>
+              </label>
 
+              <div className="iiko-tree-branch-list">
+                {visibleBranches.map((branch) => {
+                  const paths = pathsForBranch(branch);
+                  const branchProgress = branch.dishes > 0 ? Math.round((branch.linked / branch.dishes) * 100) : 0;
+                  return (
+                    <button
+                      key={branch.category_id}
+                      className="iiko-tree-branch"
+                      data-active={activeTargetKey === treeTargetKey(branch.category_id)}
+                      type="button"
+                      onClick={() => setTargetKey(treeTargetKey(branch.category_id))}
+                    >
+                      <span className="row-main">{branch.name}</span>
+                      <span className="row-sub">
+                        {paths.length > 0 ? `${paths.length} веток` : "ветки не выбраны"} · {branch.linked}/{branch.dishes}
+                      </span>
+                      <span className="iiko-category-progress"><i style={{ width: `${branchProgress}%` }} /></span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="iiko-tree-rule-targets">
+                <button
+                  className="iiko-tree-rule-target"
+                  data-active={targetKey === "extras"}
+                  type="button"
+                  onClick={() => setTargetKey("extras")}
+                >
+                  <Utensils size={15} aria-hidden />
+                  <span>
+                    <strong>Добавки</strong>
+                    <small>{extraPaths.length} веток</small>
+                  </span>
+                </button>
+                <button
+                  className="iiko-tree-rule-target"
+                  data-active={targetKey === "deny"}
+                  type="button"
+                  onClick={() => setTargetKey("deny")}
+                >
+                  <Trash2 size={15} aria-hidden />
+                  <span>
+                    <strong>Исключить</strong>
+                    <small>{denyPaths.length} меток</small>
+                  </span>
+                </button>
+              </div>
+            </aside>
+
+            <div className="iiko-tree-editor">
+              <div className="iiko-tree-editor-head">
+                <span className="iiko-tree-target-icon" data-kind={kind}>
+                  {kind === "deny" ? (
+                    <Trash2 size={18} aria-hidden />
+                  ) : kind === "extras" ? (
+                    <Utensils size={18} aria-hidden />
+                  ) : (
+                    <ListTree size={18} aria-hidden />
+                  )}
+                </span>
+                <span>
+                  <strong>{targetName}</strong>
+                  <small>{targetHint}</small>
+                </span>
+                <Badge text={`${selectedPaths.length} выбрано`} tone={selectedPaths.length > 0 ? "accent" : "muted"} />
+              </div>
+
+              <div className="iiko-tree-selected-paths">
+                {selectedPaths.length > 0 ? (
+                  selectedPaths.map((path) => (
+                    <button key={path} className="iiko-tree-path-chip" type="button" onClick={() => togglePath(path)}>
+                      <span>{treePathTitle(path)}</span>
+                      <small>{treePathParent(path) || path}</small>
+                      <X size={13} aria-hidden />
+                    </button>
+                  ))
+                ) : (
+                  <div className="iiko-tree-empty-inline">Ветки пока не выбраны</div>
+                )}
+              </div>
+
+              <div className="surface-toolbar iiko-tree-toolbar">
+                <label className="field toolbar-field">
+                  <span className="field-label">Группы iiko</span>
+                  <span className="search-control">
+                    <Search className="search-icon" size={15} aria-hidden />
+                    <input
+                      className="input"
+                      placeholder="Название или путь группы"
+                      value={groupSearch}
+                      onChange={(event) => setGroupSearch(event.target.value)}
+                    />
+                  </span>
+                </label>
+                <div className="filter-chips" aria-label="Фильтр групп iiko">
+                  <button className="filter-chip" data-active={groupScope === "suggested"} type="button" onClick={() => setGroupScope("suggested")}>
+                    Подходящие
+                  </button>
+                  <button className="filter-chip" data-active={groupScope === "free"} type="button" onClick={() => setGroupScope("free")}>
+                    Свободные
+                  </button>
+                  <button className="filter-chip" data-active={groupScope === "selected"} type="button" onClick={() => setGroupScope("selected")}>
+                    Выбранные
+                  </button>
+                  <button className="filter-chip" data-active={groupScope === "all"} type="button" onClick={() => setGroupScope("all")}>
+                    Все
+                  </button>
+                </div>
+                <span className="toolbar-spacer" />
+                <Button
+                  disabled={suggestedPaths.length === 0}
+                  variant="ghost"
+                  onClick={() => setSelectedPaths([...selectedPaths, ...suggestedPaths])}
+                >
+                  <Wand2 size={15} aria-hidden />
+                  Подобрать
+                </Button>
+                <Button disabled={selectedPaths.length === 0} variant="danger" onClick={() => setSelectedPaths([])}>
+                  <Trash2 size={15} aria-hidden />
+                  Очистить
+                </Button>
+              </div>
+
+              {groups.isPending ? (
+                <div className="iiko-tree-group-grid">
+                  {Array.from({ length: 12 }, (_, index) => (
+                    <div key={index} className="skeleton skeleton-row" />
+                  ))}
+                </div>
+              ) : visibleGroups.length === 0 ? (
+                <div className="empty-state">
+                  <h2>{restaurantId ? "Группы не найдены" : "Выберите ресторан"}</h2>
+                  <p>
+                    {restaurantId
+                      ? "Проверьте выгрузку номенклатуры плагином или переключите фильтр групп."
+                      : "После выбора точки здесь появятся группы iiko для добавления в дерево."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="iiko-tree-group-grid">
+                    {visibleGroups.map((group) => {
+                      const path = group.path || group.name;
+                      const picked = selectedSet.has(path);
+                      const owners = pathOwners.get(path) ?? [];
+                      const suggested = treeGroupMatchesTarget(kind, selectedBranch, group);
+                      return (
+                        <button
+                          key={path}
+                          className="iiko-tree-group"
+                          data-picked={picked}
+                          data-suggested={suggested}
+                          type="button"
+                          onClick={() => togglePath(path)}
+                        >
+                          <span className="iiko-tree-group-head">
+                            <strong>{group.name || treePathTitle(path)}</strong>
+                            {picked ? <Badge text="выбрано" tone="accent" /> : suggested ? <Badge text="подходит" tone="ok" /> : null}
+                          </span>
+                          <span className="row-sub">{path}</span>
+                          <span className="iiko-tree-group-foot">
+                            <small>{group.products} товаров</small>
+                            {owners.length > 0 ? <small>{owners.join(", ")}</small> : <small>свободно</small>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {hiddenGroups > 0 ? (
+                    <Button variant="ghost" onClick={() => setShowAllGroups((value) => !value)}>
+                      {showAllGroups ? "Показать меньше" : `Показать ещё ${hiddenGroups}`}
+                    </Button>
+                  ) : null}
+                </>
+              )}
+
+              <details className="iiko-tree-manual">
+                <summary>Ручной режим</summary>
+                <textarea
+                  className="textarea iiko-tree-textarea"
+                  value={selectedPaths.join("\n")}
+                  onChange={(event) => setSelectedPaths(split(event.target.value))}
+                />
+              </details>
+            </div>
+          </div>
+        </Section>
+      ) : null}
+
+      {data ? (
+        <Section className="iiko-tree-safety" title="Режим отбора">
           <label className="inline-check warn-check">
             <input checked={keep} type="checkbox" onChange={() => setKeepUnknown(!keep)} />
             Забирать с кассы всё, включая ветки вне меню
           </label>
           <div className="row-sub">
-            Нужен только на этапе разбора дерева: иначе в приложение может попасть весь справочник точки.
+            Включать только для первичной выгрузки справочника: иначе в приложение может попасть лишняя номенклатура.
           </div>
         </Section>
       ) : null}
@@ -1273,6 +1952,7 @@ export function IikoTab() {
   return (
     <div className="page-stack">
       <Section
+        className="iiko-root-section"
         title="iiko"
         action={
           <div className="tabs" aria-label="Раздел iiko">
@@ -1295,7 +1975,7 @@ export function IikoTab() {
         }
         description="Плагины ресторанов, сопоставление номенклатуры, дерево iiko и очередь заказов."
       >
-        <div className="info-band">
+        <div className="info-band iiko-root-note">
           Ключ и сопоставление хранятся отдельно для каждой точки: база iiko у ресторанов своя,
           а заказ на кухню уходит только когда все активные блюда связаны с кассой.
         </div>
@@ -1310,7 +1990,7 @@ export function IikoTab() {
         />
       ) : null}
       {pane === "links" ? <Links restaurantId={restaurantId} onRestaurantChange={setRestaurantId} /> : null}
-      {pane === "tree" ? <Tree /> : null}
+      {pane === "tree" ? <Tree restaurantId={restaurantId} onRestaurantChange={setRestaurantId} /> : null}
       {pane === "queue" ? <Queue /> : null}
     </div>
   );

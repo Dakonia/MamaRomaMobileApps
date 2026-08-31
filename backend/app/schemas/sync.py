@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -12,6 +13,8 @@ class SyncChangeRead(BaseModel):
     title: str
     summary: str
     group: str | None
+    external_id: str
+    payload: dict[str, Any]
     applied: bool
 
 

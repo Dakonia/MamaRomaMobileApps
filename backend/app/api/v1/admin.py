@@ -12,6 +12,7 @@ from app.core.security import create_token, normalize_phone, verify_password
 from app.models.enums import (
     CampaignStatus,
     IikoHandoffStatus,
+    LoyaltyOperation,
     OrderStatus,
     ReservationStatus,
     TriggerKind,
@@ -67,8 +68,11 @@ from app.schemas.admin import (
     FeedbackSummary,
     GuestAdminRead,
     GuestCardRead,
+    GuestFeedbackRead,
+    GuestOrderItemRead,
     GuestOrderRead,
     GuestPatch,
+    GuestPointsAdjust,
     GuestPointsRead,
     GuestReservationRead,
     GuestWrite,
@@ -735,15 +739,36 @@ async def admin_guests(
             Order.guest_id.label("guest_id"),
             func.count(Order.id).label("orders_count"),
             func.coalesce(func.sum(Order.total_kopecks), 0).label("spent"),
+            func.max(Order.created_at).label("last_order_at"),
         )
         .where(Order.tenant_id == tenant.id)
         .group_by(Order.guest_id)
         .subquery()
     )
 
+    feedbacks = (
+        select(
+            OrderFeedback.guest_id.label("guest_id"),
+            func.count(OrderFeedback.id).label("feedback_count"),
+            func.avg(OrderFeedback.rating).label("average_rating"),
+        )
+        .where(OrderFeedback.tenant_id == tenant.id)
+        .group_by(OrderFeedback.guest_id)
+        .subquery()
+    )
+
     query = (
-        select(Guest, orders.c.orders_count, orders.c.spent, LoyaltyAccount)
+        select(
+            Guest,
+            orders.c.orders_count,
+            orders.c.spent,
+            orders.c.last_order_at,
+            feedbacks.c.feedback_count,
+            feedbacks.c.average_rating,
+            LoyaltyAccount,
+        )
         .outerjoin(orders, orders.c.guest_id == Guest.id)
+        .outerjoin(feedbacks, feedbacks.c.guest_id == Guest.id)
         .outerjoin(LoyaltyAccount, LoyaltyAccount.guest_id == Guest.id)
         .where(Guest.tenant_id == tenant.id)
     )
@@ -764,10 +789,21 @@ async def admin_guests(
     )
 
     result: list[GuestAdminRead] = []
-    for guest, orders_count, spent, account in rows.all():
+    for (
+        guest,
+        orders_count,
+        spent,
+        last_order_at,
+        feedback_count,
+        average_rating,
+        account,
+    ) in rows.all():
         card = GuestAdminRead.model_validate(guest)
         card.orders_count = orders_count or 0
         card.spent_kopecks = spent or 0
+        card.last_order_at = last_order_at
+        card.feedback_count = feedback_count or 0
+        card.average_rating = float(average_rating) if average_rating is not None else None
         if account is not None:
             tier = loyalty_service.tier_by_code(tenant, account.tier_code)
             card.tier_title = tier.title
@@ -800,12 +836,60 @@ async def guest_card(
         .order_by(Order.created_at.desc())
         .limit(50)
     )
+    order_pairs = list(order_rows.all())
+    order_ids = [order.id for order, _restaurant_name in order_pairs]
+
+    items_by_order: dict[UUID, list[GuestOrderItemRead]] = {order_id: [] for order_id in order_ids}
+    if order_ids:
+        item_rows = await session.scalars(
+            select(OrderItem)
+            .where(OrderItem.tenant_id == tenant.id, OrderItem.order_id.in_(order_ids))
+            .order_by(OrderItem.created_at, OrderItem.name)
+        )
+        for item in item_rows:
+            extras: list[str] = []
+            for extra in item.extras or []:
+                if isinstance(extra, dict):
+                    name = extra.get("name")
+                    if name:
+                        extras.append(str(name))
+                else:
+                    extras.append(str(extra))
+            items_by_order.setdefault(item.order_id, []).append(
+                GuestOrderItemRead(
+                    id=item.id,
+                    name=item.name,
+                    quantity=item.quantity,
+                    total_kopecks=item.total_kopecks,
+                    extras=extras,
+                )
+            )
+
+    feedback_rows = await session.execute(
+        select(OrderFeedback, Order.number, Restaurant.name)
+        .join(Order, Order.id == OrderFeedback.order_id)
+        .join(Restaurant, Restaurant.id == OrderFeedback.restaurant_id)
+        .where(OrderFeedback.tenant_id == tenant.id, OrderFeedback.guest_id == guest_id)
+        .order_by(OrderFeedback.created_at.desc())
+        .limit(50)
+    )
+    feedbacks = [
+        GuestFeedbackRead(
+            id=feedback.id,
+            order_id=feedback.order_id,
+            order_number=order_number,
+            restaurant_name=restaurant_name,
+            rating=feedback.rating,
+            tags=feedback.tags or [],
+            comment=feedback.comment,
+            created_at=feedback.created_at,
+        )
+        for feedback, order_number, restaurant_name in feedback_rows.all()
+    ]
+    feedback_by_order_id = {feedback.order_id: feedback for feedback in feedbacks}
 
     orders: list[GuestOrderRead] = []
-    for order, restaurant_name in order_rows.all():
-        items = await session.scalars(
-            select(OrderItem).where(OrderItem.order_id == order.id).order_by(OrderItem.name)
-        )
+    for order, restaurant_name in order_pairs:
         orders.append(
             GuestOrderRead(
                 id=order.id,
@@ -816,7 +900,15 @@ async def guest_card(
                 restaurant_name=restaurant_name,
                 address_text=order.address_text,
                 total_kopecks=order.total_kopecks,
-                items=[f"{item.name} × {item.quantity}" for item in items],
+                delivery_kopecks=order.delivery_kopecks,
+                discount_kopecks=order.discount_kopecks,
+                points_spent=order.points_spent,
+                points_earned=order.points_earned,
+                promo_code=order.promo_code,
+                persons_count=order.persons_count,
+                comment=order.comment,
+                items=items_by_order.get(order.id, []),
+                feedback=feedback_by_order_id.get(order.id),
             )
         )
 
@@ -853,9 +945,30 @@ async def guest_card(
             for row in transactions
         ]
 
+    order_count, order_spent, last_order_at = (
+        await session.execute(
+            select(
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total_kopecks), 0),
+                func.max(Order.created_at),
+            ).where(Order.tenant_id == tenant.id, Order.guest_id == guest_id)
+        )
+    ).one()
+    feedback_count, average_rating = (
+        await session.execute(
+            select(func.count(OrderFeedback.id), func.avg(OrderFeedback.rating)).where(
+                OrderFeedback.tenant_id == tenant.id,
+                OrderFeedback.guest_id == guest_id,
+            )
+        )
+    ).one()
+
     card = GuestAdminRead.model_validate(guest)
-    card.orders_count = len(orders)
-    card.spent_kopecks = sum(order.total_kopecks for order in orders)
+    card.orders_count = order_count or 0
+    card.spent_kopecks = order_spent or 0
+    card.last_order_at = last_order_at
+    card.feedback_count = feedback_count or 0
+    card.average_rating = float(average_rating) if average_rating is not None else None
     if account is not None:
         tier = loyalty_service.tier_by_code(tenant, account.tier_code)
         card.tier_title = tier.title
@@ -877,6 +990,7 @@ async def guest_card(
             for reservation, restaurant_name in reservation_rows.all()
         ],
         points=points,
+        feedbacks=feedbacks,
     )
 
 
@@ -929,6 +1043,47 @@ async def update_guest(
     await session.commit()
     await session.refresh(guest)
     return GuestAdminRead.model_validate(guest)
+
+
+@router.post("/guests/{guest_id}/points", summary="Начислить или списать баллы")
+async def adjust_guest_points(
+    guest_id: UUID,
+    payload: GuestPointsAdjust,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> GuestPointsRead:
+    await _guest_or_404(session, tenant, guest_id)
+    if payload.points == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Укажите количество баллов")
+
+    account = await loyalty_service.get_account(session, tenant, guest_id)
+    if account is None:
+        account = await loyalty_service.open_account(session, tenant, guest_id)
+
+    balance_after = account.points_balance + payload.points
+    if balance_after < 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя списать больше текущего баланса")
+
+    account.points_balance = balance_after
+    transaction = LoyaltyTransaction(
+        tenant_id=tenant.id,
+        account_id=account.id,
+        operation=LoyaltyOperation.MANUAL,
+        points=payload.points,
+        balance_after=balance_after,
+        comment=payload.comment
+        or ("Ручное начисление в админке" if payload.points > 0 else "Ручное списание в админке"),
+    )
+    session.add(transaction)
+    await session.commit()
+    await session.refresh(transaction)
+    return GuestPointsRead(
+        created_at=transaction.created_at,
+        operation=transaction.operation.value,
+        points=transaction.points,
+        comment=transaction.comment,
+    )
 
 
 @router.delete(
@@ -2277,6 +2432,16 @@ async def iiko_links(
             )
         )
     }
+    price_overrides = {
+        price.dish_id: price.price_kopecks
+        for price in await session.scalars(
+            select(DishPrice).where(
+                DishPrice.tenant_id == tenant.id,
+                DishPrice.restaurant_id == restaurant_id,
+                DishPrice.is_available.is_(True),
+            )
+        )
+    }
 
     rows: list[LinkRow] = []
 
@@ -2312,6 +2477,8 @@ async def iiko_links(
                 product_type=product.product_type if product else None,
                 size_id=link.size_id if link else None,
                 modifier_group_id=None,
+                our_price_kopecks=price_overrides.get(dish.id, dish.price_kopecks),
+                iiko_price_kopecks=product.price_kopecks if product else 0,
             )
         )
 
@@ -2336,6 +2503,8 @@ async def iiko_links(
                 product_type=product.product_type if product else None,
                 size_id=link.size_id if link else None,
                 modifier_group_id=link.modifier_group_id if link else None,
+                our_price_kopecks=extra.price_kopecks,
+                iiko_price_kopecks=product.price_kopecks if product else 0,
             )
         )
 

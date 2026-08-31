@@ -10,25 +10,33 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowRight,
   Bike,
-  Check,
+  CheckCircle2,
+  ChefHat,
+  CircleDot,
+  ClipboardCheck,
   Clock3,
+  Columns3,
   Download,
+  GripVertical,
   MoreHorizontal,
   PackageCheck,
   RefreshCw,
   Search,
   Store,
   Table2,
-  Columns3,
+  Truck,
   X,
+  XCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { api, type Order } from "../../api";
 import { formatDateTime, formatPrice, formatTime } from "../../lib/format";
-import { Badge, Button, IconButton, cn } from "../../ui";
+import { Button, IconButton, cn } from "../../ui";
 
 type OrderStatus =
   | "created"
@@ -44,24 +52,108 @@ type BadgeTone = "ok" | "warn" | "muted" | "bad" | "accent";
 type OrdersView = "board" | "table";
 type OrderFilter = "all" | "delivery" | "pickup";
 type TableDensity = "compact" | "regular";
+type OrderTransition = {
+  description: string;
+  icon: LucideIcon;
+  label: string;
+  status: OrderStatus;
+  tone: BadgeTone;
+};
+type SetOrderStatusInput = {
+  id: string;
+  number: string;
+  status: OrderStatus;
+};
 
 const DENSITY_KEY = "mr.admin.table-density";
 
-const ORDER_FLOW: Record<OrderStatus, { label: string; next: { status: OrderStatus; label: string }[] }> = {
-  created: { label: "Оформлен", next: [{ status: "accepted", label: "Принять" }] },
-  paid: { label: "Оплачен", next: [{ status: "accepted", label: "Принять" }] },
-  accepted: { label: "Принят", next: [{ status: "cooking", label: "Готовим" }] },
-  cooking: { label: "Готовится", next: [{ status: "ready", label: "Готов" }] },
-  ready: {
-    label: "Готов",
-    next: [
-      { status: "delivering", label: "Курьер забрал" },
-      { status: "completed", label: "Выдан" },
-    ],
+const STATUS_META: Record<
+  OrderStatus,
+  {
+    description: string;
+    icon: LucideIcon;
+    label: string;
+    shortLabel: string;
+    tone: BadgeTone;
+  }
+> = {
+  created: {
+    description: "Заказ попал в админку и ждёт подтверждения рестораном.",
+    icon: CircleDot,
+    label: "Оформлен",
+    shortLabel: "Новый",
+    tone: "muted",
   },
-  delivering: { label: "В пути", next: [{ status: "completed", label: "Доставлен" }] },
-  completed: { label: "Выполнен", next: [] },
-  cancelled: { label: "Отменён", next: [] },
+  paid: {
+    description: "Оплата прошла, заказ можно брать в работу.",
+    icon: CircleDot,
+    label: "Оплачен",
+    shortLabel: "Оплачен",
+    tone: "muted",
+  },
+  accepted: {
+    description: "Ресторан подтвердил заказ и отвечает за следующий шаг.",
+    icon: ClipboardCheck,
+    label: "Принят",
+    shortLabel: "Принят",
+    tone: "accent",
+  },
+  cooking: {
+    description: "Кухня готовит. Этот этап должен двигаться без лишних пауз.",
+    icon: ChefHat,
+    label: "Готовится",
+    shortLabel: "Кухня",
+    tone: "warn",
+  },
+  ready: {
+    description: "Заказ готов и ждёт курьера или выдачи гостю.",
+    icon: PackageCheck,
+    label: "Готов",
+    shortLabel: "Готов",
+    tone: "accent",
+  },
+  delivering: {
+    description: "Курьер забрал заказ, теперь контролируем доставку.",
+    icon: Truck,
+    label: "В пути",
+    shortLabel: "В пути",
+    tone: "warn",
+  },
+  completed: {
+    description: "Заказ успешно закрыт.",
+    icon: CheckCircle2,
+    label: "Выполнен",
+    shortLabel: "Готово",
+    tone: "ok",
+  },
+  cancelled: {
+    description: "Заказ закрыт отменой. История остаётся в списке.",
+    icon: XCircle,
+    label: "Отменён",
+    shortLabel: "Отмена",
+    tone: "bad",
+  },
+};
+
+const STATUS_PIPELINE: OrderStatus[] = ["created", "accepted", "cooking", "ready", "delivering", "completed"];
+
+const ORDER_FLOW: Record<OrderStatus, { next: OrderStatus[] }> = {
+  created: { next: ["accepted"] },
+  paid: { next: ["accepted"] },
+  accepted: { next: ["cooking"] },
+  cooking: { next: ["ready"] },
+  ready: { next: ["delivering", "completed"] },
+  delivering: { next: ["completed"] },
+  completed: { next: [] },
+  cancelled: { next: [] },
+};
+
+const ACTION_LABELS: Partial<Record<OrderStatus, string>> = {
+  accepted: "Принять в работу",
+  cooking: "Начать готовить",
+  ready: "Отметить готовым",
+  delivering: "Передать курьеру",
+  completed: "Закрыть заказ",
 };
 
 const BOARD_COLUMNS: {
@@ -80,20 +172,11 @@ const BOARD_COLUMNS: {
 const CLOSED_STATUSES = new Set<OrderStatus>(["completed", "cancelled"]);
 
 function asOrderStatus(status: string): OrderStatus {
-  return status in ORDER_FLOW ? (status as OrderStatus) : "created";
+  return status in STATUS_META ? (status as OrderStatus) : "created";
 }
 
 function statusLabel(status: string): string {
-  return ORDER_FLOW[asOrderStatus(status)]?.label ?? status;
-}
-
-function statusTone(status: string): BadgeTone {
-  const value = asOrderStatus(status);
-  if (value === "completed") return "ok";
-  if (value === "cancelled") return "bad";
-  if (value === "accepted" || value === "ready") return "accent";
-  if (value === "cooking" || value === "delivering") return "warn";
-  return "muted";
+  return STATUS_META[asOrderStatus(status)]?.label ?? status;
 }
 
 function orderTypeLabel(type: string): string {
@@ -111,6 +194,68 @@ function minutesLabel(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest > 0 ? `${hours} ч ${rest} мин` : `${hours} ч`;
+}
+
+function transitionFor(status: OrderStatus, label = ACTION_LABELS[status] ?? statusLabel(status)): OrderTransition {
+  const meta = STATUS_META[status];
+  return {
+    description: meta.description,
+    icon: meta.icon,
+    label,
+    status,
+    tone: meta.tone,
+  };
+}
+
+function nextTransitions(order: Order): OrderTransition[] {
+  const status = asOrderStatus(order.status);
+
+  if (status === "ready") {
+    if (order.type === "delivery") return [transitionFor("delivering", "Передать курьеру")];
+    return [transitionFor("completed", "Выдать гостю")];
+  }
+
+  if (status === "delivering") return [transitionFor("completed", "Доставлен")];
+
+  return ORDER_FLOW[status].next.map((next) => transitionFor(next));
+}
+
+function statusPathForOrder(order: Pick<Order, "status" | "type">): OrderStatus[] {
+  const status = asOrderStatus(order.status);
+  if (order.type === "delivery" || status === "delivering") return STATUS_PIPELINE;
+  return STATUS_PIPELINE.filter((step) => step !== "delivering");
+}
+
+function statusIndexForOrder(order: Pick<Order, "status" | "type">): number {
+  const status = asOrderStatus(order.status);
+  if (status === "paid") return 0;
+  const index = statusPathForOrder(order).findIndex((step) => step === status);
+  return index >= 0 ? index : 0;
+}
+
+function displayStatusForStep(order: Pick<Order, "status">, step: OrderStatus): OrderStatus {
+  const status = asOrderStatus(order.status);
+  return step === "created" && status === "paid" ? "paid" : step;
+}
+
+function boardColumnForStatus(status: OrderStatus) {
+  return BOARD_COLUMNS.find((column) => column.statuses.includes(status)) ?? null;
+}
+
+function boardColumnFromId(id: string): (typeof BOARD_COLUMNS)[number] | null {
+  return BOARD_COLUMNS.find((column) => column.id === id) ?? null;
+}
+
+function isTransitionAllowed(order: Order, targetStatus: OrderStatus): boolean {
+  const currentStatus = asOrderStatus(order.status);
+  if (CLOSED_STATUSES.has(currentStatus)) return false;
+  if (targetStatus === currentStatus) return true;
+  if (targetStatus === "cancelled") return true;
+
+  const targetColumn = boardColumnForStatus(targetStatus);
+  if (targetColumn?.statuses.includes(currentStatus)) return true;
+
+  return nextTransitions(order).some((transition) => transition.status === targetStatus);
 }
 
 function readView(): OrdersView {
@@ -212,36 +357,145 @@ function OrdersSkeleton() {
   );
 }
 
+function OrderStatusBadge({ className, status }: { className?: string; status: string }) {
+  const meta = STATUS_META[asOrderStatus(status)];
+  const Icon = meta.icon;
+
+  return (
+    <span className={cn("order-status-badge", className)} data-tone={meta.tone}>
+      <Icon size={13} aria-hidden />
+      {meta.label}
+    </span>
+  );
+}
+
+function OrderProgress({ compact = false, order }: { compact?: boolean; order: Pick<Order, "status" | "type"> }) {
+  const status = asOrderStatus(order.status);
+
+  if (status === "cancelled") {
+    const Icon = STATUS_META.cancelled.icon;
+    return (
+      <div className={cn("order-progress", compact && "order-progress-compact")} data-cancelled="true">
+        <span className="order-progress-step" data-state="current" data-tone="bad">
+          <span className="order-progress-dot">
+            <Icon size={compact ? 11 : 13} aria-hidden />
+          </span>
+          <span className="order-progress-label">Отменён</span>
+        </span>
+      </div>
+    );
+  }
+
+  const currentIndex = statusIndexForOrder(order);
+
+  return (
+    <div className={cn("order-progress", compact && "order-progress-compact")} aria-label="Этапы заказа">
+      {statusPathForOrder(order).map((step, index) => {
+        const displayedStatus = displayStatusForStep(order, step);
+        const meta = STATUS_META[displayedStatus];
+        const Icon = meta.icon;
+        const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "next";
+
+        return (
+          <span key={step} className="order-progress-step" data-state={state} data-tone={meta.tone}>
+            <span className="order-progress-dot">
+              <Icon size={compact ? 10 : 13} aria-hidden />
+            </span>
+            <span className="order-progress-label">{meta.shortLabel}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function OrderQuickAction({
+  busy = false,
+  order,
+  onSetStatus,
+}: {
+  busy?: boolean;
+  order: Order;
+  onSetStatus?: (order: Order, status: OrderStatus) => void;
+}) {
+  if (!onSetStatus) return null;
+
+  const [action] = nextTransitions(order);
+  if (!action) {
+    const closed = asOrderStatus(order.status) === "cancelled" ? "Заказ отменён" : "Заказ закрыт";
+    return <span className="order-card-closed">{closed}</span>;
+  }
+
+  const Icon = action.icon;
+
+  return (
+    <Button
+      className="order-card-action"
+      data-tone={action.tone}
+      disabled={busy}
+      size="xs"
+      variant={action.status === "completed" ? "ghost" : "primary"}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSetStatus(order, action.status);
+      }}
+    >
+      <Icon size={14} aria-hidden />
+      <span>{action.label}</span>
+      <ArrowRight size={13} aria-hidden />
+    </Button>
+  );
+}
+
 function DraggableOrderCard({
+  busy,
   order,
   selected,
   onSelect,
+  onSetStatus,
 }: {
+  busy: boolean;
   order: Order;
   selected: boolean;
   onSelect: () => void;
+  onSetStatus: (order: Order, status: OrderStatus) => void;
 }) {
   const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
     id: order.id,
   });
 
   return (
-    <button
+    <article
       ref={setNodeRef}
       className="order-card"
       data-dragging={isDragging}
       data-selected={selected}
-      type="button"
       onClick={onSelect}
-      {...listeners}
-      {...attributes}
     >
-      <OrderCardContent order={order} />
-    </button>
+      <button
+        className="order-card-drag"
+        title="Перетащить заказ"
+        type="button"
+        onClick={(event) => event.stopPropagation()}
+        {...listeners}
+        {...attributes}
+      >
+        <GripVertical size={15} aria-hidden />
+      </button>
+      <OrderCardContent busy={busy} order={order} onSetStatus={onSetStatus} />
+    </article>
   );
 }
 
-function OrderCardContent({ order }: { order: Order }) {
+function OrderCardContent({
+  busy = false,
+  order,
+  onSetStatus,
+}: {
+  busy?: boolean;
+  order: Order;
+  onSetStatus?: (order: Order, status: OrderStatus) => void;
+}) {
   const age = minutesSince(order.created_at);
   const previewItems = order.items.slice(0, 3);
   const hiddenItems = order.items.length - previewItems.length;
@@ -249,8 +503,10 @@ function OrderCardContent({ order }: { order: Order }) {
   return (
     <>
       <div className="order-card-top">
-        <span className="order-number">№ {order.number}</span>
-        <Badge text={statusLabel(order.status)} tone={statusTone(order.status)} />
+        <div className="order-card-title">
+          <span className="order-number">№ {order.number}</span>
+          <OrderStatusBadge status={order.status} />
+        </div>
       </div>
 
       <div className="order-card-meta">
@@ -269,49 +525,73 @@ function OrderCardContent({ order }: { order: Order }) {
         {hiddenItems > 0 ? <span>Ещё {hiddenItems}</span> : null}
       </div>
 
+      <OrderProgress compact order={order} />
+
       <div className="order-card-foot">
         <Clock3 size={14} aria-hidden />
         <span>{minutesLabel(age)}</span>
         <span className="toolbar-spacer" />
         <strong className="mono">{formatPrice(order.total_kopecks)}</strong>
       </div>
+
+      <OrderQuickAction busy={busy} order={order} onSetStatus={onSetStatus} />
     </>
   );
 }
 
 function BoardColumn({
   activeId,
+  activeOrder,
   column,
+  busy,
   orders,
   selectedId,
   onSelect,
+  onSetStatus,
 }: {
   activeId: string | null;
+  activeOrder: Order | null;
   column: (typeof BOARD_COLUMNS)[number];
+  busy: boolean;
   orders: Order[];
   selectedId: string | null;
   onSelect: (order: Order) => void;
+  onSetStatus: (order: Order, status: OrderStatus) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: column.id });
+  const Icon = STATUS_META[column.id].icon;
+  const canDrop = !activeOrder || isTransitionAllowed(activeOrder, column.id);
+  const currentColumn = activeOrder ? column.statuses.includes(asOrderStatus(activeOrder.status)) : false;
+  const statusNames = column.statuses.map((status) => STATUS_META[status].label).join(" / ");
 
   return (
-    <section className="board-column">
-      <div className="board-column-head">
-        <div className={cn("board-column-stripe", `status-stripe-${column.tone}`)} />
+    <section className="board-column" data-can-drop={canDrop} data-tone={column.tone}>
+      <div className="board-column-head" data-over={isOver} data-can-drop={canDrop}>
         <div className="board-column-title">
-          <h3>{column.label}</h3>
+          <span className={cn("board-column-icon", `status-stripe-${column.tone}`)}>
+            <Icon size={15} aria-hidden />
+          </span>
+          <span className="board-column-copy">
+            <h3>{column.label}</h3>
+            <small>{statusNames}</small>
+          </span>
           <span className="board-count">{orders.length}</span>
+        </div>
+        <div className="board-column-drop-hint">
+          {activeOrder ? (canDrop ? (currentColumn ? "Текущий этап" : "Можно перенести") : "Недоступный переход") : "Перетащите сюда"}
         </div>
       </div>
 
-      <div ref={setNodeRef} className="board-lane" data-over={isOver}>
+      <div ref={setNodeRef} className="board-lane" data-can-drop={canDrop} data-over={isOver}>
         {orders.length === 0 ? <div className="board-empty">Пока пусто</div> : null}
         {orders.map((order) => (
           <DraggableOrderCard
             key={order.id}
+            busy={busy}
             order={order}
             selected={selectedId === order.id || activeId === order.id}
             onSelect={() => onSelect(order)}
+            onSetStatus={onSetStatus}
           />
         ))}
       </div>
@@ -321,18 +601,22 @@ function BoardColumn({
 
 function OrdersBoard({
   activeId,
+  busy,
   orders,
   selectedId,
   onDragEnd,
   onDragStart,
   onSelect,
+  onSetStatus,
 }: {
   activeId: string | null;
+  busy: boolean;
   orders: Order[];
   selectedId: string | null;
   onDragEnd: (event: DragEndEvent) => void;
   onDragStart: (event: DragStartEvent) => void;
   onSelect: (order: Order) => void;
+  onSetStatus: (order: Order, status: OrderStatus) => void;
 }) {
   const byColumn = useMemo(
     () =>
@@ -351,10 +635,13 @@ function OrdersBoard({
           <BoardColumn
             key={column.id}
             activeId={activeId}
+            activeOrder={activeOrder}
+            busy={busy}
             column={column}
             orders={columnOrders}
             selectedId={selectedId}
             onSelect={onSelect}
+            onSetStatus={onSetStatus}
           />
         ))}
       </div>
@@ -399,8 +686,8 @@ function OrdersTable({
         </thead>
         <tbody>
           {orders.map((order) => {
-            const flow = ORDER_FLOW[asOrderStatus(order.status)];
-            const primaryAction = flow.next[0];
+            const [primaryAction] = nextTransitions(order);
+            const PrimaryActionIcon = primaryAction?.icon;
 
             return (
               <tr key={order.id} data-selected={selectedId === order.id} onClick={() => onSelect(order)}>
@@ -421,7 +708,10 @@ function OrdersTable({
                 </td>
                 <td className="numeric">{formatPrice(order.total_kopecks)}</td>
                 <td>
-                  <Badge text={statusLabel(order.status)} tone={statusTone(order.status)} />
+                  <div className="order-table-status">
+                    <OrderStatusBadge status={order.status} />
+                    <OrderProgress compact order={order} />
+                  </div>
                 </td>
                 <td>
                   <div className="cell-actions">
@@ -434,6 +724,7 @@ function OrdersTable({
                           onSetStatus(order, primaryAction.status);
                         }}
                       >
+                        {PrimaryActionIcon ? <PrimaryActionIcon size={14} aria-hidden /> : null}
                         {primaryAction.label}
                       </Button>
                     ) : null}
@@ -459,6 +750,79 @@ function OrdersTable({
   );
 }
 
+function OrderWorkflowPanel({
+  busy,
+  order,
+  onSetStatus,
+}: {
+  busy: boolean;
+  order: Order;
+  onSetStatus: (order: Order, status: OrderStatus) => void;
+}) {
+  const status = asOrderStatus(order.status);
+  const meta = STATUS_META[status];
+  const Icon = meta.icon;
+  const actions = nextTransitions(order);
+  const closed = CLOSED_STATUSES.has(status);
+
+  return (
+    <section className="order-workflow-panel" data-tone={meta.tone}>
+      <div className="order-workflow-current">
+        <span className="order-workflow-icon">
+          <Icon size={20} aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <span className="metric-label">Текущий статус</span>
+          <h3>{meta.label}</h3>
+          <p>{meta.description}</p>
+        </div>
+      </div>
+
+      <OrderProgress order={order} />
+
+      {closed ? (
+        <div className="order-workflow-final" data-tone={meta.tone}>
+          <Icon size={15} aria-hidden />
+          <span>{status === "cancelled" ? "Заказ отменён и остался в истории." : "Заказ выполнен и больше не требует действий."}</span>
+        </div>
+      ) : (
+        <div className="order-workflow-actions">
+          {actions.map((action) => {
+            const ActionIcon = action.icon;
+            return (
+              <Button
+                key={action.status}
+                className="order-workflow-action"
+                data-tone={action.tone}
+                disabled={busy}
+                size="sm"
+                variant={action.status === "completed" ? "ghost" : "primary"}
+                onClick={() => onSetStatus(order, action.status)}
+              >
+                <ActionIcon size={16} aria-hidden />
+                <span>
+                  <strong>{action.label}</strong>
+                  <small>{action.description}</small>
+                </span>
+              </Button>
+            );
+          })}
+          <Button
+            className="order-workflow-cancel"
+            disabled={busy}
+            size="sm"
+            variant="danger"
+            onClick={() => onSetStatus(order, "cancelled")}
+          >
+            <XCircle size={16} aria-hidden />
+            Отменить заказ
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function OrderDrawer({
   busy,
   order,
@@ -470,16 +834,24 @@ function OrderDrawer({
   onClose: () => void;
   onSetStatus: (order: Order, status: OrderStatus) => void;
 }) {
-  const flow = ORDER_FLOW[asOrderStatus(order.status)];
+  const status = asOrderStatus(order.status);
+  const meta = STATUS_META[status];
+  const Icon = meta.icon;
 
   return (
     <>
       <div className="drawer-overlay" onClick={onClose} />
       <aside className="order-drawer" aria-label={`Заказ № ${order.number}`}>
         <div className="drawer-head">
-          <div className="min-w-0">
-            <h2 className="drawer-title">№ {order.number}</h2>
-            <Badge text={statusLabel(order.status)} tone={statusTone(order.status)} />
+          <div className="order-drawer-title-block">
+            <span className="order-drawer-status-icon" data-tone={meta.tone}>
+              <Icon size={18} aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <span className="metric-label">Заказ</span>
+              <h2 className="drawer-title">№ {order.number}</h2>
+              <OrderStatusBadge status={order.status} />
+            </div>
           </div>
           <span className="toolbar-spacer" />
           <IconButton label="Закрыть заказ" size="sm" variant="quiet" onClick={onClose}>
@@ -488,30 +860,7 @@ function OrderDrawer({
         </div>
 
         <div className="drawer-body">
-          <div className="drawer-actions">
-            {flow.next.map((step) => (
-              <Button
-                key={step.status}
-                disabled={busy}
-                size="sm"
-                variant={step.status === "completed" ? "ghost" : "primary"}
-                onClick={() => onSetStatus(order, step.status)}
-              >
-                {step.status === "completed" ? <Check size={15} aria-hidden /> : <PackageCheck size={15} aria-hidden />}
-                {step.label}
-              </Button>
-            ))}
-            {!CLOSED_STATUSES.has(asOrderStatus(order.status)) ? (
-              <Button
-                disabled={busy}
-                size="sm"
-                variant="danger"
-                onClick={() => onSetStatus(order, "cancelled")}
-              >
-                Отменить
-              </Button>
-            ) : null}
-          </div>
+          <OrderWorkflowPanel busy={busy} order={order} onSetStatus={onSetStatus} />
 
           <section className="drawer-section">
             <h3 className="drawer-section-title">Детали</h3>
@@ -582,7 +931,7 @@ export function OrdersPage() {
   });
 
   const setStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: OrderStatus }) => api.setOrderStatus(id, status),
+    mutationFn: ({ id, status }: SetOrderStatusInput) => api.setOrderStatus(id, status),
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({ queryKey: ["orders"] });
       const previous = queryClient.getQueryData<Order[]>(["orders"]);
@@ -591,9 +940,12 @@ export function OrdersPage() {
       );
       return { previous };
     },
-    onError: (error, _vars, context) => {
+    onError: (error, variables, context) => {
       if (context?.previous) queryClient.setQueryData(["orders"], context.previous);
-      toast.error(error instanceof Error ? error.message : "Не удалось обновить заказ");
+      toast.error(error instanceof Error ? error.message : `Не удалось обновить заказ № ${variables.number}`);
+    },
+    onSuccess: (_order, variables) => {
+      toast.success(`Заказ № ${variables.number}: ${statusLabel(variables.status)}`);
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -643,7 +995,15 @@ export function OrdersPage() {
   }, [allOrders]);
 
   const setOrderStatus = (order: Order, status: OrderStatus) => {
-    setStatus.mutate({ id: order.id, status });
+    const currentStatus = asOrderStatus(order.status);
+    if (currentStatus === status) return;
+
+    if (!isTransitionAllowed(order, status)) {
+      toast.error(`Нельзя сразу перевести из «${statusLabel(currentStatus)}» в «${statusLabel(status)}»`);
+      return;
+    }
+
+    setStatus.mutate({ id: order.id, number: order.number, status });
   };
 
   const onDragStart = (event: DragStartEvent) => {
@@ -653,9 +1013,19 @@ export function OrdersPage() {
   const onDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
     const orderId = String(event.active.id);
-    const targetStatus = event.over?.id ? asOrderStatus(String(event.over.id)) : null;
+    const targetColumn = event.over?.id ? boardColumnFromId(String(event.over.id)) : null;
     const order = allOrders.find((item) => item.id === orderId);
-    if (!order || !targetStatus || order.status === targetStatus) return;
+    if (!order || !targetColumn) return;
+
+    const currentStatus = asOrderStatus(order.status);
+    if (targetColumn.statuses.includes(currentStatus)) return;
+
+    const targetStatus = targetColumn.id;
+    if (!isTransitionAllowed(order, targetStatus)) {
+      toast.error(`Сначала переведите заказ в следующий этап: «${nextTransitions(order)[0]?.label ?? "нет доступного действия"}»`);
+      return;
+    }
+
     setOrderStatus(order, targetStatus);
   };
 
@@ -791,11 +1161,13 @@ export function OrdersPage() {
         ) : view === "board" ? (
           <OrdersBoard
             activeId={activeId}
+            busy={setStatus.isPending}
             orders={boardOrders}
             selectedId={selectedId}
             onDragEnd={onDragEnd}
             onDragStart={onDragStart}
             onSelect={(order) => setSelectedId(order.id)}
+            onSetStatus={setOrderStatus}
           />
         ) : (
           <OrdersTable

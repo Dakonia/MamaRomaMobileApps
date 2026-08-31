@@ -9,13 +9,13 @@ import { Section } from "./ui";
 type Part = "steps" | "campaigns" | "automations";
 
 const PARTS: { icon: typeof Bell; key: Part; label: string }[] = [
-  { icon: Bell, key: "steps", label: "Шаги заказа" },
   { icon: Send, key: "campaigns", label: "Рассылки" },
   { icon: Sparkles, key: "automations", label: "Сценарии" },
+  { icon: Bell, key: "steps", label: "Статусы заказа" },
 ];
 
 export function NotificationsTab() {
-  const [part, setPart] = useState<Part>("steps");
+  const [part, setPart] = useState<Part>("campaigns");
 
   return (
     <Section
@@ -39,7 +39,7 @@ export function NotificationsTab() {
           })}
         </div>
       }
-      description="Транзакционные сообщения, рекламные рассылки и автоматические сценарии в одном месте."
+      description="Рассылки, автоматические сценарии и сервисные сообщения для гостей."
     >
       {part === "steps" ? <NotificationSteps /> : null}
       {part === "campaigns" ? <CampaignsTab /> : null}

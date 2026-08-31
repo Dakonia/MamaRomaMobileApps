@@ -37,6 +37,13 @@ export type TableDensity = "compact" | "regular";
 
 const DENSITY_KEY = "mr.admin.table-density";
 const EMPTY_DATA: RowData[] = [];
+const INTERACTIVE_ROW_TARGET = "button,a,input,select,textarea,[role='button']";
+
+function isInteractiveTarget(target: EventTarget | null, container?: Element | null) {
+  if (!(target instanceof Element)) return false;
+  const interactive = target.closest(INTERACTIVE_ROW_TARGET);
+  return Boolean(interactive && interactive !== container);
+}
 
 export function createAdminColumnHelper<TData extends RowData>() {
   return createColumnHelper<AdminTableFeatures, TData>();
@@ -135,6 +142,14 @@ export function DataTable<TData extends RowData>({
   const visibleRows = table.getRowModel().rows;
   const totalRows = table.getRowCount();
   const pageCount = table.getPageCount();
+  const headerLabels = new Map<string, string>();
+
+  for (const headerGroup of table.getHeaderGroups()) {
+    for (const header of headerGroup.headers) {
+      const label = header.column.columnDef.header;
+      headerLabels.set(header.column.id, typeof label === "string" ? label : "");
+    }
+  }
 
   if (isLoading) {
     return (
@@ -198,7 +213,10 @@ export function DataTable<TData extends RowData>({
             <tr
               key={row.id}
               data-selected={selectedId === row.id}
-              onClick={() => onRowClick?.(row.original)}
+              onClick={(event) => {
+                if (isInteractiveTarget(event.target, event.currentTarget)) return;
+                onRowClick?.(row.original);
+              }}
             >
               {row.getAllCells().map((cell) => (
                 <td key={cell.id} data-align={cell.column.columnDef.meta?.align}>
@@ -209,6 +227,63 @@ export function DataTable<TData extends RowData>({
           ))}
         </tbody>
       </table>
+
+      <div className="mobile-table-list">
+        {visibleRows.map((row) => {
+          const cells = row.getAllCells();
+          const primaryCell = cells[0];
+          const actionCells = cells.filter((cell, index) => index > 0 && !headerLabels.get(cell.column.id));
+          const detailCells = cells.filter((cell, index) => index > 0 && headerLabels.get(cell.column.id));
+
+          return (
+            <div
+              key={row.id}
+              className="mobile-table-card"
+              data-clickable={Boolean(onRowClick) || undefined}
+              data-selected={selectedId === row.id}
+              onClick={(event) => {
+                if (isInteractiveTarget(event.target, event.currentTarget)) return;
+                onRowClick?.(row.original);
+              }}
+              onKeyDown={(event) => {
+                if (!onRowClick || isInteractiveTarget(event.target, event.currentTarget)) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onRowClick(row.original);
+                }
+              }}
+              role={onRowClick ? "button" : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+            >
+              <div className="mobile-table-card-head">
+                <div className="mobile-table-primary">
+                  {primaryCell ? <table.FlexRender cell={primaryCell} /> : null}
+                </div>
+                {actionCells.length > 0 ? (
+                  <div className="mobile-table-actions">
+                    {actionCells.map((cell) => (
+                      <table.FlexRender key={cell.id} cell={cell} />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              {detailCells.length > 0 ? (
+                <div className="mobile-table-fields">
+                  {detailCells.map((cell) => (
+                    <div key={cell.id} className="mobile-table-field">
+                      <span className="mobile-table-label">{headerLabels.get(cell.column.id)}</span>
+                      <div className="mobile-table-value" data-align={cell.column.columnDef.meta?.align}>
+                        <table.FlexRender cell={cell} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
 
       <div className="table-footer">
         <span>

@@ -1409,6 +1409,24 @@ def _tokens(name: str) -> set[str]:
     return {word for word in _normalize(name).split() if len(word) > 2}
 
 
+def _price_candidates(query: str) -> set[int]:
+    """Цена из поиска: оператор часто вводит «1430» или «1 430 ₽»."""
+    candidates: set[int] = set()
+    compact = query.replace(" ", "").replace("\u00a0", "")
+    for raw in re.findall(r"\d+(?:[,.]\d{1,2})?", compact):
+        value = raw.replace(",", ".")
+        try:
+            if "." in value:
+                candidates.add(round(float(value) * 100))
+            else:
+                integer = int(value)
+                candidates.add(integer * 100)
+                candidates.add(integer)
+        except ValueError:
+            continue
+    return {price for price in candidates if price > 0}
+
+
 def _score(ours: str, theirs: str) -> float:
     """Насколько название кассы похоже на наше блюдо.
 
@@ -1447,7 +1465,17 @@ async def search_products(
 
     needle = query.strip()
     if needle:
-        stmt = stmt.where(IikoProduct.name.ilike(f"%{needle}%"))
+        pattern = f"%{needle}%"
+        clauses: list[ColumnElement[bool]] = [
+            IikoProduct.name.ilike(pattern),
+            IikoProduct.code.ilike(pattern),
+            IikoProduct.group_name.ilike(pattern),
+            IikoProduct.group_path.ilike(pattern),
+        ]
+        prices = _price_candidates(needle)
+        if prices:
+            clauses.append(IikoProduct.price_kopecks.in_(prices))
+        stmt = stmt.where(or_(*clauses))
 
     return list(await session.scalars(stmt.order_by(IikoProduct.name).limit(limit)))
 
