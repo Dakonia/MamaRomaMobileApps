@@ -28,3 +28,31 @@ export function brightness(hash: string | null | undefined): number {
 
   return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
 }
+
+/**
+ * Насколько кадр пёстрый — по тому же хешу.
+ *
+ * После среднего цвета в хеше лежат составляющие деталей: чем они крупнее, тем
+ * сильнее картинка изрезана пятнами. Спокойный зал в вечернем свете даёт малое
+ * число, витрина с бутылками, цветами и телевизорами — большое. Поверх такой
+ * витрины текст читать невозможно, сколько её ни затемняй.
+ */
+export function busyness(hash: string | null | undefined): number {
+  if (!hash || hash.length < 8) return 1;
+
+  const ceiling = (decode83(hash.slice(1, 2)) + 1) / 166;
+  let sum = 0;
+
+  for (let index = 6; index + 2 <= hash.length; index += 2) {
+    const value = decode83(hash.slice(index, index + 2));
+    const red = Math.floor(value / (19 * 19));
+    const green = Math.floor(value / 19) % 19;
+    const blue = value % 19;
+
+    // Каждая составляющая лежит в диапазоне от минус до плюс единицы
+    sum +=
+      (Math.abs(red - 9) + Math.abs(green - 9) + Math.abs(blue - 9)) / 27;
+  }
+
+  return sum * ceiling;
+}

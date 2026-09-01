@@ -21,7 +21,7 @@ import { OrdersPage } from "./app/orders/OrdersPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ApiError, api, getToken, mediaUrl, setToken, tenant } from "./api";
 import { AdminSessionProvider } from "./lib/admin-session";
-import { brightness } from "./lib/blurhash";
+import { brightness, busyness } from "./lib/blurhash";
 import { Button } from "./ui";
 
 const ReservationsPage = lazy(() =>
@@ -238,10 +238,20 @@ function useHallShot(): string | null {
     retry: false,
   });
 
+  /**
+   * Годный кадр — тёмный и спокойный. Одной темноты мало: витрина с бутылками
+   * и цветами тоже тёмная, но текст на ней не читается никаким затемнением.
+   * Поэтому считаем и пестроту, и берём восьмёрку лучших по сумме.
+   */
   const shots = (halls.data ?? [])
     .filter((item) => Boolean(item.image_url))
-    .sort((left, right) => brightness(left.image_blurhash) - brightness(right.image_blurhash))
-    .slice(0, Math.max(1, Math.ceil((halls.data ?? []).length / 3)));
+    .map((item) => ({
+      item,
+      score: brightness(item.image_blurhash) * 2 + busyness(item.image_blurhash),
+    }))
+    .sort((left, right) => left.score - right.score)
+    .slice(0, 8)
+    .map(({ item }) => item);
 
   if (shots.length === 0) return null;
 
