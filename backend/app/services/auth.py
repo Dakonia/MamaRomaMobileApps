@@ -58,8 +58,18 @@ class AuthError(Exception):
         self.retry_after = retry_after
 
 
-def _is_debug_environment() -> bool:
-    return settings.environment != "production" and settings.sms_code_debug_value is not None
+def _debug_code_allowed(phone: str) -> bool:
+    """Можно ли этому номеру входить по отладочному коду.
+
+    Провайдера СМС ещё нет, и без поблажки на тестовом стенде не войти вовсе.
+    Но поблажка именная: список номеров задаётся настройкой сервера. Пока она
+    пуста — код не подходит никому. Раньше условие было «окружение не боевое», и
+    на публичном стенде это означало вход под любым чужим номером.
+    """
+    if settings.sms_code_debug_value is None or settings.environment == "production":
+        return False
+
+    return phone in settings.sms_debug_phones
 
 
 async def _latest_code(session: AsyncSession, tenant_id: str, phone: str) -> PhoneCode | None:
@@ -86,7 +96,8 @@ async def request_code(session: AsyncSession, tenant: Tenant, raw_phone: str) ->
         if wait > 0:
             raise AuthError(f"Новый код можно запросить через {wait} с", retry_after=wait)
 
-    code = settings.sms_code_debug_value if _is_debug_environment() else generate_code()
+    debug = _debug_code_allowed(phone)
+    code = settings.sms_code_debug_value if debug else generate_code()
     assert code is not None
 
     session.add(
@@ -99,7 +110,8 @@ async def request_code(session: AsyncSession, tenant: Tenant, raw_phone: str) ->
     )
     await session.commit()
 
-    if _is_debug_environment():
+    if debug:
+        # В журнал, а не в ответ: ответ видит кто угодно, журнал — только мы
         logger.warning("Код для %s: %s (окружение %s)", phone, code, settings.environment)
     else:
         # TODO: отправка через SMS-провайдера, ключ в settings.sms_provider_api_key
@@ -108,7 +120,6 @@ async def request_code(session: AsyncSession, tenant: Tenant, raw_phone: str) ->
     return CodeRequestResult(
         phone=phone,
         resend_after_seconds=settings.sms_code_resend_seconds,
-        debug_code=code if _is_debug_environment() else None,
     )
 
 

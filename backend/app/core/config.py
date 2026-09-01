@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # В local и staging код не отправляем, а пишем в лог и принимаем этот фиксированный
     sms_code_debug_value: str | None = "0000"
 
+    # Кому этот код подходит. Пусто — никому: иначе любой, кто знает адрес
+    # сервера, войдёт под чужим номером и увидит чужие заказы и адреса
+    sms_debug_phones: list[str] = []
+
+    # Защита от перебора пароля в панели: сколько попыток и за какое окно
+    staff_login_attempts: int = 10
+    staff_login_window_seconds: int = 300
+
     cors_origins: list[str] = [
         "http://localhost:8081",
         "http://localhost:19006",

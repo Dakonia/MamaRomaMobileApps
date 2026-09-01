@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { api, ApiError, formatPrice, type AdminRestaurant, type City, type Zone } from "./api";
 import { ConfirmDialog } from "./components/patterns/ConfirmDialog";
 import { ZoneEditor } from "./ZoneEditor";
-import { ZoneMap, type ZoneMapZone } from "./ZoneMap";
+import { ZoneMap, type ZoneMapZone, zoneMapProviderName } from "./ZoneMap";
 import { zoneColors } from "./theme";
 import { Badge, Button, IconButton, Section, Select } from "./ui";
 
@@ -550,6 +550,10 @@ export function ZonesTab() {
               <p>{points} точек в контурах</p>
             </div>
             <div className="zones-map-legend">
+              <span>
+                <MapPinned size={14} aria-hidden />
+                {zoneMapProviderName}
+              </span>
               <span>
                 <Eye size={14} aria-hidden />
                 {active} работают

@@ -7,8 +7,10 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Uplo
 from sqlalchemy import delete, func, insert, or_, select
 
 from app.api.deps import SessionDep, StaffDep, TenantDep
+from app.core import cache
+from app.core.config import settings
 from app.core.db import SessionLocal
-from app.core.security import create_token, normalize_phone, verify_password
+from app.core.security import create_token, hash_password, normalize_phone, verify_password
 from app.models.enums import (
     CampaignStatus,
     IikoHandoffStatus,
@@ -130,23 +132,39 @@ from app.services import reservation as reservation_service
 from app.services import sync as sync_service
 from app.services.sync import KIND_TITLES, Change, ChangeAction, SyncKind
 
+# Хеш-заглушка для несуществующей почты: сверять с ним столько же долго,
+# сколько с настоящим паролем
+DUMMY_HASH = hash_password("no-such-account")
+
 router = APIRouter(prefix="/admin", tags=["Админка"])
 
 
 @router.post("/login", summary="Вход сотрудника")
 async def login(payload: StaffLogin, session: SessionDep, tenant: TenantDep) -> StaffSession:
-    staff = await session.scalar(
-        select(StaffUser).where(
-            StaffUser.tenant_id == tenant.id,
-            StaffUser.email == payload.email.strip().lower(),
+    email = payload.email.strip().lower()
+    attempts_key = f"staff-login:{tenant.id}:{email}"
+
+    # Перебор пароля останавливаем по числу попыток на учётную запись
+    attempts = await cache.hits(attempts_key, settings.staff_login_window_seconds)
+    if attempts > settings.staff_login_attempts:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Слишком много попыток входа. Попробуйте через несколько минут",
         )
+
+    staff = await session.scalar(
+        select(StaffUser).where(StaffUser.tenant_id == tenant.id, StaffUser.email == email)
     )
-    if (
-        staff is None
-        or not staff.is_active
-        or not verify_password(payload.password, staff.password_hash)
-    ):
+
+    # Пароль сверяем даже для несуществующей почты: иначе ответ на чужой адрес
+    # приходит заметно быстрее, и по времени ответа можно собрать список
+    # заведённых учётных записей
+    correct = verify_password(payload.password, staff.password_hash if staff else DUMMY_HASH)
+
+    if staff is None or not staff.is_active or not correct:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверная почта или пароль")
+
+    await cache.forget(attempts_key)
 
     staff.last_login_at = datetime.now(UTC)
     await session.commit()

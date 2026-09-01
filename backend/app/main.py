@@ -34,8 +34,11 @@ app.add_middleware(GZipMiddleware, minimum_size=1_000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Локальную сеть пускаем только на машине разработчика: на публичном стенде
+    # это означало бы, что любая страница из домашней сети посетителя может
+    # обращаться к нашему API от его имени
     allow_origin_regex=(
-        settings.cors_local_network_regex if settings.environment != "production" else None
+        settings.cors_local_network_regex if settings.environment == "local" else None
     ),
     allow_credentials=True,
     allow_methods=["*"],

@@ -15,7 +15,6 @@ class CodeRequestResult(BaseModel):
     phone: str
     resend_after_seconds: int
     # Заполняется только в local и staging, чтобы входить без реальной SMS
-    debug_code: str | None = None
 
 
 class CodeVerify(BaseModel):

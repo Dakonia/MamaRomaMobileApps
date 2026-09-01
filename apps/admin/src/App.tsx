@@ -6,12 +6,12 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockKeyhole, Store } from "lucide-react";
-import { Suspense, lazy, useState, type ReactNode } from "react";
+import { Eye, EyeOff, LockKeyhole, Store } from "lucide-react";
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { OrdersPage } from "./app/orders/OrdersPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
-import { api, getToken, setToken, tenant, type ApiError } from "./api";
+import { ApiError, api, getToken, setToken, tenant } from "./api";
 import { AdminSessionProvider } from "./lib/admin-session";
 import { Button } from "./ui";
 
@@ -211,19 +211,31 @@ declare module "@tanstack/react-router" {
   }
 }
 
-function Login({ onDone }: { onDone: () => void }) {
+function Login({ onDone }: { onDone: (token: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   const login = useMutation({
     mutationFn: () => api.login(email, password),
-    onSuccess: (result) => {
-      setToken(result.access_token);
-      onDone();
-    },
-    onError: (error: ApiError) => setFailure(error.message),
+    onSuccess: (result) => onDone(result.access_token),
+    /**
+     * Пароль не подошёл — так и говорим, но не уточняем, что именно не сошлось:
+     * подсказка «такой почты нет» помогает перебирать учётные записи.
+     */
+    onError: (error: ApiError) =>
+      setFailure(
+        error.status === 401 || error.status === 403
+          ? "Неверная почта или пароль"
+          : error.status === 429
+            ? "Слишком много попыток. Подождите минуту"
+            : "Сервер не отвечает. Попробуйте ещё раз",
+      ),
   });
+
+  const ready = email.trim().length > 0 && password.length > 0 && !login.isPending;
 
   return (
     <main className="login-shell">
@@ -231,6 +243,7 @@ function Login({ onDone }: { onDone: () => void }) {
         className="login-card"
         onSubmit={(event) => {
           event.preventDefault();
+          if (!ready) return;
           setFailure(null);
           login.mutate();
         }}
@@ -241,7 +254,7 @@ function Login({ onDone }: { onDone: () => void }) {
           </div>
           <div>
             <h1 className="login-title">{tenant.branding.displayName}</h1>
-            <p className="login-copy">Панель управления рестораном</p>
+            <p className="login-copy">Панель управления сетью</p>
           </div>
         </div>
 
@@ -249,7 +262,10 @@ function Login({ onDone }: { onDone: () => void }) {
           <span className="field-label">Почта</span>
           <input
             autoComplete="username"
+            autoFocus
             className="input"
+            inputMode="email"
+            name="email"
             placeholder="name@mamaroma.ru"
             type="email"
             value={email}
@@ -259,23 +275,79 @@ function Login({ onDone }: { onDone: () => void }) {
 
         <label className="field">
           <span className="field-label">Пароль</span>
-          <input
-            autoComplete="current-password"
-            className="input"
-            placeholder="Введите пароль"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
+          <div className="input-affix">
+            <input
+              autoComplete="current-password"
+              className="input"
+              name="password"
+              placeholder="Введите пароль"
+              type={visible ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyUp={(event) => setCapsLock(event.getModifierState("CapsLock"))}
+            />
+            <button
+              aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
+              className="input-affix-button"
+              tabIndex={-1}
+              type="button"
+              onClick={() => setVisible((shown) => !shown)}
+            >
+              {visible ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
+            </button>
+          </div>
+          {/* Заглавные буквы — самая частая причина «пароль не подходит» */}
+          {capsLock ? <span className="field-hint">Включён Caps Lock</span> : null}
         </label>
 
-        {failure ? <div className="form-error">{failure}</div> : null}
+        {failure ? (
+          <div className="form-error" role="alert">
+            {failure}
+          </div>
+        ) : null}
 
-        <Button disabled={login.isPending} type="submit">
+        <Button disabled={!ready} type="submit">
           <LockKeyhole size={15} aria-hidden />
-          {login.isPending ? "Входим..." : "Войти"}
+          {login.isPending ? "Входим…" : "Войти"}
         </Button>
+
+        <p className="login-note">
+          Вход только для сотрудников сети. Все действия в панели записываются.
+        </p>
       </form>
+    </main>
+  );
+}
+
+function SessionFailure({
+  message,
+  onRetry,
+  onSignOut,
+}: {
+  message: string | null;
+  onRetry: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <main className="login-shell">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="login-mark">
+            <Store size={18} aria-hidden />
+          </div>
+          <div>
+            <h1 className="login-title">Панель недоступна</h1>
+            <p className="login-copy">{message ?? "Сервер не отвечает"}</p>
+          </div>
+        </div>
+
+        <Button onClick={onRetry} type="button">
+          Повторить
+        </Button>
+        <Button onClick={onSignOut} tone="quiet" type="button">
+          Выйти
+        </Button>
+      </div>
     </main>
   );
 }
@@ -294,18 +366,53 @@ function SessionSkeleton() {
 
 export default function App() {
   const queryClient = useQueryClient();
-  const [authorized, setAuthorized] = useState(getToken() !== null);
 
-  const me = useQuery({ queryKey: ["me"], queryFn: api.me, enabled: authorized, retry: false });
+  /**
+   * Токен держим в состоянии, а не подсматриваем в хранилище при отрисовке:
+   * так вход сразу переключает экран, а не после обновления страницы.
+   */
+  const [token, setSession] = useState<string | null>(() => getToken());
 
-  if (!authorized || me.isError) {
+  const me = useQuery({
+    queryKey: ["me", token],
+    queryFn: api.me,
+    enabled: token !== null,
+    retry: false,
+  });
+
+  const signOut = useCallback(() => {
+    setToken(null);
+    setSession(null);
+    queryClient.clear();
+  }, [queryClient]);
+
+  /**
+   * На экран входа выбрасываем только тогда, когда сервер отказал в доступе.
+   * Раньше туда же вела любая ошибка — упавшая сеть, пятисотка, — и панель
+   * молча просила логин при живом токене: гость вводил его, ничего не менялось,
+   * а после обновления страницы всё работало.
+   */
+  const rejected =
+    me.isError && me.error instanceof ApiError && [401, 403].includes(me.error.status);
+
+  useEffect(() => {
+    if (rejected) signOut();
+  }, [rejected, signOut]);
+
+  if (token === null || rejected) {
     return (
       <Login
-        onDone={() => {
-          queryClient.removeQueries({ queryKey: ["me"] });
-          setAuthorized(true);
+        onDone={(fresh) => {
+          setToken(fresh);
+          setSession(fresh);
         }}
       />
+    );
+  }
+
+  if (me.isError) {
+    return (
+      <SessionFailure message={me.error instanceof ApiError ? me.error.message : null} onRetry={() => me.refetch()} onSignOut={signOut} />
     );
   }
 
@@ -314,16 +421,7 @@ export default function App() {
   }
 
   return (
-    <AdminSessionProvider
-      value={{
-        staff: me.data,
-        logout: () => {
-          setToken(null);
-          setAuthorized(false);
-          queryClient.clear();
-        },
-      }}
-    >
+    <AdminSessionProvider value={{ staff: me.data, logout: signOut }}>
       <RouterProvider router={router} />
     </AdminSessionProvider>
   );

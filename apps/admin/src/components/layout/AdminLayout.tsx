@@ -3,18 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Command,
   LogOut,
+  Menu,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   Search,
   Sun,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Toaster } from "sonner";
 
-import logoUrl from "../../../../../packages/tenants/assets/mamaroma/logo.png";
-import { api, tenant } from "../../api";
+import { api } from "../../api";
 import { useAdminSession } from "../../lib/admin-session";
 import { Button, IconButton, cn } from "../../ui";
 import { CommandMenu } from "./CommandMenu";
@@ -90,6 +91,30 @@ function getStoredQuickAccess(): AdminPath[] {
   }
 }
 
+function roleLabel(role?: string | null): string {
+  const normalized = role?.trim().toLocaleLowerCase("ru-RU");
+
+  if (!normalized || normalized === "admin" || normalized === "administrator") {
+    return "Админ";
+  }
+
+  if (normalized === "owner" || normalized === "super_admin" || normalized === "superadmin") {
+    return "Владелец";
+  }
+
+  if (normalized === "manager") {
+    return "Менеджер";
+  }
+
+  return role ?? "Администратор панели";
+}
+
+function refreshTimeLabel(date: Date | null): string {
+  if (!date) return "данные актуальны";
+
+  return `обновлено ${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 export function AdminLayout() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -100,6 +125,9 @@ export function AdminLayout() {
   const [collapsed, setCollapsed] = useStoredBoolean(COLLAPSED_KEY, false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
   const [theme, setTheme] = useThemeMode();
 
   const orders = useQuery({
@@ -149,6 +177,7 @@ export function AdminLayout() {
       if (event.key === "Escape") {
         setCommandOpen(false);
         setUserOpen(false);
+        setMobileMenuOpen(false);
       }
     };
 
@@ -166,9 +195,18 @@ export function AdminLayout() {
 
   const section = getSection(activeSection);
   const sectionItems = getSectionItems(activeSection);
+  const activeSectionCount = sectionItems.reduce((sum, item) => sum + (counts[item.path] ?? 0), 0);
 
   const navigateTo = (path: AdminPath) => {
     void navigate({ to: path });
+  };
+
+  const refreshAll = () => {
+    setRefreshing(true);
+    void queryClient.invalidateQueries().finally(() => {
+      setLastRefreshAt(new Date());
+      setRefreshing(false);
+    });
   };
 
   const staffInitials =
@@ -177,15 +215,15 @@ export function AdminLayout() {
       .filter(Boolean)
       .slice(0, 2)
       .map((part) => part[0]?.toLocaleUpperCase("ru-RU"))
-      .join("") || "MR";
+      .join("") || "А";
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   return (
-    <div className="admin-app app-shell" data-nav-collapsed={collapsed}>
+    <div className="admin-app app-shell" data-mobile-menu-open={mobileMenuOpen} data-nav-collapsed={collapsed}>
       <aside className="rail" aria-label="Разделы админки">
-        <div className="brand-mark" title={tenant.branding.displayName}>
-          <img alt="" src={logoUrl} />
-        </div>
-
         <nav className="rail-nav">
           {NAV_SECTIONS.map((item) => {
             const Icon = item.icon;
@@ -206,6 +244,7 @@ export function AdminLayout() {
                 }}
               >
                 <Icon size={18} aria-hidden />
+                <span className="rail-button-label">{item.label}</span>
                 {sectionHasProblems ? <span className="rail-dot" /> : null}
               </button>
             );
@@ -214,9 +253,6 @@ export function AdminLayout() {
 
         <div className="rail-spacer" />
 
-        <IconButton label="Поиск" size="sm" variant="quiet" onClick={() => setCommandOpen(true)}>
-          <Search size={16} aria-hidden />
-        </IconButton>
         <IconButton
           className="hide-mobile"
           label={collapsed ? "Развернуть меню" : "Свернуть меню"}
@@ -249,7 +285,10 @@ export function AdminLayout() {
                   onClick={() => navigateTo(item.path)}
                 >
                   <Icon size={16} aria-hidden />
-                  <span className="nav-item-label">{item.label}</span>
+                  <span className="nav-item-copy">
+                    <span className="nav-item-label">{item.label}</span>
+                    <span className="nav-item-description">{item.description}</span>
+                  </span>
                   {count > 0 ? <span className="nav-count">{count}</span> : null}
                 </button>
               );
@@ -276,7 +315,9 @@ export function AdminLayout() {
                       onClick={() => navigateTo(item.path)}
                     >
                       <Icon size={16} aria-hidden />
-                      <span className="nav-item-label">{item.label}</span>
+                      <span className="nav-item-copy">
+                        <span className="nav-item-label">{item.label}</span>
+                      </span>
                     </button>
                   );
                 })}
@@ -289,7 +330,7 @@ export function AdminLayout() {
               <span className="user-avatar">{staffInitials}</span>
               <span className="min-w-0">
                 <span className="user-name">{staff?.name ?? "Сотрудник"}</span>
-                <span className="user-role">{staff?.role ?? "администратор"}</span>
+                <span className="user-role">{roleLabel(staff?.role)}</span>
               </span>
             </button>
           </div>
@@ -298,6 +339,16 @@ export function AdminLayout() {
 
       <section className="workspace">
         <header className="workspace-header">
+          <IconButton
+            className="mobile-only mobile-nav-trigger"
+            label="Открыть навигацию"
+            size="sm"
+            variant="ghost"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu size={16} aria-hidden />
+          </IconButton>
+
           <IconButton
             className="hide-mobile"
             label={collapsed ? "Развернуть меню" : "Свернуть меню"}
@@ -311,26 +362,29 @@ export function AdminLayout() {
           <div className="workspace-title-block">
             <div className="workspace-kicker">{section.label}</div>
             <h1 className="workspace-title">{activeItem.label}</h1>
+            <p className="workspace-description">{activeItem.description}</p>
           </div>
 
           <div className="workspace-actions">
             <button className="command-button hide-mobile" type="button" onClick={() => setCommandOpen(true)}>
               <Search size={15} aria-hidden />
-              <span>Поиск</span>
+              <span>Поиск по админке</span>
               <kbd className="kbd">
                 <Command size={11} aria-hidden />K
               </kbd>
             </button>
             <Button
+              className="refresh-data-button"
+              disabled={refreshing}
               size="sm"
               variant="ghost"
-              onClick={() => {
-                void queryClient.invalidateQueries();
-              }}
+              title="Перезагрузить данные во всех открытых разделах"
+              onClick={refreshAll}
             >
-              <RefreshCw size={15} aria-hidden />
-              Обновить
+              <RefreshCw className={cn(refreshing && "spin")} size={15} aria-hidden />
+              <span className="refresh-label">{refreshing ? "Обновляем..." : "Обновить данные"}</span>
             </Button>
+            <span className="refresh-note hide-mobile">{refreshTimeLabel(lastRefreshAt)}</span>
           </div>
         </header>
 
@@ -338,6 +392,114 @@ export function AdminLayout() {
           <Outlet />
         </main>
       </section>
+
+      {mobileMenuOpen ? (
+        <>
+          <button
+            aria-label="Закрыть навигацию"
+            className="mobile-nav-scrim"
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <aside className="mobile-nav-sheet" aria-label="Навигация админки">
+            <header className="mobile-nav-head">
+              <div className="min-w-0">
+                <span className="mobile-nav-eyebrow">Навигация</span>
+                <h2>{activeItem.label}</h2>
+                <p>{activeItem.description}</p>
+              </div>
+              <IconButton label="Закрыть навигацию" size="sm" variant="ghost" onClick={() => setMobileMenuOpen(false)}>
+                <X size={16} aria-hidden />
+              </IconButton>
+            </header>
+
+            <div className="mobile-section-strip" aria-label="Группы разделов">
+              {NAV_SECTIONS.map((item) => {
+                const Icon = item.icon;
+                const sectionHasProblems = getSectionItems(item.key).some((navItem) => (counts[navItem.path] ?? 0) > 0);
+
+                return (
+                  <button
+                    key={item.key}
+                    className="mobile-section-button"
+                    data-active={activeSection === item.key}
+                    type="button"
+                    onClick={() => setActiveSection(item.key)}
+                  >
+                    <Icon size={15} aria-hidden />
+                    <span>{item.label}</span>
+                    {sectionHasProblems ? <span className="mobile-section-dot" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mobile-nav-current">
+              <div className="mobile-nav-section-title">
+                <span>{section.label}</span>
+                {activeSectionCount > 0 ? <strong>{activeSectionCount}</strong> : null}
+              </div>
+              <nav className="mobile-nav-list">
+                {sectionItems.map((item) => {
+                  const Icon = item.icon;
+                  const count = counts[item.path] ?? 0;
+
+                  return (
+                    <button
+                      key={item.path}
+                      className="mobile-nav-item"
+                      data-active={activeItem.path === item.path}
+                      type="button"
+                      onClick={() => navigateTo(item.path)}
+                    >
+                      <Icon size={17} aria-hidden />
+                      <span className="mobile-nav-item-copy">
+                        <span>{item.label}</span>
+                        <small>{item.description}</small>
+                      </span>
+                      {count > 0 ? <span className="nav-count">{count}</span> : null}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="mobile-user-card">
+              <span className="user-avatar">{staffInitials}</span>
+              <span className="mobile-user-copy">
+                <span>{staff?.name ?? "Сотрудник"}</span>
+                <small>{roleLabel(staff?.role)}</small>
+              </span>
+              <IconButton
+                label={theme === "dark" ? "Светлая тема" : "Тёмная тема"}
+                size="sm"
+                variant="ghost"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                {theme === "dark" ? <Sun size={15} aria-hidden /> : <Moon size={15} aria-hidden />}
+              </IconButton>
+              <IconButton label="Выйти" size="sm" variant="ghost" onClick={logout}>
+                <LogOut size={15} aria-hidden />
+              </IconButton>
+            </div>
+
+            <div className="mobile-nav-actions">
+              <button className="mobile-action" type="button" onClick={() => setCommandOpen(true)}>
+                <Search size={16} aria-hidden />
+                <span>Поиск по админке</span>
+                <kbd className="kbd">
+                  <Command size={11} aria-hidden />K
+                </kbd>
+              </button>
+              <button className="mobile-action" type="button" disabled={refreshing} onClick={refreshAll}>
+                <RefreshCw className={cn(refreshing && "spin")} size={16} aria-hidden />
+                <span>{refreshing ? "Обновляем данные" : "Обновить данные"}</span>
+                <small>{refreshTimeLabel(lastRefreshAt)}</small>
+              </button>
+            </div>
+          </aside>
+        </>
+      ) : null}
 
       {userOpen ? (
         <>

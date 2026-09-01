@@ -105,6 +105,7 @@ const YANDEX_MAPS_KEY = (
   import.meta.env.EXPO_PUBLIC_YANDEX_MAPS_KEY ??
   ""
 ).trim();
+export const zoneMapProviderName = YANDEX_MAPS_KEY ? "Яндекс.Карты" : "OpenStreetMap";
 
 let yandexMapsLoader: Promise<YandexApi> | null = null;
 
@@ -280,15 +281,15 @@ function midpointIcon(color: string): L.DivIcon {
   });
 }
 
-function leafletPolygonStyle(zone: ZoneMapZone, active: boolean): L.PolylineOptions {
+function leafletPolygonStyle(zone: ZoneMapZone, active: boolean, hasSelection: boolean): L.PolylineOptions {
   return {
     color: zone.is_active === false ? "#78716c" : zone.color,
     dashArray: zone.is_active === false ? "6 6" : undefined,
     fillColor: zone.color,
-    fillOpacity: active ? 0.16 : 0.025,
+    fillOpacity: active ? 0.18 : hasSelection ? 0 : 0.025,
     lineJoin: "round",
-    opacity: active ? 1 : zone.is_active === false ? 0.4 : 0.68,
-    weight: active ? 4 : 2,
+    opacity: active ? 1 : zone.is_active === false ? 0.34 : 0.44,
+    weight: active ? 5 : 2,
   };
 }
 
@@ -416,11 +417,11 @@ const LeafletZoneMap = forwardRef<ZoneMapHandle, Props>(function LeafletZoneMap(
           fillOpacity: 0,
           interactive: false,
           opacity: 0.92,
-          weight: 9,
+          weight: 11,
         }).addTo(layer);
       }
 
-      const polygon = L.polygon(zone.outline.map(toMap), leafletPolygonStyle(zone, isActiveZone));
+      const polygon = L.polygon(zone.outline.map(toMap), leafletPolygonStyle(zone, isActiveZone, Boolean(activeZoneId)));
 
       polygon.on("click", (event: L.LeafletMouseEvent) => {
         event.originalEvent.stopPropagation();
@@ -466,7 +467,7 @@ const LeafletZoneMap = forwardRef<ZoneMapHandle, Props>(function LeafletZoneMap(
         fillOpacity: 0,
         interactive: false,
         opacity: 0.92,
-        weight: 9,
+        weight: 11,
       }).addTo(layer);
       L.polygon(outline.map(toMap), {
         color,
@@ -701,7 +702,7 @@ const YandexZoneMap = forwardRef<ZoneMapHandle, Props & { apiKey: string }>(func
             {
               fillColor: "#FFFFFF00",
               strokeColor: "#FFFFFFE6",
-              strokeWidth: 9,
+              strokeWidth: 11,
             },
           ),
         );
@@ -713,10 +714,10 @@ const YandexZoneMap = forwardRef<ZoneMapHandle, Props & { apiKey: string }>(func
           hintContent: zoneTitle(zone),
         },
         {
-          fillColor: hexWithAlpha(zone.color, isActiveZone ? "2E" : "08"),
-          strokeColor: hexWithAlpha(zone.is_active === false ? "#78716c" : zone.color, isActiveZone ? "FF" : "B8"),
+          fillColor: hexWithAlpha(zone.color, isActiveZone ? "30" : activeZoneId ? "00" : "06"),
+          strokeColor: hexWithAlpha(zone.is_active === false ? "#78716c" : zone.color, isActiveZone ? "FF" : "70"),
           strokeStyle: zone.is_active === false ? "dash" : "solid",
-          strokeWidth: isActiveZone ? 4 : 2,
+          strokeWidth: isActiveZone ? 5 : 2,
         },
       );
 
@@ -765,7 +766,7 @@ const YandexZoneMap = forwardRef<ZoneMapHandle, Props & { apiKey: string }>(func
           {
             fillColor: "#FFFFFF00",
             strokeColor: "#FFFFFFE6",
-            strokeWidth: 9,
+            strokeWidth: 11,
           },
         ),
       );

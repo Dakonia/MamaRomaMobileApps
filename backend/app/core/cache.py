@@ -35,3 +35,29 @@ async def set_json(key: str, value: Any, ttl_seconds: int) -> None:
         await client().set(key, json.dumps(value, ensure_ascii=False), ex=ttl_seconds)
     except (RedisError, OSError) as exc:
         logger.warning("Redis недоступен на записи: %s", exc)
+
+
+async def hits(key: str, ttl_seconds: int) -> int:
+    """Сколько раз за окно уже обращались по этому ключу.
+
+    Считаем в Redis: счётчик переживает перезапуск приложения и общий на все
+    процессы. Redis лежит — возвращаем ноль: подсчёт попыток не повод отказывать
+    людям во входе, это защита от перебора, а не проверка прав.
+    """
+    try:
+        connection = client()
+        count = int(await connection.incr(key))
+        if count == 1:
+            await connection.expire(key, ttl_seconds)
+        return count
+    except (RedisError, OSError) as exc:
+        logger.warning("Redis недоступен на счётчике: %s", exc)
+        return 0
+
+
+async def forget(key: str) -> None:
+    """Забыть счётчик — например, после удачного входа."""
+    try:
+        await client().delete(key)
+    except (RedisError, OSError) as exc:
+        logger.warning("Redis недоступен на сбросе счётчика: %s", exc)

@@ -5,13 +5,14 @@ import {
   LocateFixed,
   MapPinned,
   Plus,
+  Redo2,
   RotateCcw,
   Save,
   Trash2,
   Undo2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 
 import { api, ApiError, type AdminRestaurant, type City, type Zone } from "./api";
@@ -36,6 +37,7 @@ type ZoneEditorDraft = {
 
 type Props = {
   cities: City[];
+  initialRestaurantId?: string;
   onClose: () => void;
   onSaved: (zone: Zone) => void;
   restaurants: AdminRestaurant[];
@@ -67,7 +69,12 @@ function nextSortOrder(zones: Zone[]): number {
   return zones.length === 0 ? 0 : Math.max(...zones.map((item) => item.sort_order)) + 10;
 }
 
-function toDraft(zone: Zone | null, restaurants: AdminRestaurant[], zones: Zone[]): ZoneEditorDraft {
+function toDraft(
+  zone: Zone | null,
+  restaurants: AdminRestaurant[],
+  zones: Zone[],
+  initialRestaurantId?: string,
+): ZoneEditorDraft {
   return {
     color: zone?.color ?? zoneColors[zones.length % zoneColors.length] ?? zoneColors[0],
     delivery_minutes: zone?.delivery_minutes === null || zone?.delivery_minutes === undefined ? "" : String(zone.delivery_minutes),
@@ -77,7 +84,7 @@ function toDraft(zone: Zone | null, restaurants: AdminRestaurant[], zones: Zone[
     min_order_rub: toRub(zone?.min_order_kopecks ?? 0),
     min_order_weekend_rub: toRub(zone?.min_order_weekend_kopecks ?? null),
     name: zone?.name ?? "",
-    restaurant_id: zone?.restaurant_id ?? restaurants[0]?.id ?? "",
+    restaurant_id: zone?.restaurant_id ?? initialRestaurantId ?? restaurants[0]?.id ?? "",
     sort_order: String(zone?.sort_order ?? nextSortOrder(zones)),
   };
 }
@@ -113,23 +120,40 @@ function zoneMap(zone: Zone): ZoneMapZone {
   };
 }
 
-export function ZoneEditor({ zone, restaurants, cities, zones = [], onClose, onSaved }: Props) {
+function sameOutline(left: Point[], right: Point[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((point, index) => point[0] === right[index]?.[0] && point[1] === right[index]?.[1])
+  );
+}
+
+export function ZoneEditor({ zone, restaurants, cities, initialRestaurantId, zones = [], onClose, onSaved }: Props) {
   const mapRef = useRef<ZoneMapHandle>(null);
-  const [draft, setDraft] = useState<ZoneEditorDraft>(() => toDraft(zone, restaurants, zones));
+  const [draft, setDraft] = useState<ZoneEditorDraft>(() => toDraft(zone, restaurants, zones, initialRestaurantId));
   const [outline, setOutline] = useState<Point[]>((zone?.outline as Point[]) ?? []);
   const [history, setHistory] = useState<Point[][]>([]);
+  const [future, setFuture] = useState<Point[][]>([]);
+  const outlineRef = useRef(outline);
+  const historyRef = useRef(history);
+  const futureRef = useRef(future);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
   const [snapToAxes, setSnapToAxes] = useState(true);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
-    setDraft(toDraft(zone, restaurants, zones));
-    setOutline((zone?.outline as Point[]) ?? []);
+    const initialOutline = (zone?.outline as Point[]) ?? [];
+
+    setDraft(toDraft(zone, restaurants, zones, initialRestaurantId));
+    setOutline(initialOutline);
     setHistory([]);
+    setFuture([]);
+    outlineRef.current = initialOutline;
+    historyRef.current = [];
+    futureRef.current = [];
     setSelectedPointIndex(null);
     setFailure(null);
-  }, [restaurants, zone, zones]);
+  }, [initialRestaurantId, restaurants, zone, zones]);
 
   const restaurant = restaurants.find((item) => item.id === draft.restaurant_id) ?? null;
   const backgroundZones = useMemo(() => zones.filter((item) => item.id !== zone?.id).map(zoneMap), [zone?.id, zones]);
@@ -140,21 +164,78 @@ export function ZoneEditor({ zone, restaurants, cities, zones = [], onClose, onS
   const set = <K extends keyof ZoneEditorDraft>(key: K, value: ZoneEditorDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  const commitOutline = (next: Point[]) => {
-    setOutline((current) => {
-      setHistory((items) => [current, ...items].slice(0, 24));
-      return next;
-    });
-    setSelectedPointIndex((current) => (current !== null && current >= next.length ? null : current));
-  };
+  const commitOutline = useCallback((next: Point[]) => {
+    const current = outlineRef.current;
+    if (sameOutline(current, next)) return;
 
-  const undo = () => {
-    const [previous, ...rest] = history;
+    const nextHistory = [current, ...historyRef.current].slice(0, 40);
+
+    outlineRef.current = next;
+    historyRef.current = nextHistory;
+    futureRef.current = [];
+    setOutline(next);
+    setHistory(nextHistory);
+    setFuture([]);
+    setSelectedPointIndex((current) => (current !== null && current >= next.length ? null : current));
+  }, []);
+
+  const undo = useCallback(() => {
+    const [previous, ...rest] = historyRef.current;
     if (!previous) return;
+
+    const nextFuture = [outlineRef.current, ...futureRef.current].slice(0, 40);
+
+    outlineRef.current = previous;
+    historyRef.current = rest;
+    futureRef.current = nextFuture;
     setOutline(previous);
     setHistory(rest);
+    setFuture(nextFuture);
     setSelectedPointIndex(null);
-  };
+  }, []);
+
+  const redo = useCallback(() => {
+    const [next, ...rest] = futureRef.current;
+    if (!next) return;
+
+    const nextHistory = [outlineRef.current, ...historyRef.current].slice(0, 40);
+
+    outlineRef.current = next;
+    historyRef.current = nextHistory;
+    futureRef.current = rest;
+    setOutline(next);
+    setHistory(nextHistory);
+    setFuture(rest);
+    setSelectedPointIndex(null);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isTyping =
+        target?.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+      if (isTyping) return;
+
+      const key = event.key.toLocaleLowerCase("ru-RU");
+      const command = event.metaKey || event.ctrlKey;
+      if (!command) return;
+
+      if (key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+      }
+
+      if (key === "y" && event.ctrlKey) {
+        event.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [redo, undo]);
 
   const createStarter = () => {
     const next = starterContour(restaurant);
@@ -253,7 +334,11 @@ export function ZoneEditor({ zone, restaurants, cities, zones = [], onClose, onS
               </Button>
               <Button disabled={history.length === 0} variant="ghost" onClick={undo}>
                 <Undo2 size={15} aria-hidden />
-                Отменить точку
+                Отменить
+              </Button>
+              <Button disabled={future.length === 0} variant="ghost" onClick={redo}>
+                <Redo2 size={15} aria-hidden />
+                Вернуть
               </Button>
               <Button disabled={outline.length === 0} variant="ghost" onClick={() => mapRef.current?.fitCurrent()}>
                 <LocateFixed size={15} aria-hidden />
