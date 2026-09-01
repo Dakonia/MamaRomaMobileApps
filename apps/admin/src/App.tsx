@@ -7,12 +7,21 @@ import {
 } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, LockKeyhole, Store } from "lucide-react";
-import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 import { OrdersPage } from "./app/orders/OrdersPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ApiError, api, getToken, mediaUrl, setToken, tenant } from "./api";
 import { AdminSessionProvider } from "./lib/admin-session";
+import { brightness } from "./lib/blurhash";
 import { Button } from "./ui";
 
 const ReservationsPage = lazy(() =>
@@ -213,8 +222,13 @@ declare module "@tanstack/react-router" {
 
 /**
  * Кадр зала для экрана входа. Список ресторанов открыт и без входа, поэтому
- * снимок можно взять до авторизации. Выбираем по дню года: панель выглядит
- * по-разному в разные дни, но не мельтешит при каждой перерисовке.
+ * снимок можно взять до авторизации.
+ *
+ * Берём не любой, а из трети самых тёмных: поверх кадра лежит текст и белая
+ * карточка, и на залитом солнцем зале с красными скатертями они тонут, а на
+ * вечернем — читаются. Светлоту узнаём из хеша размытия, не скачивая снимки.
+ * Внутри отобранных крутим по дню года: панель выглядит по-разному в разные
+ * дни, но не мельтешит при каждой перерисовке.
  */
 function useHallShot(): string | null {
   const halls = useQuery({
@@ -225,15 +239,16 @@ function useHallShot(): string | null {
   });
 
   const shots = (halls.data ?? [])
-    .map((item) => item.photos?.[0] ?? item.image_url)
-    .filter((path): path is string => Boolean(path));
+    .filter((item) => Boolean(item.image_url))
+    .sort((left, right) => brightness(left.image_blurhash) - brightness(right.image_blurhash))
+    .slice(0, Math.max(1, Math.ceil((halls.data ?? []).length / 3)));
 
   if (shots.length === 0) return null;
 
   const start = new Date(new Date().getFullYear(), 0, 0);
   const day = Math.floor((Date.now() - start.getTime()) / 86_400_000);
 
-  return mediaUrl(shots[day % shots.length]);
+  return mediaUrl(shots[day % shots.length].image_url ?? null);
 }
 
 function Login({ onDone }: { onDone: (token: string) => void }) {
@@ -261,7 +276,10 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
   const ready = email.trim().length > 0 && password.length > 0 && !login.isPending;
 
   return (
-    <main className="login-shell">
+    <main
+      className="login-shell"
+      style={{ "--brand": tenant.branding.primary } as CSSProperties}
+    >
       {hall ? <img alt="" className="login-photo" src={hall} /> : null}
       <div className="login-veil" />
 

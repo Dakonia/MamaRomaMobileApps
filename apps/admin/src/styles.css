@@ -290,14 +290,50 @@ textarea:focus-visible {
 
 .login-card {
   position: relative;
-  width: min(370px, 100%);
+  width: min(374px, 100%);
   display: grid;
-  gap: 14px;
-  padding: 28px;
+  gap: 16px;
+  padding: 30px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .7);
+}
+
+/* Панель вся из плотных мелких элементов, но вход — не таблица заказов:
+   поля здесь выше, буквы крупнее, кнопка фирменного цвета сети, а не
+   служебного синего, которым покрашены действия внутри */
+.login-card .field-label {
+  font-size: 12px;
+}
+
+.login-card .input {
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+
+.login-card .input-affix .input {
+  padding-right: 40px;
+}
+
+.login-card .button {
+  min-height: 44px;
+  margin-top: 4px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+
+.login-card .button-primary {
+  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.login-card .button-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand) 88%, #000);
+  border-color: color-mix(in srgb, var(--brand) 88%, #000);
 }
 
 .login-head {

@@ -166,9 +166,9 @@ export type PromotionDraft = {
 export type Restaurant = {
   id: string;
   name: string;
-  /** Снимки зала: их показывает экран входа, пока сотрудник не представился. */
-  photos?: string[];
+  /** Снимок зала и его хеш размытия: по ним экран входа выбирает кадр. */
   image_url?: string | null;
+  image_blurhash?: string | null;
 };
 
 export type Bridge = {
