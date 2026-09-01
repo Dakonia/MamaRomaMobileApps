@@ -41,13 +41,17 @@ async def test_otladochnyj_kod_tolko_dlya_svoih_nomerov(
     assert auth_service._debug_code_allowed("+79990000002") is False
 
 
-async def test_pustoj_spisok_zakryvaet_otladochnyj_vhod(monkeypatch: pytest.MonkeyPatch):
-    """Настройка не заполнена — код не подходит никому."""
+async def test_pustoj_spisok_otkryvaet_stend_vsem(monkeypatch: pytest.MonkeyPatch):
+    """Настройка не заполнена — стенд пускает всех.
+
+    Провайдера СМС ещё нет: закрыв этот вход, мы закроем и себе. Сужается он
+    заполнением списка, а не правкой кода.
+    """
     monkeypatch.setattr(settings, "environment", "staging")
     monkeypatch.setattr(settings, "sms_code_debug_value", "0000")
     monkeypatch.setattr(settings, "sms_debug_phones", [])
 
-    assert auth_service._debug_code_allowed("+79990000001") is False
+    assert auth_service._debug_code_allowed("+79990000001") is True
 
 
 async def test_na_boevom_otladochnyj_kod_ne_rabotaet(monkeypatch: pytest.MonkeyPatch):
