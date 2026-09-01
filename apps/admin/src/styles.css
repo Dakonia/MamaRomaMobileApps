@@ -180,106 +180,124 @@ textarea:focus-visible {
   color: var(--ink);
 }
 
-/* Экран входа: слева — про сеть, справа — форма. Две половины вместо карточки
-   посреди пустого экрана, но без картинок и лишних слов */
+/* Экран входа: снимок зала во весь экран, поверх — карточка со входом.
+   Своих залов у сети 238, и панель начинается с них, а не с пустой формы */
 .login-shell {
   position: relative;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1fr;
   place-items: center;
   padding: 24px;
-  background: var(--bg);
+  background: #17130F;
   overflow: hidden;
 }
 
-@media (min-width: 900px) {
-  .login-shell {
-    grid-template-columns: 1.1fr 1fr;
-    gap: 64px;
-    padding: 48px 8vw;
-    place-items: center stretch;
-    align-content: center;
+.login-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Кадр проявляется, а не возникает рывком, когда доедет с сервера */
+  animation: login-photo-in .8s ease-out both;
+}
+
+@keyframes login-photo-in {
+  from { opacity: 0; transform: scale(1.04); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Затемнение густое слева, где текст, и почти прозрачное справа: снимок
+   остаётся видно, а буквы не спорят с ним за внимание */
+.login-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    rgba(20, 14, 12, .94) 0%,
+    rgba(20, 14, 12, .74) 42%,
+    rgba(20, 14, 12, .34) 100%
+  );
+}
+
+.login-inner {
+  position: relative;
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 40px;
+}
+
+@media (min-width: 940px) {
+  .login-inner {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 80px;
+    padding: 0 24px;
   }
 }
 
 .login-aside {
   display: none;
+  color: #F6F1EC;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 940px) {
   .login-aside {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    align-self: center;
+    display: grid;
+    gap: 18px;
     max-width: 460px;
+    justify-self: start;
   }
+}
+
+.login-aside-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  font-weight: 600;
+  letter-spacing: .01em;
 }
 
 .login-aside-mark {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  color: var(--on-acc);
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: #fff;
   background: var(--acc);
-  box-shadow: var(--sh-2);
-}
-
-.login-aside-text {
-  display: grid;
-  gap: 10px;
-}
-
-.login-aside-eyebrow {
-  margin: 0;
-  color: var(--acc);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
 }
 
 .login-aside-title {
   margin: 0;
-  color: var(--ink);
-  font-size: 34px;
+  font-size: 42px;
   font-weight: 700;
-  line-height: 40px;
-  letter-spacing: -.02em;
+  line-height: 1.06;
+  letter-spacing: -.03em;
   text-wrap: balance;
 }
 
 .login-aside-copy {
   margin: 0;
-  max-width: 40ch;
-  color: var(--ink-2);
+  max-width: 36ch;
+  color: rgba(246, 241, 236, .78);
   font-size: 15px;
   line-height: 24px;
 }
 
-.login-aside-note {
-  margin: 0;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-  color: var(--ink-3);
-  font-size: 12px;
-  line-height: 18px;
-}
-
 .login-card {
   position: relative;
-  width: min(380px, 100%);
-  justify-self: center;
+  width: min(370px, 100%);
   display: grid;
   gap: 14px;
   padding: 28px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: var(--sh-3);
+  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .7);
 }
 
 .login-head {
@@ -309,14 +327,11 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   overflow: hidden;
-  color: var(--on-acc);
-  background: var(--acc);
-}
-
-.brand-mark {
   width: 30px;
   height: 30px;
   border-radius: 8px;
+  color: var(--on-acc);
+  background: var(--acc);
 }
 
 .brand-mark-text {

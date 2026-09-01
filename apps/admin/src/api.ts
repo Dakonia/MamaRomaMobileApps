@@ -163,7 +163,13 @@ export type PromotionDraft = {
   show_in_menu: boolean;
 };
 
-export type Restaurant = { id: string; name: string };
+export type Restaurant = {
+  id: string;
+  name: string;
+  /** Снимки зала: их показывает экран входа, пока сотрудник не представился. */
+  photos?: string[];
+  image_url?: string | null;
+};
 
 export type Bridge = {
   restaurant_id: string;

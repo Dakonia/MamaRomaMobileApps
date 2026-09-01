@@ -11,7 +11,7 @@ import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from
 
 import { OrdersPage } from "./app/orders/OrdersPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
-import { ApiError, api, getToken, setToken, tenant } from "./api";
+import { ApiError, api, getToken, mediaUrl, setToken, tenant } from "./api";
 import { AdminSessionProvider } from "./lib/admin-session";
 import { Button } from "./ui";
 
@@ -211,11 +211,38 @@ declare module "@tanstack/react-router" {
   }
 }
 
+/**
+ * Кадр зала для экрана входа. Список ресторанов открыт и без входа, поэтому
+ * снимок можно взять до авторизации. Выбираем по дню года: панель выглядит
+ * по-разному в разные дни, но не мельтешит при каждой перерисовке.
+ */
+function useHallShot(): string | null {
+  const halls = useQuery({
+    queryKey: ["halls"],
+    queryFn: api.restaurants,
+    staleTime: 12 * 60 * 60 * 1000,
+    retry: false,
+  });
+
+  const shots = (halls.data ?? [])
+    .map((item) => item.photos?.[0] ?? item.image_url)
+    .filter((path): path is string => Boolean(path));
+
+  if (shots.length === 0) return null;
+
+  const start = new Date(new Date().getFullYear(), 0, 0);
+  const day = Math.floor((Date.now() - start.getTime()) / 86_400_000);
+
+  return mediaUrl(shots[day % shots.length]);
+}
+
 function Login({ onDone }: { onDone: (token: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+
+  const hall = useHallShot();
 
   const login = useMutation({
     mutationFn: () => api.login(email, password),
@@ -235,88 +262,89 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
 
   return (
     <main className="login-shell">
-      {/* Левая половина — про сеть, правая — про вход. На узком экране
-          остаётся только вход: заставка там только мешала бы */}
-      <section className="login-aside">
-        <div className="login-aside-mark">
-          <Store size={20} aria-hidden />
-        </div>
+      {hall ? <img alt="" className="login-photo" src={hall} /> : null}
+      <div className="login-veil" />
 
-        <div className="login-aside-text">
-          <p className="login-aside-eyebrow">{tenant.branding.displayName}</p>
+      <div className="login-inner">
+        <section className="login-aside">
+          <div className="login-aside-brand">
+            <div className="login-aside-mark">
+              <Store size={18} aria-hidden />
+            </div>
+            <span>{tenant.branding.displayName}</span>
+          </div>
+
           <h2 className="login-aside-title">Панель управления сетью</h2>
           <p className="login-aside-copy">
             Заказы и брони, меню и цены по ресторанам, зоны доставки, акции и рассылки.
           </p>
-        </div>
+        </section>
 
-        <p className="login-aside-note">{tenant.branding.legalName}</p>
-      </section>
+        <form
+          className="login-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!ready) return;
+            setFailure(null);
+            login.mutate();
+          }}
+        >
+          <div className="login-head">
+            <h1 className="login-title">Вход</h1>
+            <p className="login-copy">Для сотрудников сети</p>
+          </div>
 
-      <form
-        className="login-card"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!ready) return;
-          setFailure(null);
-          login.mutate();
-        }}
-      >
-        <div className="login-head">
-          <h1 className="login-title">Вход</h1>
-          <p className="login-copy">Для сотрудников сети</p>
-        </div>
-
-        <label className="field">
-          <span className="field-label">Рабочая почта</span>
-          <input
-            autoComplete="username"
-            autoFocus
-            className="input"
-            inputMode="email"
-            name="email"
-            placeholder="name@mamaroma.ru"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-
-        <label className="field">
-          <span className="field-label">Пароль</span>
-          <div className="input-affix">
+          <label className="field">
+            <span className="field-label">Рабочая почта</span>
             <input
-              autoComplete="current-password"
+              autoComplete="username"
+              autoFocus
               className="input"
-              name="password"
-              placeholder="••••••••"
-              type={visible ? "text" : "password"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              inputMode="email"
+              name="email"
+              placeholder="name@mamaroma.ru"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
             />
-            <button
-              aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
-              className="input-affix-button"
-              tabIndex={-1}
-              type="button"
-              onClick={() => setVisible((shown) => !shown)}
-            >
-              {visible ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
-            </button>
-          </div>
-        </label>
+          </label>
 
-        {failure ? (
-          <div className="form-error" role="alert">
-            {failure}
-          </div>
-        ) : null}
+          <label className="field">
+            <span className="field-label">Пароль</span>
+            <div className="input-affix">
+              <input
+                autoComplete="current-password"
+                className="input"
+                name="password"
+                placeholder="••••••••"
+                type={visible ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
+                className="input-affix-button"
+                tabIndex={-1}
+                type="button"
+                onClick={() => setVisible((shown) => !shown)}
+              >
+                {visible ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
+              </button>
+            </div>
+          </label>
 
-        <Button disabled={!ready} type="submit">
-          <LockKeyhole size={15} aria-hidden />
-          {login.isPending ? "Входим…" : "Войти"}
-        </Button>
-      </form>
+          {failure ? (
+            <div className="form-error" role="alert">
+              {failure}
+            </div>
+          ) : null}
+
+          <Button disabled={!ready} type="submit">
+            <LockKeyhole size={15} aria-hidden />
+            {login.isPending ? "Входим…" : "Войти"}
+          </Button>
+        </form>
+      </div>
     </main>
   );
 }
@@ -332,6 +360,8 @@ function SessionFailure({
 }) {
   return (
     <main className="login-shell">
+      <div className="login-veil" />
+      <div className="login-inner">
       <div className="login-card">
         <div className="login-head">
           <h1 className="login-title">Панель недоступна</h1>
@@ -345,6 +375,7 @@ function SessionFailure({
           Выйти
         </Button>
       </div>
+      </div>
     </main>
   );
 }
@@ -352,10 +383,13 @@ function SessionFailure({
 function SessionSkeleton() {
   return (
     <main className="login-shell">
+      <div className="login-veil" />
+      <div className="login-inner">
       <div className="login-card">
         <div className="skeleton skeleton-row" />
         <div className="skeleton skeleton-row" />
         <div className="skeleton skeleton-row" />
+      </div>
       </div>
     </main>
   );
