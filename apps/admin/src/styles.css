@@ -180,55 +180,151 @@ textarea:focus-visible {
   color: var(--ink);
 }
 
+/* Экран входа: слева — про сеть, справа — форма. Две половины вместо карточки
+   посреди пустого экрана, но без картинок и лишних слов */
 .login-shell {
   position: relative;
   min-height: 100vh;
   display: grid;
+  grid-template-columns: 1fr;
   place-items: center;
   padding: 24px;
   background: var(--bg);
   overflow: hidden;
 }
 
-/* Тёплое пятно за карточкой: вход перестаёт быть серой формой на сером фоне,
-   но и не спорит с ней — вся яркость уходит далеко за края */
-.login-shell::before {
-  content: "";
-  position: absolute;
-  inset: -30% 20% 40%;
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    color-mix(in srgb, var(--acc) 22%, transparent),
-    transparent 68%
-  );
-  pointer-events: none;
+@media (min-width: 900px) {
+  .login-shell {
+    grid-template-columns: 1.1fr 1fr;
+    gap: 64px;
+    padding: 48px 8vw;
+    place-items: center stretch;
+    align-content: center;
+  }
+}
+
+.login-aside {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .login-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    align-self: center;
+    max-width: 460px;
+  }
+}
+
+.login-aside-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--on-acc);
+  background: var(--acc);
+  box-shadow: var(--sh-2);
+}
+
+.login-aside-text {
+  display: grid;
+  gap: 10px;
+}
+
+.login-aside-eyebrow {
+  margin: 0;
+  color: var(--acc);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.login-aside-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 40px;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+
+.login-aside-copy {
+  margin: 0;
+  max-width: 40ch;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.login-aside-note {
+  margin: 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .login-card {
   position: relative;
-  width: min(392px, 100%);
+  width: min(380px, 100%);
+  justify-self: center;
   display: grid;
-  gap: 16px;
-  padding: 28px 24px 24px;
+  gap: 14px;
+  padding: 28px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--sh-3);
 }
 
-.login-brand {
-  margin-bottom: 4px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+.login-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
 }
 
-/* Подпись под кнопкой: кто здесь может входить и что вход не анонимный */
-.login-note {
+.login-title {
   margin: 0;
-  color: var(--ink-3);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: -.01em;
+}
+
+.login-copy {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Марка сети в шапке панели */
+.brand-mark {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--on-acc);
+  background: var(--acc);
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.brand-mark-text {
+  color: var(--on-acc);
+  font-family: var(--font-mono);
   font-size: 11px;
-  line-height: 16px;
-  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 /* Поле с кнопкой внутри — показать пароль */
@@ -262,68 +358,6 @@ textarea:focus-visible {
 .input-affix-button:hover {
   color: var(--ink);
   background: var(--sunken);
-}
-
-.field-hint {
-  color: var(--warn, var(--ink-3));
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.login-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.login-mark,
-.brand-mark {
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  color: var(--on-acc);
-  background: var(--acc);
-}
-
-.login-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-}
-
-.brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-}
-
-.login-mark img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.brand-mark-text {
-  color: var(--on-acc);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.login-title {
-  margin: 0;
-  color: var(--ink);
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 28px;
-}
-
-.login-copy {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 13px;
-  line-height: 20px;
 }
 
 .form-error {

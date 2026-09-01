@@ -215,22 +215,18 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
-  const [capsLock, setCapsLock] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   const login = useMutation({
     mutationFn: () => api.login(email, password),
     onSuccess: (result) => onDone(result.access_token),
-    /**
-     * Пароль не подошёл — так и говорим, но не уточняем, что именно не сошлось:
-     * подсказка «такой почты нет» помогает перебирать учётные записи.
-     */
+    /** Не уточняем, что именно не сошлось: так не перебрать чужие учётные записи. */
     onError: (error: ApiError) =>
       setFailure(
         error.status === 401 || error.status === 403
           ? "Неверная почта или пароль"
           : error.status === 429
-            ? "Слишком много попыток. Подождите минуту"
+            ? "Слишком много попыток. Подождите несколько минут"
             : "Сервер не отвечает. Попробуйте ещё раз",
       ),
   });
@@ -239,6 +235,24 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
 
   return (
     <main className="login-shell">
+      {/* Левая половина — про сеть, правая — про вход. На узком экране
+          остаётся только вход: заставка там только мешала бы */}
+      <section className="login-aside">
+        <div className="login-aside-mark">
+          <Store size={20} aria-hidden />
+        </div>
+
+        <div className="login-aside-text">
+          <p className="login-aside-eyebrow">{tenant.branding.displayName}</p>
+          <h2 className="login-aside-title">Панель управления сетью</h2>
+          <p className="login-aside-copy">
+            Заказы и брони, меню и цены по ресторанам, зоны доставки, акции и рассылки.
+          </p>
+        </div>
+
+        <p className="login-aside-note">{tenant.branding.legalName}</p>
+      </section>
+
       <form
         className="login-card"
         onSubmit={(event) => {
@@ -248,18 +262,13 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
           login.mutate();
         }}
       >
-        <div className="login-brand">
-          <div className="login-mark">
-            <Store size={18} aria-hidden />
-          </div>
-          <div>
-            <h1 className="login-title">{tenant.branding.displayName}</h1>
-            <p className="login-copy">Панель управления сетью</p>
-          </div>
+        <div className="login-head">
+          <h1 className="login-title">Вход</h1>
+          <p className="login-copy">Для сотрудников сети</p>
         </div>
 
         <label className="field">
-          <span className="field-label">Почта</span>
+          <span className="field-label">Рабочая почта</span>
           <input
             autoComplete="username"
             autoFocus
@@ -280,11 +289,10 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
               autoComplete="current-password"
               className="input"
               name="password"
-              placeholder="Введите пароль"
+              placeholder="••••••••"
               type={visible ? "text" : "password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              onKeyUp={(event) => setCapsLock(event.getModifierState("CapsLock"))}
             />
             <button
               aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
@@ -296,8 +304,6 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
               {visible ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
             </button>
           </div>
-          {/* Заглавные буквы — самая частая причина «пароль не подходит» */}
-          {capsLock ? <span className="field-hint">Включён Caps Lock</span> : null}
         </label>
 
         {failure ? (
@@ -310,10 +316,6 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
           <LockKeyhole size={15} aria-hidden />
           {login.isPending ? "Входим…" : "Войти"}
         </Button>
-
-        <p className="login-note">
-          Вход только для сотрудников сети. Все действия в панели записываются.
-        </p>
       </form>
     </main>
   );
@@ -331,14 +333,9 @@ function SessionFailure({
   return (
     <main className="login-shell">
       <div className="login-card">
-        <div className="login-brand">
-          <div className="login-mark">
-            <Store size={18} aria-hidden />
-          </div>
-          <div>
-            <h1 className="login-title">Панель недоступна</h1>
-            <p className="login-copy">{message ?? "Сервер не отвечает"}</p>
-          </div>
+        <div className="login-head">
+          <h1 className="login-title">Панель недоступна</h1>
+          <p className="login-copy">{message ?? "Сервер не отвечает"}</p>
         </div>
 
         <Button onClick={onRetry} type="button">
