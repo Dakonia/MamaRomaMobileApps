@@ -198,6 +198,9 @@ textarea:focus-visible {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* Кадр снят с запасом сверху: лепнина занимала треть экрана, а зал уходил
+     под обрез. Смещаем видимую часть вниз — в кадре остаётся сам зал */
+  object-position: center 68%;
   animation: login-photo-in .8s ease-out both;
 }
 
@@ -231,7 +234,7 @@ textarea:focus-visible {
 
 @media (min-width: 940px) {
   .login-inner {
-    grid-template-columns: minmax(0, 1fr) 412px;
+    grid-template-columns: minmax(0, 1fr) 460px;
     align-items: center;
     gap: 64px;
     padding: 0 88px;
@@ -272,11 +275,11 @@ textarea:focus-visible {
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 412px;
+  max-width: 460px;
   justify-self: end;
   display: grid;
   gap: 0;
-  padding: 36px 38px 34px;
+  padding: 38px 44px 36px;
   background: rgba(255, 255, 255, .97);
   border: 0;
   border-radius: 18px;
@@ -288,14 +291,16 @@ textarea:focus-visible {
    где красный с зелёным читаются, а не на тёмном снимке */
 .login-logo {
   display: block;
-  width: 190px;
+  width: 210px;
   max-width: 100%;
   height: auto;
-  margin-bottom: 26px;
+  /* По центру карточки: логотип здесь вместо заголовка, а не подпись сбоку */
+  margin: 0 auto 24px;
 }
 
 .login-head {
   margin-bottom: 26px;
+  text-align: center;
 }
 
 .login-title {

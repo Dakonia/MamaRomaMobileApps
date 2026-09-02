@@ -308,7 +308,7 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
           </div>
 
           <label className="field">
-            <span className="field-label">Рабочая почта</span>
+            <span className="field-label">Логин</span>
             <input
               autoComplete="username"
               autoFocus
