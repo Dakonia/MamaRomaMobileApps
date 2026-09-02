@@ -4,7 +4,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.enums import Gender, OrderStatus, PromoCodeKind, ReservationStatus, StaffRole
+from app.models.enums import (
+    Gender,
+    OrderStatus,
+    OrderType,
+    PaymentMethod,
+    PaymentStatus,
+    PromoCodeKind,
+    ReservationStatus,
+    StaffRole,
+)
 from app.schemas.guest import AddressRead
 
 
@@ -140,6 +149,61 @@ class StopListRead(BaseModel):
     dish_name: str
     until: datetime | None
     comment: str | None
+
+
+class OrderRow(BaseModel):
+    """Строка списка заказов.
+
+    Нарочно без состава: в списке он не показывается, а на сотне строк тянуть
+    позиции каждого заказа — это лишние сотни запросов и мегабайты на экран,
+    который обновляется каждые полминуты.
+    """
+
+    id: UUID
+    number: str
+    status: OrderStatus
+    type: OrderType
+    created_at: datetime
+    delivery_at: datetime | None
+    completed_at: datetime | None
+    restaurant_id: UUID
+    restaurant_name: str
+    guest_name: str | None
+    guest_phone: str
+    address_text: str | None
+    total_kopecks: int
+    points_spent: int
+    payment_method: PaymentMethod
+    payment_status: PaymentStatus
+    positions: int
+    cancel_reason: str | None
+    iiko_status: str | None
+    iiko_courier_name: str | None
+    # Ресторан правил состав на кассе — в списке это повод присмотреться
+    items_changed: bool
+
+
+class OrderPage(BaseModel):
+    """Страница списка вместе со счётчиками по состояниям.
+
+    Счётчики считаются по тем же условиям отбора, кроме самого состояния:
+    иначе на вкладке «Завершённые» в остальных вкладках стояли бы нули.
+    """
+
+    rows: list[OrderRow]
+    total: int
+    counts: dict[str, int]
+
+
+class OrderItemsWrite(BaseModel):
+    """Новый состав заказа целиком: что прислали, то в заказе и останется."""
+
+    items: list["OrderItemWrite"] = Field(min_length=1, max_length=60)
+
+
+class OrderItemWrite(BaseModel):
+    dish_id: UUID
+    quantity: int = Field(ge=1, le=99)
 
 
 class OrderStatusWrite(BaseModel):

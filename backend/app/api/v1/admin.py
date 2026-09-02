@@ -1,10 +1,10 @@
 import secrets
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import delete, func, insert, or_, select
+from sqlalchemy import delete, func, insert, literal_column, or_, select
 
 from app.api.deps import SessionDep, StaffDep, TenantDep
 from app.core import cache
@@ -16,6 +16,7 @@ from app.models.enums import (
     IikoHandoffStatus,
     LoyaltyOperation,
     OrderStatus,
+    OrderType,
     ReservationStatus,
     TriggerKind,
 )
@@ -88,6 +89,9 @@ from app.schemas.admin import (
     MenuBranchRow,
     MenuTreeRead,
     MenuTreeWrite,
+    OrderItemsWrite,
+    OrderPage,
+    OrderRow,
     OrderStatusWrite,
     ProductGroupRow,
     PromoCodePatch,
@@ -445,19 +449,193 @@ async def remove_from_stop_list(
 # ─────────────────────────── заказы и брони ───────────────────────────
 
 
+# Какие состояния попадают в каждую вкладку списка
+ORDER_GROUPS: dict[str, list[OrderStatus]] = {
+    "active": [
+        OrderStatus.CREATED,
+        OrderStatus.PAID,
+        OrderStatus.ACCEPTED,
+        OrderStatus.COOKING,
+        OrderStatus.READY,
+        OrderStatus.DELIVERING,
+    ],
+    "done": [OrderStatus.COMPLETED],
+    "cancelled": [OrderStatus.CANCELLED],
+}
+
+
 @router.get("/orders", summary="Заказы сети")
 async def orders(
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
-    active_only: Annotated[bool, Query()] = True,
-) -> list[OrderRead]:
-    query = select(Order).where(Order.tenant_id == tenant.id)
-    if active_only:
-        query = query.where(Order.status.notin_([OrderStatus.COMPLETED, OrderStatus.CANCELLED]))
+    group: Annotated[str, Query(pattern="^(active|done|cancelled|all)$")] = "active",
+    restaurant_id: Annotated[UUID | None, Query()] = None,
+    order_type: Annotated[OrderType | None, Query()] = None,
+    search: Annotated[str, Query(max_length=60)] = "",
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> OrderPage:
+    """Список заказов постранично, со счётчиками по вкладкам.
 
-    rows = await session.scalars(query.order_by(Order.created_at.desc()).limit(100))
-    return [order_service.to_read(row) for row in rows]
+    Сеть растёт до двадцати пяти ресторанов, и «все заказы одним списком» здесь
+    не живут: за день их станут тысячи. Поэтому и отбор, и счёт строк, и число
+    позиций считает база, а не приложение.
+    """
+    positions = (
+        select(func.count(OrderItem.id))
+        .where(OrderItem.order_id == Order.id)
+        .correlate(Order)
+        .scalar_subquery()
+    )
+
+    query = (
+        select(Order, Guest.name, Guest.phone, Restaurant.name, positions)
+        .join(Guest, Guest.id == Order.guest_id)
+        .join(Restaurant, Restaurant.id == Order.restaurant_id)
+        .where(Order.tenant_id == tenant.id)
+    )
+
+    # Условия, общие для вкладок: по ним же считаются счётчики
+    if restaurant_id is not None:
+        query = query.where(Order.restaurant_id == restaurant_id)
+    if order_type is not None:
+        query = query.where(Order.type == order_type)
+    if date_from is not None:
+        query = query.where(Order.created_at >= datetime.combine(date_from, time.min, UTC))
+    if date_to is not None:
+        query = query.where(Order.created_at < datetime.combine(date_to, time.max, UTC))
+
+    if search.strip():
+        needle = f"%{search.strip().lower()}%"
+        query = query.where(
+            or_(
+                func.lower(Order.number).like(needle),
+                func.lower(Order.contact_phone).like(needle),
+                func.lower(Guest.phone).like(needle),
+                func.lower(Guest.name).like(needle),
+                func.lower(Order.address_text).like(needle),
+            )
+        )
+
+    counts_rows = await session.execute(
+        select(Order.status, func.count())
+        .select_from(query.subquery().alias("filtered"))
+        .join(Order, Order.id == literal_column("filtered.id"))
+        .group_by(Order.status)
+    )
+    by_status = {status.value: count for status, count in counts_rows.all()}
+
+    counts = {
+        name: sum(by_status.get(status.value, 0) for status in statuses)
+        for name, statuses in ORDER_GROUPS.items()
+    }
+    counts["all"] = sum(by_status.values())
+
+    if group != "all":
+        query = query.where(Order.status.in_(ORDER_GROUPS[group]))
+
+    rows = (
+        await session.execute(
+            query.order_by(Order.created_at.desc()).limit(limit).offset(offset)
+        )
+    ).all()
+
+    return OrderPage(
+        total=counts[group],
+        counts=counts,
+        rows=[
+            OrderRow(
+                id=order.id,
+                number=order.number,
+                status=order.status,
+                type=order.type,
+                created_at=order.created_at,
+                delivery_at=order.delivery_at,
+                completed_at=order.completed_at,
+                restaurant_id=order.restaurant_id,
+                restaurant_name=restaurant_name,
+                guest_name=guest_name,
+                guest_phone=guest_phone,
+                address_text=order.address_text,
+                total_kopecks=order.total_kopecks,
+                points_spent=order.points_spent,
+                payment_method=order.payment_method,
+                payment_status=order.payment_status,
+                positions=count,
+                cancel_reason=order.cancel_reason,
+                iiko_status=order.iiko_status,
+                iiko_courier_name=order.iiko_courier_name,
+                items_changed=order.iiko_items_changed_at is not None,
+            )
+            for order, guest_name, guest_phone, restaurant_name, count in rows
+        ],
+    )
+
+
+@router.get("/orders/{order_id}", summary="Карточка заказа")
+async def order_card(
+    order_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> OrderRead:
+    order = await session.scalar(
+        select(Order).where(Order.id == order_id, Order.tenant_id == tenant.id)
+    )
+    if order is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
+
+    return order_service.to_read(order)
+
+
+@router.put("/orders/{order_id}/items", summary="Изменить состав заказа")
+async def edit_order_items(
+    order_id: UUID,
+    payload: OrderItemsWrite,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> OrderRead:
+    """Правка состава оператором: снять блюдо, изменить количество, добавить.
+
+    Закрытые заказы не трогаем: там уже сошлись деньги и баллы, и менять состав
+    задним числом означало бы переписывать историю.
+    """
+    order = await session.scalar(
+        select(Order).where(Order.id == order_id, Order.tenant_id == tenant.id)
+    )
+    if order is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
+
+    if order.status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Заказ уже закрыт — состав менять нельзя"
+        )
+
+    account = await session.scalar(
+        select(LoyaltyAccount).where(
+            LoyaltyAccount.tenant_id == tenant.id, LoyaltyAccount.guest_id == order.guest_id
+        )
+    )
+    percent = (
+        loyalty_service.tier_by_code(tenant, account.tier_code).cashback_percent if account else 0
+    )
+
+    try:
+        await order_service.edit_items(
+            session,
+            tenant,
+            order,
+            {item.dish_id: item.quantity for item in payload.items},
+            percent,
+        )
+    except order_service.OrderError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    await session.commit()
+    await session.refresh(order)
+
+    return order_service.to_read(order)
 
 
 @router.patch("/orders/{order_id}", summary="Сменить статус заказа")

@@ -213,7 +213,13 @@ const routeTree = rootRoute.addChildren([
   syncRoute,
 ]);
 
-const router = createRouter({ routeTree });
+/**
+ * Панель отдаётся из подпапки /mamaroma/admin/, а маршруты описаны от корня.
+ * Без этого при первом заходе адрес не совпадал ни с одним маршрутом и вместо
+ * заказов открывалось «Not Found»; после перехода по ссылке всё чинилось само.
+ * Значение берём то же, что у сборки, поэтому на разработке оно корневое.
+ */
+const router = createRouter({ routeTree, basepath: import.meta.env.BASE_URL });
 
 declare module "@tanstack/react-router" {
   interface Register {

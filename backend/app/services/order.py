@@ -868,3 +868,143 @@ def _read_float(value: object) -> float:
         return float(str(value or 0))
     except (TypeError, ValueError):
         return 0.0
+
+
+async def edit_items(
+    session: AsyncSession,
+    tenant: Tenant,
+    order: Order,
+    wanted: dict[UUID, int],
+    cashback_percent: int,
+) -> Order:
+    """Меняет состав заказа из панели и пересчитывает счёт.
+
+    Оператору звонит гость: «уберите салат, добавьте ещё пиццу». Раньше это
+    умела только касса, а в приложении у гостя оставался старый счёт. Здесь
+    состав задаётся целиком — что прислали, то и будет, — а деньги считаются по
+    тем же правилам, что при оформлении:
+
+    * цены берём из базы и с учётом наценки ресторана, а не из запроса;
+    * скидка по промокоду не может превысить сумму блюд;
+    * списание баллов удерживается в доле чека, лишние возвращаются гостю;
+    * кэшбэк считается с того, что гость платит деньгами.
+
+    Добавки при правке не трогаем: они привязаны к позиции, и менять их сюда
+    оператору незачем — блюдо проще снять и добавить заново.
+    """
+    wanted = {dish_id: quantity for dish_id, quantity in wanted.items() if quantity > 0}
+    if not wanted:
+        raise OrderError("В заказе должно остаться хотя бы одно блюдо")
+
+    dishes = {
+        dish.id: dish
+        for dish in await session.scalars(
+            select(Dish).where(Dish.tenant_id == tenant.id, Dish.id.in_(wanted.keys()))
+        )
+    }
+    missing = set(wanted) - set(dishes)
+    if missing:
+        raise OrderError("Блюдо не найдено в меню сети")
+
+    priced = await session.execute(
+        select(DishPrice.dish_id, DishPrice.price_kopecks).where(
+            DishPrice.tenant_id == tenant.id,
+            DishPrice.restaurant_id == order.restaurant_id,
+            DishPrice.dish_id.in_(wanted.keys()),
+        )
+    )
+    overrides: dict[UUID, int] = {row.dish_id: row.price_kopecks for row in priced}
+
+    # Добавки сохраняем у тех позиций, что остались в заказе
+    kept = {item.dish_id: item for item in order.items if item.dish_id is not None}
+
+    fresh: list[OrderItem] = []
+    subtotal = 0
+    for dish_id, quantity in wanted.items():
+        dish = dishes[dish_id]
+        previous = kept.get(dish_id)
+        extras = list(previous.extras or []) if previous else []
+        extras_price = sum(int(str(extra.get("price_kopecks", 0))) for extra in extras)
+
+        unit_price = overrides.get(dish_id, dish.price_kopecks) + extras_price
+        line_total = unit_price * quantity
+        subtotal += line_total
+
+        fresh.append(
+            OrderItem(
+                tenant_id=tenant.id,
+                order_id=order.id,
+                dish_id=dish.id,
+                name=dish.name,
+                image_url=dish.image_url,
+                extras=extras,
+                unit_price_kopecks=unit_price,
+                quantity=quantity,
+                total_kopecks=line_total,
+            )
+        )
+
+    order.items.clear()
+    order.items.extend(fresh)
+
+    order.subtotal_kopecks = subtotal
+    order.promo_discount_kopecks = min(order.promo_discount_kopecks, subtotal)
+
+    payable = max(
+        0,
+        subtotal
+        + order.delivery_kopecks
+        + order.cutlery_kopecks
+        - order.promo_discount_kopecks,
+    )
+
+    rate = tenant.loyalty.point_to_ruble_rate
+    returned = 0
+    if rate > 0 and order.points_spent > 0:
+        base = subtotal + (order.delivery_kopecks if tenant.loyalty.points_cover_delivery else 0)
+        cap = max(0, int(base * tenant.loyalty.max_redeem_share_of_check / 100 / rate))
+        returned = max(0, order.points_spent - min(order.points_spent, cap))
+        order.points_spent = min(order.points_spent, cap)
+
+    order.discount_kopecks = int(order.points_spent * rate * 100)
+    order.total_kopecks = max(0, payable - order.discount_kopecks)
+
+    earned = order.total_kopecks // 100 * cashback_percent // 100
+    earned_delta = earned - order.points_earned
+    order.points_earned = earned
+
+    account = await session.scalar(
+        select(LoyaltyAccount).where(
+            LoyaltyAccount.tenant_id == tenant.id, LoyaltyAccount.guest_id == order.guest_id
+        )
+    )
+    if account is not None:
+        if returned > 0:
+            account.points_balance += returned
+            session.add(
+                LoyaltyTransaction(
+                    tenant_id=tenant.id,
+                    account_id=account.id,
+                    order_id=order.id,
+                    operation=LoyaltyOperation.REFUND,
+                    points=returned,
+                    balance_after=account.points_balance,
+                    comment=f"Состав заказа {order.number} изменён: возврат баллов",
+                )
+            )
+
+        if earned_delta != 0:
+            account.points_balance = max(0, account.points_balance + earned_delta)
+            session.add(
+                LoyaltyTransaction(
+                    tenant_id=tenant.id,
+                    account_id=account.id,
+                    order_id=order.id,
+                    operation=LoyaltyOperation.MANUAL,
+                    points=earned_delta,
+                    balance_after=account.points_balance,
+                    comment=f"Пересчёт кэшбэка: состав заказа {order.number} изменён",
+                )
+            )
+
+    return order
