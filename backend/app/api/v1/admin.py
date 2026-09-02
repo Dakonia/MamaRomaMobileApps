@@ -5,12 +5,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import delete, func, insert, literal_column, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import SessionDep, StaffDep, TenantDep
 from app.core import cache
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.security import create_token, hash_password, normalize_phone, verify_password
+from app.core.tenants import Tenant
 from app.models.enums import (
     CampaignStatus,
     IikoHandoffStatus,
@@ -89,6 +91,8 @@ from app.schemas.admin import (
     MenuBranchRow,
     MenuTreeRead,
     MenuTreeWrite,
+    OrderCard,
+    OrderCardItem,
     OrderItemsWrite,
     OrderPage,
     OrderRow,
@@ -115,7 +119,6 @@ from app.schemas.admin import (
     ZoneRead,
 )
 from app.schemas.integration import SyncResult
-from app.schemas.order import OrderRead
 from app.schemas.promotion import (
     PromotionAdminRead,
     PromotionPatch,
@@ -533,6 +536,9 @@ async def orders(
         for name, statuses in ORDER_GROUPS.items()
     }
     counts["all"] = sum(by_status.values())
+    # Плюс разбивка по состояниям: панели нужны «готовы» и «в пути» по всей
+    # сети, а не по той полусотне строк, что уместилась на экране
+    counts.update({status.value: by_status.get(status.value, 0) for status in OrderStatus})
 
     if group != "all":
         query = query.where(Order.status.in_(ORDER_GROUPS[group]))
@@ -575,17 +581,80 @@ async def orders(
     )
 
 
+async def _order_card(session: AsyncSession, tenant: Tenant, order: Order) -> OrderCard:
+    """Собирает карточку заказа для панели.
+
+    Гость и его баллы здесь не роскошь: оператор правит состав, разговаривая с
+    ним по телефону, и должен видеть, чем этот разговор кончится для баланса.
+    """
+    guest = await session.get(Guest, order.guest_id)
+    account = await session.scalar(
+        select(LoyaltyAccount).where(
+            LoyaltyAccount.tenant_id == tenant.id, LoyaltyAccount.guest_id == order.guest_id
+        )
+    )
+    orders_count = await session.scalar(
+        select(func.count(Order.id)).where(
+            Order.tenant_id == tenant.id,
+            Order.guest_id == order.guest_id,
+            Order.status == OrderStatus.COMPLETED,
+        )
+    )
+
+    return OrderCard(
+        id=order.id,
+        number=order.number,
+        status=order.status,
+        type=order.type,
+        created_at=order.created_at,
+        delivery_at=order.delivery_at,
+        completed_at=order.completed_at,
+        restaurant_id=order.restaurant_id,
+        restaurant_name=order.restaurant.name,
+        restaurant_phone=order.restaurant.phone,
+        guest_id=order.guest_id,
+        guest_name=guest.name if guest else None,
+        guest_phone=guest.phone if guest else order.contact_phone,
+        contact_phone=order.contact_phone,
+        guest_points_balance=account.points_balance if account else 0,
+        guest_orders_count=orders_count or 0,
+        address_text=order.address_text,
+        comment=order.comment,
+        cancel_reason=order.cancel_reason,
+        persons_count=order.persons_count,
+        change_from_kopecks=order.change_from_kopecks,
+        payment_method=order.payment_method,
+        payment_status=order.payment_status,
+        subtotal_kopecks=order.subtotal_kopecks,
+        delivery_kopecks=order.delivery_kopecks,
+        cutlery_kopecks=order.cutlery_kopecks,
+        promo_code=order.promo_code,
+        promo_discount_kopecks=order.promo_discount_kopecks,
+        discount_kopecks=order.discount_kopecks,
+        total_kopecks=order.total_kopecks,
+        points_spent=order.points_spent,
+        points_earned=order.points_earned,
+        iiko_status=order.iiko_status,
+        iiko_courier_name=order.iiko_courier_name,
+        iiko_problem_comment=order.iiko_problem_comment,
+        iiko_items_changed_at=order.iiko_items_changed_at,
+        items=[OrderCardItem.model_validate(item) for item in order.items],
+        changes=await iiko_bridge.describe_changes(session, tenant, order),
+        editable=order.status not in (OrderStatus.COMPLETED, OrderStatus.CANCELLED),
+    )
+
+
 @router.get("/orders/{order_id}", summary="Карточка заказа")
 async def order_card(
     order_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
-) -> OrderRead:
+) -> OrderCard:
     order = await session.scalar(
         select(Order).where(Order.id == order_id, Order.tenant_id == tenant.id)
     )
     if order is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
 
-    return order_service.to_read(order)
+    return await _order_card(session, tenant, order)
 
 
 @router.put("/orders/{order_id}/items", summary="Изменить состав заказа")
@@ -595,7 +664,7 @@ async def edit_order_items(
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
-) -> OrderRead:
+) -> OrderCard:
     """Правка состава оператором: снять блюдо, изменить количество, добавить.
 
     Закрытые заказы не трогаем: там уже сошлись деньги и баллы, и менять состав
@@ -635,7 +704,7 @@ async def edit_order_items(
     await session.commit()
     await session.refresh(order)
 
-    return order_service.to_read(order)
+    return await _order_card(session, tenant, order)
 
 
 @router.patch("/orders/{order_id}", summary="Сменить статус заказа")
@@ -645,7 +714,7 @@ async def set_order_status(
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
-) -> OrderRead:
+) -> OrderCard:
     order = await session.scalar(
         select(Order).where(Order.id == order_id, Order.tenant_id == tenant.id)
     )
@@ -670,7 +739,7 @@ async def set_order_status(
     except Exception as error:
         print(f"пуш о заказе {order.number} не ушёл: {error}")
 
-    return order_service.to_read(order)
+    return await _order_card(session, tenant, order)
 
 
 @router.get("/reservations", summary="Брони сети")

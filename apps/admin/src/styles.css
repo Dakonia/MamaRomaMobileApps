@@ -1344,16 +1344,105 @@ textarea:focus-visible {
   line-height: 18px;
 }
 
+/*
+ * Фильтры слева переносятся по мере надобности, действия справа держатся
+ * вместе: раньше при появлении дат «Обновить» и «Экспорт» уезжали на вторую
+ * строку по одному.
+ */
 .orders-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+/* Всё в панели одной высоты: иначе кнопки и поля разъезжаются по вертикали */
+.orders-toolbar .input,
+.orders-toolbar .btn,
+.orders-toolbar .icon-btn {
+  min-height: 32px;
+  height: 32px;
+}
+
+.orders-toolbar .input {
+  width: auto;
+}
+
+.surface-toolbar .input {
+  width: min(320px, 100%);
+}
+
+.toolbar-filters,
+.toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.orders-toolbar .input,
-.surface-toolbar .input {
-  width: min(320px, 100%);
+.toolbar-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+/* Ничего в действиях не сжимается: лучше перенести всю группу целиком */
+.toolbar-actions > * {
+  flex: 0 0 auto;
+}
+
+.toolbar-search {
+  width: min(260px, 100%);
+}
+
+@media (max-width: 1100px) {
+  .orders-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+.toolbar-search .input {
+  width: 100%;
+}
+
+.toolbar-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.select-control {
+  position: relative;
+  display: inline-block;
+}
+
+.select-control select {
+  padding-left: 32px;
+  padding-right: 26px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  color: var(--ink-3);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.date-input {
+  width: 148px;
+  font-variant-numeric: tabular-nums;
 }
 
 .toolbar-field {
@@ -11017,22 +11106,53 @@ textarea:focus-visible {
   gap: 16px;
 }
 
-.orders-layout[data-drawer-open="true"] {
-  grid-template-columns: minmax(0, 1fr) minmax(440px, 500px);
+/*
+ * На доске каждый лишний десяток пикселей сверху — это минус карточка в
+ * столбце, поэтому плитки смены здесь в одну строку и без пояснений.
+ */
+.orders-layout .metric-card {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
 }
 
+.orders-layout .metric-value {
+  font-size: 22px;
+  line-height: 30px;
+}
+
+.orders-layout .metric-note {
+  display: none;
+}
+
+/* Карточка лежит поверх страницы, поэтому колонку под неё не отводим */
+.orders-layout[data-drawer-open="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+ * Доска ровно в остаток экрана, а не во всю длину списка: в час пик в одном
+ * столбце висит полсотни заказов, и страница на три экрана — это не работа,
+ * а прокрутка. Высоту считает страница и кладёт в --board-height.
+ */
 .orders-board {
   display: grid;
   grid-template-columns: repeat(5, minmax(224px, 1fr));
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  height: var(--board-height, 60vh);
+  min-height: 320px;
   overflow-x: auto;
   padding-bottom: 6px;
 }
 
 .board-column {
   min-width: 224px;
+  min-height: 0;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -11151,15 +11271,33 @@ textarea:focus-visible {
 }
 
 .board-lane {
-  min-height: 164px;
+  min-height: 0;
   display: grid;
   gap: 8px;
   align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   border-radius: 8px;
   transition:
     background 120ms cubic-bezier(.2, 0, 0, 1),
     opacity 120ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.board-lane {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+.board-lane::-webkit-scrollbar {
+  width: 8px;
+}
+
+.board-lane::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
 }
 
 .board-lane[data-can-drop="false"] {
@@ -11174,8 +11312,18 @@ textarea:focus-visible {
   background: var(--bad-sub);
 }
 
+.board-more {
+  padding: 8px 10px;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: center;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+}
+
 .board-empty {
   min-height: 116px;
+  align-self: start;
   display: grid;
   place-items: center;
   padding: 12px;
@@ -11271,13 +11419,7 @@ textarea:focus-visible {
 }
 
 .drawer-overlay {
-  display: none;
-}
-
-@media (max-width: 1599px) {
-  .drawer-overlay {
-    display: block;
-  }
+  display: block;
 }
 
 .order-card-top,
@@ -11496,19 +11638,34 @@ textarea:focus-visible {
   line-height: 18px;
 }
 
+/* Смену за карточкой видно: затемняем слабее обычного */
+.order-drawer-scrim {
+  background: color-mix(in srgb, var(--scrim) 50%, transparent);
+}
+
+/*
+ * Карточка заказа — во всю высоту окна, поверх страницы. Раньше она жила в
+ * колонке рядом с доской и обрезалась снизу: у заказа десяток блоков, и они
+ * никогда не помещались в остаток экрана.
+ */
 .order-drawer {
-  position: sticky;
-  top: 76px;
-  height: calc(100vh - 96px);
-  overflow: auto;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 95;
+  width: min(560px, 100vw);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border-left: 1px solid var(--line);
   box-shadow: var(--sh-3);
 }
 
 .order-drawer .drawer-body {
   gap: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .drawer-head {
@@ -11741,8 +11898,9 @@ textarea:focus-visible {
 
 .item-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
 }
@@ -11750,6 +11908,247 @@ textarea:focus-visible {
 .item-row:last-child {
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+/* Позиция, которую оператор снял: видно, что уходит, и можно вернуть */
+.item-row[data-removed="true"] {
+  color: var(--ink-3);
+}
+
+.item-row[data-removed="true"] .row-main {
+  text-decoration: line-through;
+}
+
+.item-row[data-removed="true"] .mono {
+  color: var(--bad);
+}
+
+.drawer-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+/* Количество: две кнопки и число между ними */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.stepper button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--sunken);
+}
+
+.stepper button:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.stepper span {
+  min-width: 28px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dish-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.dish-picker-list {
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.dish-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  text-align: left;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dish-picker-row:hover:not(:disabled) {
+  border-color: var(--line-2);
+  background: var(--sunken);
+}
+
+.dish-picker-row:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.dish-picker-row .row-main,
+.dish-picker-row .row-sub {
+  display: block;
+}
+
+/* Полоса сохранения: появляется, только когда состав действительно изменён */
+.composition-bar {
+  position: sticky;
+  bottom: -16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--acc) 28%, var(--line));
+  border-radius: 8px;
+  background: var(--acc-sub);
+}
+
+.composition-sum {
+  display: grid;
+  gap: 2px;
+}
+
+.composition-sum strong {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.guest-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.guest-card .min-w-0 {
+  flex: 1 1 auto;
+}
+
+.phone-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.phone-link:hover {
+  border-color: var(--acc);
+  color: var(--acc);
+}
+
+.bill-list {
+  display: grid;
+  gap: 6px;
+}
+
+.bill-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.bill-row .mono {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.bill-row[data-tone="ok"] .mono {
+  color: var(--ok);
+}
+
+.bill-total {
+  margin-top: 6px;
+  padding-top: 10px;
+  color: var(--ink);
+  font-size: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.bill-total .mono {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+/* Вкладки состояний над лентой */
+.orders-groups {
+  align-self: start;
+}
+
+.tab-counter {
+  margin-left: 6px;
+  padding: 1px 6px;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--sunken);
+  border-radius: 999px;
+}
+
+.tab-button[data-active="true"] .tab-counter {
+  color: var(--acc);
+  background: var(--surface);
+}
+
+.tabs[data-hidden="true"] {
+  display: none;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.alert-band[data-tone="warn"] {
+  color: var(--warn);
+  background: var(--warn-sub);
+  border-color: color-mix(in srgb, var(--warn) 25%, var(--line));
 }
 
 .drawer-actions {
@@ -11889,15 +12288,10 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1599px) {
-  .orders-layout[data-drawer-open="true"] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .page-layout-with-drawer[data-drawer-open="true"] {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .order-drawer,
   .detail-drawer {
     position: fixed;
     top: 56px;
@@ -12819,10 +13213,8 @@ textarea:focus-visible {
   }
 
   .order-drawer {
-    top: 0;
     width: 100vw;
     border-left: 0;
-    border-radius: 0;
   }
 
   .order-drawer .drawer-head {

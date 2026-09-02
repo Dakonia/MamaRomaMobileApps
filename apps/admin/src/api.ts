@@ -65,6 +65,51 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type Staff = { id: string; email: string; name: string; role: string };
+
+/** Вкладки списка заказов: активные, завершённые, отменённые и всё сразу. */
+export type OrderGroup = "active" | "done" | "cancelled" | "all";
+
+export type OrdersQuery = {
+  group: OrderGroup;
+  restaurantId?: string;
+  type?: "delivery" | "pickup" | "";
+  search: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit: number;
+  offset: number;
+};
+
+export type OrderListRow = {
+  id: string;
+  number: string;
+  status: string;
+  type: string;
+  created_at: string;
+  delivery_at: string | null;
+  completed_at: string | null;
+  restaurant_id: string;
+  restaurant_name: string;
+  guest_name: string | null;
+  guest_phone: string;
+  address_text: string | null;
+  total_kopecks: number;
+  points_spent: number;
+  payment_method: string;
+  payment_status: string;
+  positions: number;
+  cancel_reason: string | null;
+  iiko_status: string | null;
+  iiko_courier_name: string | null;
+  items_changed: boolean;
+};
+
+export type OrderPage = {
+  rows: OrderListRow[];
+  total: number;
+  /** Счётчики по вкладкам (active/done/cancelled/all) и по каждому состоянию. */
+  counts: Record<string, number>;
+};
 export type Category = {
   id: string;
   name: string;
@@ -122,17 +167,72 @@ export type StopEntry = {
   dish_name: string;
   comment: string | null;
 };
-export type OrderItem = { id: string; name: string; quantity: number; total_kopecks: number };
-export type Order = {
+export type OrderItem = {
+  id: string;
+  dish_id: string | null;
+  name: string;
+  unit_price_kopecks: number;
+  quantity: number;
+  total_kopecks: number;
+};
+
+/** Строка состава после правки на кассе: что стало с этой позицией. */
+export type OrderChange = {
+  name: string;
+  state: "kept" | "removed" | "added" | "changed" | string;
+  quantity: number;
+  was_quantity: number | null;
+};
+
+/** Заказ целиком — то, что открывается в карточке панели. */
+export type OrderCard = {
   id: string;
   number: string;
   status: string;
   type: string;
-  restaurant_name: string;
-  address_text: string | null;
-  total_kopecks: number;
+
   created_at: string;
+  delivery_at: string | null;
+  completed_at: string | null;
+
+  restaurant_id: string;
+  restaurant_name: string;
+  restaurant_phone: string | null;
+
+  guest_id: string;
+  guest_name: string | null;
+  guest_phone: string;
+  contact_phone: string;
+  guest_points_balance: number;
+  guest_orders_count: number;
+
+  address_text: string | null;
+  comment: string | null;
+  cancel_reason: string | null;
+  persons_count: number | null;
+  change_from_kopecks: number | null;
+
+  payment_method: string;
+  payment_status: string;
+
+  subtotal_kopecks: number;
+  delivery_kopecks: number;
+  cutlery_kopecks: number;
+  promo_code: string | null;
+  promo_discount_kopecks: number;
+  discount_kopecks: number;
+  total_kopecks: number;
+  points_spent: number;
+  points_earned: number;
+
+  iiko_status: string | null;
+  iiko_courier_name: string | null;
+  iiko_problem_comment: string | null;
+  iiko_items_changed_at: string | null;
+
   items: OrderItem[];
+  changes: OrderChange[];
+  editable: boolean;
 };
 export type Promotion = {
   id: string;
@@ -635,9 +735,29 @@ export const api = {
   removeStop: (id: string) =>
     request<void>(`/admin/stop-list/${id}`, { method: "DELETE" }),
 
-  orders: () => request<Order[]>("/admin/orders"),
+  /** Строка списка заказов: без состава — он тянется отдельно, в карточке. */
+  orders: (params: OrdersQuery) => {
+    const query = new URLSearchParams({ group: params.group });
+    if (params.restaurantId) query.set("restaurant_id", params.restaurantId);
+    if (params.type) query.set("order_type", params.type);
+    if (params.search.trim()) query.set("search", params.search.trim());
+    if (params.dateFrom) query.set("date_from", params.dateFrom);
+    if (params.dateTo) query.set("date_to", params.dateTo);
+    query.set("limit", String(params.limit));
+    query.set("offset", String(params.offset));
+
+    return request<OrderPage>(`/admin/orders?${query.toString()}`);
+  },
+
+  orderCard: (id: string) => request<OrderCard>(`/admin/orders/${id}`),
+
+  saveOrderItems: (id: string, items: { dish_id: string; quantity: number }[]) =>
+    request<OrderCard>(`/admin/orders/${id}/items`, {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    }),
   setOrderStatus: (id: string, status: string) =>
-    request<Order>(`/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    request<OrderCard>(`/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
   restaurants: () => request<Restaurant[]>("/restaurants"),
   cities: () => request<City[]>("/cities"),

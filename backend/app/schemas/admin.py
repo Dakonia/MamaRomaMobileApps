@@ -15,6 +15,7 @@ from app.models.enums import (
     StaffRole,
 )
 from app.schemas.guest import AddressRead
+from app.schemas.order import OrderChangeRead
 
 
 class StaffLogin(BaseModel):
@@ -193,6 +194,78 @@ class OrderPage(BaseModel):
     rows: list[OrderRow]
     total: int
     counts: dict[str, int]
+
+
+class OrderCardItem(BaseModel):
+    """Позиция заказа в панели."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    dish_id: UUID | None
+    name: str
+    unit_price_kopecks: int
+    quantity: int
+    total_kopecks: int
+
+
+class OrderCard(BaseModel):
+    """Заказ целиком: то, что оператор видит, разговаривая с гостем.
+
+    От гостевой карточки отличается тем, ради чего её и открывают в панели:
+    здесь есть сам гость с телефоном, его баланс баллов и полный счёт по
+    строкам — иначе правку состава не объяснить ни гостю, ни бухгалтерии.
+    """
+
+    id: UUID
+    number: str
+    status: OrderStatus
+    type: OrderType
+
+    created_at: datetime
+    delivery_at: datetime | None
+    completed_at: datetime | None
+
+    restaurant_id: UUID
+    restaurant_name: str
+    restaurant_phone: str | None
+
+    guest_id: UUID
+    guest_name: str | None
+    guest_phone: str
+    contact_phone: str
+    guest_points_balance: int
+    guest_orders_count: int
+
+    address_text: str | None
+    comment: str | None
+    cancel_reason: str | None
+    persons_count: int | None
+    change_from_kopecks: int | None
+
+    payment_method: PaymentMethod
+    payment_status: PaymentStatus
+
+    subtotal_kopecks: int
+    delivery_kopecks: int
+    cutlery_kopecks: int
+    promo_code: str | None
+    promo_discount_kopecks: int
+    discount_kopecks: int
+    total_kopecks: int
+    points_spent: int
+    points_earned: int
+
+    iiko_status: str | None
+    iiko_courier_name: str | None
+    iiko_problem_comment: str | None
+    iiko_items_changed_at: datetime | None
+
+    items: list[OrderCardItem]
+    changes: list[OrderChangeRead]
+
+    # Закрытый заказ не редактируется: деньги и баллы по нему уже сошлись
+    editable: bool
 
 
 class OrderItemsWrite(BaseModel):

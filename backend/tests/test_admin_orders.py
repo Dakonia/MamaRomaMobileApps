@@ -8,14 +8,42 @@ from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_staff, get_session
+from app.main import app
 from app.models.enums import OrderStatus, OrderType, PaymentMethod
 from app.models.loyalty import LoyaltyAccount, LoyaltyTransaction
 from app.models.menu import Dish
 from app.models.order import Order, OrderItem
+from app.models.staff import StaffUser
 from app.services import order as order_service
+
+TENANT_ID = "mamaroma"
+
+
+@pytest.fixture
+async def panel(session: AsyncSession, tenant) -> AsyncGenerator[AsyncClient]:
+    """Клиент панели: вход сотрудника подменяем, проверяем сами ручки."""
+    staff = await session.scalar(select(StaffUser).where(StaffUser.tenant_id == tenant.id))
+    assert staff is not None, "в базе нет сотрудника — прогоните seed"
+
+    async def use_session() -> AsyncGenerator[AsyncSession]:
+        yield session
+
+    app.dependency_overrides[get_session] = use_session
+    app.dependency_overrides[get_current_staff] = lambda: staff
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"X-Tenant-Id": TENANT_ID},
+    ) as http:
+        yield http
+
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -142,3 +170,43 @@ async def test_chuzhoe_blyudo_ne_prohodit(session: AsyncSession, tenant, order: 
     """Идентификатор из другой сети или выдуманный — отказ, а не пустая позиция."""
     with pytest.raises(order_service.OrderError):
         await order_service.edit_items(session, tenant, order, {uuid4(): 1}, 5)
+
+
+async def test_kartochka_otdaet_gostya_i_sostav(panel: AsyncClient, order: Order):
+    """Карточка заказа — это всё, что оператор говорит гостю по телефону."""
+    response = await panel.get(f"/api/v1/admin/orders/{order.id}")
+
+    assert response.status_code == 200
+    card = response.json()
+    assert card["number"] == order.number
+    assert len(card["items"]) == 2
+    assert "guest_phone" in card and "guest_points_balance" in card
+    assert card["editable"] is True
+
+
+async def test_zakrytyj_zakaz_ne_pravitsya_iz_paneli(
+    panel: AsyncClient, session: AsyncSession, order: Order, dishes: list[Dish]
+):
+    """Заказ выполнен — деньги и баллы по нему сошлись, состав уже история."""
+    order.status = OrderStatus.COMPLETED
+    await session.commit()
+
+    response = await panel.put(
+        f"/api/v1/admin/orders/{order.id}/items",
+        json={"items": [{"dish_id": str(dishes[0].id), "quantity": 1}]},
+    )
+
+    assert response.status_code == 400
+    assert len(order.items) == 2
+
+
+async def test_spisok_schitaet_vkladki(panel: AsyncClient, order: Order):
+    """Счётчики вкладок считаются по всей выборке, а не по странице."""
+    response = await panel.get("/api/v1/admin/orders", params={"group": "active", "limit": 1})
+
+    assert response.status_code == 200
+    page = response.json()
+    assert page["counts"]["active"] >= 1
+    assert page["counts"]["all"] >= page["counts"]["active"]
+    assert len(page["rows"]) <= 1
+    assert page["rows"][0]["positions"] > 0

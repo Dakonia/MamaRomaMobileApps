@@ -130,9 +130,10 @@ export function AdminLayout() {
   const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
   const [theme, setTheme] = useThemeMode();
 
+  // В меню нужен только счётчик активных: строки не забираем вовсе
   const orders = useQuery({
     queryKey: ["orders", "nav-count"],
-    queryFn: api.orders,
+    queryFn: () => api.orders({ group: "active", search: "", limit: 1, offset: 0 }),
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
@@ -146,7 +147,7 @@ export function AdminLayout() {
 
   const counts = useMemo((): Partial<Record<AdminPath, number>> => {
     const activeOrders =
-      orders.data?.filter((order) => !["completed", "cancelled"].includes(order.status)).length ?? 0;
+      orders.data?.counts.active ?? 0;
     const waitingReservations =
       reservations.data?.filter((reservation) => reservation.status === "requested").length ?? 0;
 

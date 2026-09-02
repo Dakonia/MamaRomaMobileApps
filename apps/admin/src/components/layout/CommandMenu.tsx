@@ -41,10 +41,16 @@ export function CommandMenu({
 
   const normalized = normalize(query);
 
+  /**
+   * Поиск заказов из строки команд спрашиваем у сервера: раньше сюда тянулась
+   * сотня последних и перебиралась на месте, а при двадцати пяти ресторанах
+   * нужный заказ в эту сотню просто не попадёт.
+   */
   const orders = useQuery({
-    queryKey: ["orders", "command"],
-    queryFn: api.orders,
-    enabled: open,
+    queryKey: ["orders", "command", normalized],
+    queryFn: () =>
+      api.orders({ group: "all", search: normalized, limit: 5, offset: 0 }),
+    enabled: open && normalized.length >= 2,
     staleTime: 15_000,
   });
 
@@ -84,16 +90,7 @@ export function CommandMenu({
     }));
 
     const orderResults =
-      orders.data
-        ?.filter((order) => {
-          if (!normalized) return false;
-          return (
-            normalize(order.number).includes(normalized) ||
-            normalize(order.restaurant_name).includes(normalized) ||
-            normalize(order.address_text ?? "").includes(normalized)
-          );
-        })
-        .slice(0, 5)
+      orders.data?.rows
         .map((order) => ({
           id: `order:${order.id}`,
           title: `Заказ № ${order.number}`,

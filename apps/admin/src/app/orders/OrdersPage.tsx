@@ -12,6 +12,9 @@ import {
   AlertTriangle,
   ArrowRight,
   Bike,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ChefHat,
   CircleDot,
@@ -20,21 +23,33 @@ import {
   Columns3,
   Download,
   GripVertical,
+  Minus,
   MoreHorizontal,
   PackageCheck,
+  Phone,
+  Plus,
   RefreshCw,
   Search,
   Store,
   Table2,
+  Trash2,
   Truck,
   X,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { api, type Order } from "../../api";
+import {
+  api,
+  tenant,
+  type OrderCard,
+  type OrderGroup,
+  type OrderListRow,
+  type OrderPage,
+  type RestaurantDish,
+} from "../../api";
 import { formatDateTime, formatPrice, formatTime } from "../../lib/format";
 import { Button, IconButton, cn } from "../../ui";
 
@@ -52,6 +67,7 @@ type BadgeTone = "ok" | "warn" | "muted" | "bad" | "accent";
 type OrdersView = "board" | "table";
 type OrderFilter = "all" | "delivery" | "pickup";
 type TableDensity = "compact" | "regular";
+type OrderPeriod = "all" | "today" | "yesterday" | "week" | "month" | "custom";
 type OrderTransition = {
   description: string;
   icon: LucideIcon;
@@ -171,6 +187,106 @@ const BOARD_COLUMNS: {
 
 const CLOSED_STATUSES = new Set<OrderStatus>(["completed", "cancelled"]);
 
+/** Чего хватает, чтобы перевести заказ на следующий шаг. */
+type StatusTarget = { id: string; number: string; status: string; type: string };
+
+/** Сколько строк в странице списка: экран вмещает меньше, остальное — прокрутка. */
+const PAGE_SIZE = 50;
+/**
+ * Доска — это смена целиком, её не листают: столько заказов за раз отдаёт
+ * сервер, а сколько их всего, столбец скажет по счётчику.
+ */
+const BOARD_LIMIT = 200;
+
+/** Вкладки списка и их подписи. */
+const PERIOD_OPTIONS: { key: OrderPeriod; label: string }[] = [
+  { key: "all", label: "За всё время" },
+  { key: "today", label: "Сегодня" },
+  { key: "yesterday", label: "Вчера" },
+  { key: "week", label: "Последние 7 дней" },
+  { key: "month", label: "Последние 30 дней" },
+  { key: "custom", label: "Свой период" },
+];
+
+const GROUP_TABS: { key: OrderGroup; label: string }[] = [
+  { key: "active", label: "Активные" },
+  { key: "done", label: "Завершённые" },
+  { key: "cancelled", label: "Отменённые" },
+  { key: "all", label: "Все" },
+];
+
+function isoDay(shiftDays = 0): string {
+  const day = new Date();
+  day.setDate(day.getDate() + shiftDays);
+  return day.toISOString().slice(0, 10);
+}
+
+/** Границы отбора по датам. Считаем по дню ресторана, а не по часам. */
+function periodRange(period: OrderPeriod, from: string, to: string) {
+  switch (period) {
+    case "today":
+      return { from: isoDay(), to: isoDay() };
+    case "yesterday":
+      return { from: isoDay(-1), to: isoDay(-1) };
+    case "week":
+      return { from: isoDay(-6), to: isoDay() };
+    case "month":
+      return { from: isoDay(-29), to: isoDay() };
+    case "custom":
+      return { from, to };
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+/**
+ * Тянет блок до низа окна и держит его там.
+ *
+ * Доске нужна своя высота, чтобы столбцы прокручивались внутри себя, а не
+ * растягивали страницу. Считать её в стилях нечем: над доской и вкладки, и
+ * плитки, и полоса тревоги, которая то появляется, то нет.
+ */
+function useFillHeight<T extends HTMLElement>(bottomGap = 20) {
+  const ref = useRef<T | null>(null);
+
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const fit = () => {
+      const top = node.getBoundingClientRect().top;
+      node.style.setProperty("--board-height", `${Math.max(320, window.innerHeight - top - bottomGap)}px`);
+    };
+
+    fit();
+    window.addEventListener("resize", fit);
+    const observer = new ResizeObserver(fit);
+    observer.observe(document.body);
+
+    return () => {
+      window.removeEventListener("resize", fit);
+      observer.disconnect();
+    };
+  }, [bottomGap]);
+
+  return ref;
+}
+
+/**
+ * Значение, отстающее от набора. Поиск уходит на сервер, и без паузы каждый
+ * символ превращался бы в запрос — при тысячах заказов это заметно.
+ */
+function useDebounced<T>(value: T, delay: number): T {
+  const [settled, setSettled] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return settled;
+}
+
 function asOrderStatus(status: string): OrderStatus {
   return status in STATUS_META ? (status as OrderStatus) : "created";
 }
@@ -179,10 +295,25 @@ function statusLabel(status: string): string {
   return STATUS_META[asOrderStatus(status)]?.label ?? status;
 }
 
+const PAYMENT_LABELS: Record<string, string> = {
+  online_card: "картой онлайн",
+  online_sbp: "СБП",
+  cash_on_delivery: "наличными курьеру",
+  card_on_delivery: "картой курьеру",
+};
+
+function paymentLabel(method: string): string {
+  return PAYMENT_LABELS[method] ?? method;
+}
+
 function orderTypeLabel(type: string): string {
   if (type === "delivery") return "Доставка";
   if (type === "pickup") return "Самовывоз";
   return type;
+}
+
+function minutesBetween(from: string, to: string): number {
+  return Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60_000));
 }
 
 function minutesSince(iso: string): number {
@@ -207,7 +338,7 @@ function transitionFor(status: OrderStatus, label = ACTION_LABELS[status] ?? sta
   };
 }
 
-function nextTransitions(order: Order): OrderTransition[] {
+function nextTransitions(order: StatusTarget): OrderTransition[] {
   const status = asOrderStatus(order.status);
 
   if (status === "ready") {
@@ -220,20 +351,20 @@ function nextTransitions(order: Order): OrderTransition[] {
   return ORDER_FLOW[status].next.map((next) => transitionFor(next));
 }
 
-function statusPathForOrder(order: Pick<Order, "status" | "type">): OrderStatus[] {
+function statusPathForOrder(order: Pick<StatusTarget, "status" | "type">): OrderStatus[] {
   const status = asOrderStatus(order.status);
   if (order.type === "delivery" || status === "delivering") return STATUS_PIPELINE;
   return STATUS_PIPELINE.filter((step) => step !== "delivering");
 }
 
-function statusIndexForOrder(order: Pick<Order, "status" | "type">): number {
+function statusIndexForOrder(order: Pick<StatusTarget, "status" | "type">): number {
   const status = asOrderStatus(order.status);
   if (status === "paid") return 0;
   const index = statusPathForOrder(order).findIndex((step) => step === status);
   return index >= 0 ? index : 0;
 }
 
-function displayStatusForStep(order: Pick<Order, "status">, step: OrderStatus): OrderStatus {
+function displayStatusForStep(order: Pick<StatusTarget, "status">, step: OrderStatus): OrderStatus {
   const status = asOrderStatus(order.status);
   return step === "created" && status === "paid" ? "paid" : step;
 }
@@ -246,7 +377,7 @@ function boardColumnFromId(id: string): (typeof BOARD_COLUMNS)[number] | null {
   return BOARD_COLUMNS.find((column) => column.id === id) ?? null;
 }
 
-function isTransitionAllowed(order: Order, targetStatus: OrderStatus): boolean {
+function isTransitionAllowed(order: StatusTarget, targetStatus: OrderStatus): boolean {
   const currentStatus = asOrderStatus(order.status);
   if (CLOSED_STATUSES.has(currentStatus)) return false;
   if (targetStatus === currentStatus) return true;
@@ -294,35 +425,32 @@ function useTableDensity() {
   return [density, setDensity] as const;
 }
 
-function matchesOrder(order: Order, query: string): boolean {
-  if (!query) return true;
-  const normalized = query.toLocaleLowerCase("ru-RU");
-  const haystack = [
-    order.number,
-    order.restaurant_name,
-    order.address_text ?? "",
-    order.type,
-    ...order.items.map((item) => item.name),
-  ]
-    .join(" ")
-    .toLocaleLowerCase("ru-RU");
-
-  return haystack.includes(normalized);
-}
-
 function csvCell(value: string | number): string {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
 
-function exportOrders(orders: Order[]) {
-  const header = ["Номер", "Дата", "Ресторан", "Тип", "Адрес", "Состав", "Сумма", "Статус"];
+function exportOrders(orders: OrderListRow[]) {
+  const header = [
+    "Номер",
+    "Дата",
+    "Гость",
+    "Телефон",
+    "Ресторан",
+    "Тип",
+    "Адрес",
+    "Позиций",
+    "Сумма",
+    "Статус",
+  ];
   const rows = orders.map((order) => [
     order.number,
     formatDateTime(order.created_at),
+    order.guest_name ?? "",
+    order.guest_phone,
     order.restaurant_name,
     orderTypeLabel(order.type),
     order.address_text ?? "",
-    order.items.map((item) => `${item.name} x ${item.quantity}`).join("; "),
+    `${order.positions}`,
     formatPrice(order.total_kopecks),
     statusLabel(order.status),
   ]);
@@ -369,7 +497,7 @@ function OrderStatusBadge({ className, status }: { className?: string; status: s
   );
 }
 
-function OrderProgress({ compact = false, order }: { compact?: boolean; order: Pick<Order, "status" | "type"> }) {
+function OrderProgress({ compact = false, order }: { compact?: boolean; order: Pick<StatusTarget, "status" | "type"> }) {
   const status = asOrderStatus(order.status);
 
   if (status === "cancelled") {
@@ -415,8 +543,8 @@ function OrderQuickAction({
   onSetStatus,
 }: {
   busy?: boolean;
-  order: Order;
-  onSetStatus?: (order: Order, status: OrderStatus) => void;
+  order: OrderListRow;
+  onSetStatus?: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   if (!onSetStatus) return null;
 
@@ -455,10 +583,10 @@ function DraggableOrderCard({
   onSetStatus,
 }: {
   busy: boolean;
-  order: Order;
+  order: OrderListRow;
   selected: boolean;
   onSelect: () => void;
-  onSetStatus: (order: Order, status: OrderStatus) => void;
+  onSetStatus: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
     id: order.id,
@@ -493,12 +621,10 @@ function OrderCardContent({
   onSetStatus,
 }: {
   busy?: boolean;
-  order: Order;
-  onSetStatus?: (order: Order, status: OrderStatus) => void;
+  order: OrderListRow;
+  onSetStatus?: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   const age = minutesSince(order.created_at);
-  const previewItems = order.items.slice(0, 3);
-  const hiddenItems = order.items.length - previewItems.length;
 
   return (
     <>
@@ -516,16 +642,12 @@ function OrderCardContent({
         <span>{formatTime(order.created_at)}</span>
       </div>
 
+      {/* Состав в списке не тянем: на доске важнее кто и сколько позиций */}
       <div className="order-card-items">
-        {previewItems.map((item) => (
-          <span key={item.id}>
-            {item.name} × {item.quantity}
-          </span>
-        ))}
-        {hiddenItems > 0 ? <span>Ещё {hiddenItems}</span> : null}
+        <span>{order.guest_name ?? order.guest_phone}</span>
+        <span>{order.positions} поз.</span>
+        {order.items_changed ? <span>состав правил ресторан</span> : null}
       </div>
-
-      <OrderProgress compact order={order} />
 
       <div className="order-card-foot">
         <Clock3 size={14} aria-hidden />
@@ -546,17 +668,19 @@ function BoardColumn({
   busy,
   orders,
   selectedId,
+  total,
   onSelect,
   onSetStatus,
 }: {
   activeId: string | null;
-  activeOrder: Order | null;
+  activeOrder: OrderListRow | null;
   column: (typeof BOARD_COLUMNS)[number];
   busy: boolean;
-  orders: Order[];
+  orders: OrderListRow[];
   selectedId: string | null;
-  onSelect: (order: Order) => void;
-  onSetStatus: (order: Order, status: OrderStatus) => void;
+  total: number;
+  onSelect: (order: OrderListRow) => void;
+  onSetStatus: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: column.id });
   const Icon = STATUS_META[column.id].icon;
@@ -575,14 +699,21 @@ function BoardColumn({
             <h3>{column.label}</h3>
             <small>{statusNames}</small>
           </span>
-          <span className="board-count">{orders.length}</span>
+          <span className="board-count">{Math.max(total, orders.length)}</span>
         </div>
-        <div className="board-column-drop-hint">
-          {activeOrder ? (canDrop ? (currentColumn ? "Текущий этап" : "Можно перенести") : "Недоступный переход") : "Перетащите сюда"}
-        </div>
+        {activeOrder ? (
+          <div className="board-column-drop-hint">
+            {canDrop ? (currentColumn ? "Текущий этап" : "Можно перенести") : "Недоступный переход"}
+          </div>
+        ) : null}
       </div>
 
-      <div ref={setNodeRef} className="board-lane" data-can-drop={canDrop} data-over={isOver}>
+      <div
+        ref={setNodeRef}
+        className="board-lane"
+        data-can-drop={canDrop}
+        data-over={isOver}
+      >
         {orders.length === 0 ? <div className="board-empty">Пока пусто</div> : null}
         {orders.map((order) => (
           <DraggableOrderCard
@@ -594,6 +725,11 @@ function BoardColumn({
             onSetStatus={onSetStatus}
           />
         ))}
+        {total > orders.length ? (
+          <div className="board-more">
+            Ещё {total - orders.length} — смотрите в таблице
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -602,6 +738,7 @@ function BoardColumn({
 function OrdersBoard({
   activeId,
   busy,
+  counts,
   orders,
   selectedId,
   onDragEnd,
@@ -611,12 +748,13 @@ function OrdersBoard({
 }: {
   activeId: string | null;
   busy: boolean;
-  orders: Order[];
+  counts: Record<string, number> | undefined;
+  orders: OrderListRow[];
   selectedId: string | null;
   onDragEnd: (event: DragEndEvent) => void;
   onDragStart: (event: DragStartEvent) => void;
-  onSelect: (order: Order) => void;
-  onSetStatus: (order: Order, status: OrderStatus) => void;
+  onSelect: (order: OrderListRow) => void;
+  onSetStatus: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   const byColumn = useMemo(
     () =>
@@ -627,10 +765,11 @@ function OrdersBoard({
     [orders],
   );
   const activeOrder = orders.find((order) => order.id === activeId) ?? null;
+  const board = useFillHeight<HTMLDivElement>();
 
   return (
     <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd} onDragStart={onDragStart}>
-      <div className="orders-board">
+      <div ref={board} className="orders-board">
         {byColumn.map(({ column, orders: columnOrders }) => (
           <BoardColumn
             key={column.id}
@@ -639,6 +778,7 @@ function OrdersBoard({
             busy={busy}
             column={column}
             orders={columnOrders}
+            total={column.statuses.reduce((sum, status) => sum + (counts?.[status] ?? 0), 0)}
             selectedId={selectedId}
             onSelect={onSelect}
             onSetStatus={onSetStatus}
@@ -664,10 +804,10 @@ function OrdersTable({
   onSetStatus,
 }: {
   density: TableDensity;
-  orders: Order[];
+  orders: OrderListRow[];
   selectedId: string | null;
-  onSelect: (order: Order) => void;
-  onSetStatus: (order: Order, status: OrderStatus) => void;
+  onSelect: (order: OrderListRow) => void;
+  onSetStatus: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   return (
     <div className="table-shell" data-density={density}>
@@ -676,6 +816,7 @@ function OrdersTable({
           <tr>
             <th>Номер</th>
             <th>Когда</th>
+            <th>Гость</th>
             <th>Ресторан</th>
             <th>Получение</th>
             <th>Состав</th>
@@ -688,6 +829,7 @@ function OrdersTable({
           {orders.map((order) => {
             const [primaryAction] = nextTransitions(order);
             const PrimaryActionIcon = primaryAction?.icon;
+            const closed = CLOSED_STATUSES.has(asOrderStatus(order.status));
 
             return (
               <tr key={order.id} data-selected={selectedId === order.id} onClick={() => onSelect(order)}>
@@ -696,7 +838,19 @@ function OrdersTable({
                 </td>
                 <td>
                   <div className="row-main">{formatDateTime(order.created_at)}</div>
-                  <div className="row-sub">{minutesLabel(minutesSince(order.created_at))}</div>
+                  <div className="row-sub">
+                    {/* У закрытого заказа важно, сколько он занял, а не сколько
+                        прошло с тех пор */}
+                    {closed
+                      ? order.completed_at
+                        ? `собран за ${minutesLabel(minutesBetween(order.created_at, order.completed_at))}`
+                        : ""
+                      : minutesLabel(minutesSince(order.created_at))}
+                  </div>
+                </td>
+                <td>
+                  <div className="row-main">{order.guest_name ?? "Без имени"}</div>
+                  <div className="row-sub mono">{order.guest_phone}</div>
                 </td>
                 <td>{order.restaurant_name}</td>
                 <td>
@@ -704,13 +858,22 @@ function OrdersTable({
                   <div className="row-sub">{order.address_text ?? "в ресторане"}</div>
                 </td>
                 <td>
-                  <div className="row-sub">{order.items.map((item) => `${item.name} × ${item.quantity}`).join(", ")}</div>
+                  <div className="row-sub">
+                    {order.positions} поз.
+                    {order.items_changed ? " · состав правил ресторан" : ""}
+                  </div>
                 </td>
                 <td className="numeric">{formatPrice(order.total_kopecks)}</td>
                 <td>
                   <div className="order-table-status">
                     <OrderStatusBadge status={order.status} />
-                    <OrderProgress compact order={order} />
+                    {closed ? (
+                      order.cancel_reason ? (
+                        <span className="row-sub">{order.cancel_reason}</span>
+                      ) : null
+                    ) : (
+                      <OrderProgress compact order={order} />
+                    )}
                   </div>
                 </td>
                 <td>
@@ -756,8 +919,8 @@ function OrderWorkflowPanel({
   onSetStatus,
 }: {
   busy: boolean;
-  order: Order;
-  onSetStatus: (order: Order, status: OrderStatus) => void;
+  order: StatusTarget;
+  onSetStatus: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   const status = asOrderStatus(order.status);
   const meta = STATUS_META[status];
@@ -823,24 +986,353 @@ function OrderWorkflowPanel({
   );
 }
 
+/** Позиция в черновике правки: количество, которое оператор хочет сохранить. */
+type DraftItem = {
+  dish_id: string;
+  name: string;
+  unit_price_kopecks: number;
+  quantity: number;
+};
+
+function draftFromOrder(order: OrderCard): DraftItem[] {
+  return order.items
+    .filter((item) => item.dish_id !== null)
+    .map((item) => ({
+      dish_id: item.dish_id as string,
+      name: item.name,
+      unit_price_kopecks: item.unit_price_kopecks,
+      quantity: item.quantity,
+    }));
+}
+
+function sameComposition(order: OrderCard, draft: DraftItem[]): boolean {
+  const before = draftFromOrder(order);
+  if (before.length !== draft.length) return false;
+  const counts = new Map(draft.map((item) => [item.dish_id, item.quantity]));
+  return before.every((item) => counts.get(item.dish_id) === item.quantity);
+}
+
+/**
+ * Счёт по черновику — теми же правилами, что считает сервер.
+ *
+ * Нужен, чтобы оператор называл гостю сумму до сохранения, а не после. Итог
+ * всё равно приходит с сервера: цены он берёт из базы, и разойтись они могут,
+ * если прямо сейчас в другой вкладке правят меню.
+ */
+function previewTotals(order: OrderCard, draft: DraftItem[]) {
+  const subtotal = draft.reduce((sum, item) => sum + item.unit_price_kopecks * item.quantity, 0);
+  const promo = Math.min(order.promo_discount_kopecks, subtotal);
+  const payable = Math.max(0, subtotal + order.delivery_kopecks + order.cutlery_kopecks - promo);
+
+  const rate = tenant.loyalty.pointToRubleRate;
+  const base = subtotal + (tenant.loyalty.pointsCoverDelivery ? order.delivery_kopecks : 0);
+  const cap =
+    rate > 0 ? Math.floor((base * tenant.loyalty.maxRedeemShareOfCheck) / 100 / rate) : 0;
+  const spent = Math.min(order.points_spent, Math.max(0, cap));
+  const discount = Math.round(spent * rate * 100);
+  const total = Math.max(0, payable - discount);
+
+  return {
+    subtotal,
+    promo,
+    spent,
+    discount,
+    total,
+    // Сколько баллов вернётся гостю, если списание пришлось урезать
+    returned: order.points_spent - spent,
+  };
+}
+
+function DishPicker({
+  restaurantId,
+  taken,
+  onPick,
+}: {
+  restaurantId: string;
+  taken: Set<string>;
+  onPick: (dish: RestaurantDish) => void;
+}) {
+  const [query, setQuery] = useState("");
+
+  const menu = useQuery({
+    queryKey: ["restaurant-menu", restaurantId],
+    queryFn: () => api.restaurantMenu(restaurantId),
+    staleTime: 5 * 60_000,
+  });
+
+  const found = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const rows = (menu.data ?? []).filter((dish) => !taken.has(dish.dish_id));
+    if (!needle) return rows.slice(0, 12);
+    return rows
+      .filter(
+        (dish) =>
+          dish.name.toLowerCase().includes(needle) ||
+          dish.category_name.toLowerCase().includes(needle),
+      )
+      .slice(0, 30);
+  }, [menu.data, query, taken]);
+
+  return (
+    <div className="dish-picker">
+      <span className="search-control">
+        <Search className="search-icon" size={15} aria-hidden />
+        <input
+          autoFocus
+          className="input"
+          placeholder="Блюдо из меню ресторана"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </span>
+
+      {menu.isPending ? (
+        <p className="row-sub">Загружаем меню ресторана…</p>
+      ) : found.length === 0 ? (
+        <p className="row-sub">Ничего не нашлось — проверьте название.</p>
+      ) : (
+        <div className="dish-picker-list">
+          {found.map((dish) => (
+            <button
+              key={dish.dish_id}
+              className="dish-picker-row"
+              disabled={dish.in_stop_list || !dish.is_available}
+              type="button"
+              onClick={() => onPick(dish)}
+            >
+              <span className="min-w-0">
+                <span className="row-main">{dish.name}</span>
+                <span className="row-sub">
+                  {dish.category_name}
+                  {dish.in_stop_list ? " · в стоп-листе" : ""}
+                  {!dish.is_available && !dish.in_stop_list ? " · выключено" : ""}
+                </span>
+              </span>
+              <strong className="mono">{formatPrice(dish.price_kopecks)}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderComposition({
+  order,
+  saving,
+  onSave,
+}: {
+  order: OrderCard;
+  saving: boolean;
+  onSave: (items: { dish_id: string; quantity: number }[]) => void;
+}) {
+  const [draft, setDraft] = useState<DraftItem[]>(() => draftFromOrder(order));
+  const [adding, setAdding] = useState(false);
+
+  // Заказ поменялся (открыли другой или пришёл ответ сервера) — черновик заново
+  useEffect(() => {
+    setDraft(draftFromOrder(order));
+    setAdding(false);
+  }, [order]);
+
+  // Позиция из кассы без блюда в нашем меню: сохранить её обратно нечем
+  const orphan = order.items.some((item) => item.dish_id === null);
+  const editable = order.editable && !orphan;
+  const dirty = !sameComposition(order, draft);
+  const preview = previewTotals(order, draft);
+
+  const setQuantity = (dishId: string, quantity: number) => {
+    setDraft((current) =>
+      quantity <= 0
+        ? current.filter((item) => item.dish_id !== dishId)
+        : current.map((item) => (item.dish_id === dishId ? { ...item, quantity } : item)),
+    );
+  };
+
+  const addDish = (dish: RestaurantDish) => {
+    setDraft((current) => [
+      ...current,
+      {
+        dish_id: dish.dish_id,
+        name: dish.name,
+        unit_price_kopecks: dish.price_kopecks,
+        quantity: 1,
+      },
+    ]);
+    setAdding(false);
+  };
+
+  const rows = editable ? draft : draftFromOrder(order);
+  const removed = editable
+    ? draftFromOrder(order).filter(
+        (before) => !draft.some((item) => item.dish_id === before.dish_id),
+      )
+    : [];
+
+  return (
+    <section className="drawer-section">
+      <div className="drawer-section-head">
+        <h3 className="drawer-section-title">Состав</h3>
+        <span className="row-sub">{rows.length} поз.</span>
+      </div>
+
+      <div className="item-list">
+        {rows.map((item) => (
+          <div key={item.dish_id} className="item-row">
+            <div className="min-w-0">
+              <div className="row-main">{item.name}</div>
+              <div className="row-sub">{formatPrice(item.unit_price_kopecks)} за штуку</div>
+            </div>
+
+            {editable ? (
+              <div className="stepper" aria-label={`Количество: ${item.name}`}>
+                <button
+                  disabled={saving}
+                  type="button"
+                  onClick={() => setQuantity(item.dish_id, item.quantity - 1)}
+                >
+                  <Minus size={14} aria-hidden />
+                </button>
+                <span className="mono">{item.quantity}</span>
+                <button
+                  disabled={saving || item.quantity >= 99}
+                  type="button"
+                  onClick={() => setQuantity(item.dish_id, item.quantity + 1)}
+                >
+                  <Plus size={14} aria-hidden />
+                </button>
+              </div>
+            ) : (
+              <span className="row-sub">× {item.quantity}</span>
+            )}
+
+            <strong className="mono">
+              {formatPrice(item.unit_price_kopecks * item.quantity)}
+            </strong>
+
+            {editable ? (
+              <IconButton
+                disabled={saving}
+                label={`Снять «${item.name}»`}
+                size="sm"
+                variant="quiet"
+                onClick={() => setQuantity(item.dish_id, 0)}
+              >
+                <Trash2 size={15} aria-hidden />
+              </IconButton>
+            ) : null}
+          </div>
+        ))}
+
+        {removed.map((item) => (
+          <div key={item.dish_id} className="item-row" data-removed="true">
+            <div className="min-w-0">
+              <div className="row-main">{item.name}</div>
+              <div className="row-sub">Снимаем из заказа</div>
+            </div>
+            <span className="row-sub">× {item.quantity}</span>
+            <strong className="mono">−{formatPrice(item.unit_price_kopecks * item.quantity)}</strong>
+            <IconButton
+              disabled={saving}
+              label={`Вернуть «${item.name}»`}
+              size="sm"
+              variant="quiet"
+              onClick={() =>
+                setDraft((current) => [...current, { ...item, quantity: item.quantity }])
+              }
+            >
+              <RefreshCw size={15} aria-hidden />
+            </IconButton>
+          </div>
+        ))}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="row-sub">
+          В заказе не осталось блюд. Верните позицию или отмените заказ целиком.
+        </p>
+      ) : null}
+
+      {!editable ? (
+        <p className="row-sub">
+          {orphan
+            ? "В заказе есть позиция без блюда из меню — правьте её на кассе."
+            : "Заказ закрыт: состав уже не меняется."}
+        </p>
+      ) : adding ? (
+        <DishPicker
+          restaurantId={order.restaurant_id}
+          taken={new Set(draft.map((item) => item.dish_id))}
+          onPick={addDish}
+        />
+      ) : (
+        <Button disabled={saving} size="sm" variant="ghost" onClick={() => setAdding(true)}>
+          <Plus size={15} aria-hidden />
+          Добавить блюдо
+        </Button>
+      )}
+
+      {editable && dirty ? (
+        <div className="composition-bar">
+          <div className="composition-sum">
+            <span className="metric-label">Станет к оплате</span>
+            <strong className="mono">{formatPrice(preview.total)}</strong>
+            <span className="row-sub">
+              было {formatPrice(order.total_kopecks)}
+              {preview.returned > 0 ? ` · вернём ${preview.returned} б.` : ""}
+            </span>
+          </div>
+          <span className="toolbar-spacer" />
+          <Button
+            disabled={saving}
+            size="sm"
+            variant="ghost"
+            onClick={() => setDraft(draftFromOrder(order))}
+          >
+            Вернуть как было
+          </Button>
+          <Button
+            disabled={saving || draft.length === 0}
+            size="sm"
+            onClick={() =>
+              onSave(
+                draft.map((item) => ({ dish_id: item.dish_id, quantity: item.quantity })),
+              )
+            }
+          >
+            Сохранить состав
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function OrderDrawer({
   busy,
   order,
+  saving,
   onClose,
+  onSaveItems,
   onSetStatus,
 }: {
   busy: boolean;
-  order: Order;
+  order: OrderCard;
+  saving: boolean;
   onClose: () => void;
-  onSetStatus: (order: Order, status: OrderStatus) => void;
+  onSaveItems: (items: { dish_id: string; quantity: number }[]) => void;
+  onSetStatus: (order: StatusTarget, status: OrderStatus) => void;
 }) {
   const status = asOrderStatus(order.status);
   const meta = STATUS_META[status];
   const Icon = meta.icon;
+  const closed = CLOSED_STATUSES.has(status);
+  // Звоним по контактному телефону заказа: гость мог оставить чужой
+  const phone = order.contact_phone || (order.guest_phone.startsWith("+") ? order.guest_phone : "");
 
   return (
     <>
-      <div className="drawer-overlay" onClick={onClose} />
+      <div className="drawer-overlay order-drawer-scrim" onClick={onClose} />
       <aside className="order-drawer" aria-label={`Заказ № ${order.number}`}>
         <div className="drawer-head">
           <div className="order-drawer-title-block">
@@ -848,7 +1340,9 @@ function OrderDrawer({
               <Icon size={18} aria-hidden />
             </span>
             <div className="min-w-0">
-              <span className="metric-label">Заказ</span>
+              <span className="metric-label">
+                {orderTypeLabel(order.type)} · {order.restaurant_name}
+              </span>
               <h2 className="drawer-title">№ {order.number}</h2>
               <OrderStatusBadge status={order.status} />
             </div>
@@ -862,51 +1356,141 @@ function OrderDrawer({
         <div className="drawer-body">
           <OrderWorkflowPanel busy={busy} order={order} onSetStatus={onSetStatus} />
 
+          {order.cancel_reason ? (
+            <div className="alert-band">
+              <XCircle size={16} aria-hidden />
+              <span>{order.cancel_reason}</span>
+            </div>
+          ) : null}
+
+          {order.iiko_items_changed_at ? (
+            <div className="alert-band" data-tone="warn">
+              <AlertTriangle size={16} aria-hidden />
+              <span>
+                Состав правили на кассе {formatDateTime(order.iiko_items_changed_at)} — счёт
+                пересчитан
+              </span>
+            </div>
+          ) : null}
+
           <section className="drawer-section">
-            <h3 className="drawer-section-title">Детали</h3>
+            <div className="guest-card">
+              <div className="min-w-0">
+                <span className="metric-label">Гость</span>
+                <div className="row-main">{order.guest_name ?? "Без имени"}</div>
+                <div className="row-sub">
+                  {order.guest_points_balance} б. на счету · заказов: {order.guest_orders_count}
+                </div>
+              </div>
+              {phone ? (
+                <a className="phone-link" href={`tel:${phone}`}>
+                  <Phone size={15} aria-hidden />
+                  {phone}
+                </a>
+              ) : (
+                <span className="row-sub">Телефон не указан</span>
+              )}
+            </div>
+          </section>
+
+          <section className="drawer-section">
+            <h3 className="drawer-section-title">Куда и когда</h3>
             <div className="detail-list">
               <div className="detail-row">
+                <span className="detail-label">
+                  {order.type === "delivery" ? "Адрес" : "Самовывоз"}
+                </span>
+                <span>{order.address_text ?? order.restaurant_name}</span>
+              </div>
+              <div className="detail-row">
                 <span className="detail-label">Создан</span>
-                <span>{formatDateTime(order.created_at)}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-label">В работе</span>
-                <span>{minutesLabel(minutesSince(order.created_at))}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-label">Ресторан</span>
-                <span>{order.restaurant_name}</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-label">Получение</span>
                 <span>
-                  {orderTypeLabel(order.type)}
-                  {order.address_text ? ` · ${order.address_text}` : ""}
+                  {formatDateTime(order.created_at)}
+                  {closed ? "" : ` · ${minutesLabel(minutesSince(order.created_at))} в работе`}
                 </span>
               </div>
-            </div>
-          </section>
-
-          <section className="drawer-section">
-            <h3 className="drawer-section-title">Состав</h3>
-            <div className="item-list">
-              {order.items.map((item) => (
-                <div key={item.id} className="item-row">
-                  <div>
-                    <div className="row-main">{item.name}</div>
-                    <div className="row-sub">Количество: {item.quantity}</div>
-                  </div>
-                  <strong className="mono">{formatPrice(item.total_kopecks)}</strong>
+              {order.delivery_at ? (
+                <div className="detail-row">
+                  <span className="detail-label">К сроку</span>
+                  <span>{formatDateTime(order.delivery_at)}</span>
                 </div>
-              ))}
+              ) : null}
+              {order.completed_at ? (
+                <div className="detail-row">
+                  <span className="detail-label">Завершён</span>
+                  <span>{formatDateTime(order.completed_at)}</span>
+                </div>
+              ) : null}
+              {order.iiko_courier_name ? (
+                <div className="detail-row">
+                  <span className="detail-label">Курьер</span>
+                  <span>{order.iiko_courier_name}</span>
+                </div>
+              ) : null}
+              {order.comment ? (
+                <div className="detail-row">
+                  <span className="detail-label">Комментарий</span>
+                  <span>{order.comment}</span>
+                </div>
+              ) : null}
+              {order.persons_count ? (
+                <div className="detail-row">
+                  <span className="detail-label">Приборы</span>
+                  <span>{order.persons_count} комплекта</span>
+                </div>
+              ) : null}
             </div>
           </section>
 
+          <OrderComposition order={order} saving={saving} onSave={onSaveItems} />
+
           <section className="drawer-section">
-            <h3 className="drawer-section-title">Итого</h3>
-            <div className="detail-row">
-              <span className="detail-label">Сумма</span>
-              <strong className="mono">{formatPrice(order.total_kopecks)}</strong>
+            <h3 className="drawer-section-title">Счёт</h3>
+            <div className="bill-list">
+              <div className="bill-row">
+                <span>Блюда</span>
+                <strong className="mono">{formatPrice(order.subtotal_kopecks)}</strong>
+              </div>
+              {order.delivery_kopecks > 0 ? (
+                <div className="bill-row">
+                  <span>Доставка</span>
+                  <strong className="mono">{formatPrice(order.delivery_kopecks)}</strong>
+                </div>
+              ) : null}
+              {order.cutlery_kopecks > 0 ? (
+                <div className="bill-row">
+                  <span>Приборы</span>
+                  <strong className="mono">{formatPrice(order.cutlery_kopecks)}</strong>
+                </div>
+              ) : null}
+              {order.promo_discount_kopecks > 0 ? (
+                <div className="bill-row" data-tone="ok">
+                  <span>Промокод {order.promo_code ?? ""}</span>
+                  <strong className="mono">−{formatPrice(order.promo_discount_kopecks)}</strong>
+                </div>
+              ) : null}
+              {order.points_spent > 0 ? (
+                <div className="bill-row" data-tone="ok">
+                  <span>Списано {order.points_spent} б.</span>
+                  <strong className="mono">−{formatPrice(order.discount_kopecks)}</strong>
+                </div>
+              ) : null}
+              <div className="bill-row bill-total">
+                <span>К оплате · {paymentLabel(order.payment_method)}</span>
+                <strong className="mono">{formatPrice(order.total_kopecks)}</strong>
+              </div>
+              {order.change_from_kopecks ? (
+                <div className="bill-row">
+                  <span>Сдача с</span>
+                  <strong className="mono">{formatPrice(order.change_from_kopecks)}</strong>
+                </div>
+              ) : null}
+              {order.points_earned > 0 ? (
+                <div className="bill-row">
+                  <span>Начислим баллов</span>
+                  <strong className="mono">{order.points_earned}</strong>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -917,38 +1501,94 @@ function OrderDrawer({
 
 export function OrdersPage() {
   const queryClient = useQueryClient();
-  const [view, setView] = useOrdersView();
+  const [chosenView, setView] = useOrdersView();
   const [density, setDensity] = useTableDensity();
   const [filter, setFilter] = useState<OrderFilter>("all");
+  const [period, setPeriod] = useState<OrderPeriod>("all");
+  const [customFrom, setCustomFrom] = useState(isoDay(-7));
+  const [customTo, setCustomTo] = useState(isoDay());
   const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<OrderGroup>("active");
+  const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  // Поиск уходит на сервер, поэтому ждём паузу в наборе, а не дёргаем по букве
+  const search = useDebounced(query, 350);
+
+  // Доска — про работу смены. В завершённых и отменённых двигать нечего
+  const view = group === "active" ? chosenView : "table";
+
+  const range = periodRange(period, customFrom, customTo);
+  // Пусто из-за фильтров или потому, что заказов такого рода ещё не было
+  const narrowed = Boolean(query) || filter !== "all" || period !== "all";
+
+  // Условия отбора поменялись — страница снова первая, иначе список пустой
+  useEffect(() => {
+    setPage(0);
+  }, [group, filter, search, range.from, range.to]);
+
+  const pageSize = view === "board" ? BOARD_LIMIT : PAGE_SIZE;
+
+  const params = {
+    group,
+    type: filter === "all" ? ("" as const) : filter,
+    search,
+    dateFrom: range.from,
+    dateTo: range.to,
+    limit: pageSize,
+    offset: page * pageSize,
+  };
+
   const orders = useQuery({
-    queryKey: ["orders"],
-    queryFn: api.orders,
-    refetchInterval: 15_000,
+    queryKey: ["orders", params],
+    queryFn: () => api.orders(params),
+    refetchInterval: group === "active" ? 15_000 : false,
+    placeholderData: (previous) => previous,
   });
 
   const setStatus = useMutation({
     mutationFn: ({ id, status }: SetOrderStatusInput) => api.setOrderStatus(id, status),
+    // Кнопка должна срабатывать мгновенно: правим все страницы списка, что
+    // сейчас в памяти, а сервер потом скажет, как есть на самом деле
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({ queryKey: ["orders"] });
-      const previous = queryClient.getQueryData<Order[]>(["orders"]);
-      queryClient.setQueryData<Order[]>(["orders"], (current) =>
-        current?.map((order) => (order.id === id ? { ...order, status } : order)),
+      const previous = queryClient.getQueriesData<OrderPage>({ queryKey: ["orders"] });
+
+      queryClient.setQueriesData<OrderPage>({ queryKey: ["orders"] }, (page) =>
+        page
+          ? {
+              ...page,
+              rows: page.rows.map((row) => (row.id === id ? { ...row, status } : row)),
+            }
+          : page,
       );
+
       return { previous };
     },
     onError: (error, variables, context) => {
-      if (context?.previous) queryClient.setQueryData(["orders"], context.previous);
+      for (const [key, page] of context?.previous ?? []) queryClient.setQueryData(key, page);
       toast.error(error instanceof Error ? error.message : `Не удалось обновить заказ № ${variables.number}`);
     },
-    onSuccess: (_order, variables) => {
+    onSuccess: (card, variables) => {
+      queryClient.setQueryData(["order", card.id], card);
       toast.success(`Заказ № ${variables.number}: ${statusLabel(variables.status)}`);
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+
+  const saveItems = useMutation({
+    mutationFn: (items: { dish_id: string; quantity: number }[]) =>
+      api.saveOrderItems(selectedId ?? "", items),
+    onSuccess: (card) => {
+      queryClient.setQueryData(["order", card.id], card);
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      toast.success(`Состав заказа № ${card.number} сохранён · ${formatPrice(card.total_kopecks)}`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить состав");
     },
   });
 
@@ -967,34 +1607,34 @@ export function OrdersPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const allOrders = orders.data ?? [];
-  const filteredOrders = useMemo(
-    () =>
-      allOrders.filter((order) => {
-        const typeMatch = filter === "all" || order.type === filter;
-        return typeMatch && matchesOrder(order, query);
-      }),
-    [allOrders, filter, query],
+  const allOrders = orders.data?.rows ?? [];
+  const counts = orders.data?.counts;
+  const total = orders.data?.total ?? 0;
+  const filteredOrders = allOrders;
+
+  const boardOrders = filteredOrders.filter(
+    (order) => !CLOSED_STATUSES.has(asOrderStatus(order.status)),
   );
 
-  const boardOrders = filteredOrders.filter((order) => !CLOSED_STATUSES.has(asOrderStatus(order.status)));
-  const selectedOrder = allOrders.find((order) => order.id === selectedId) ?? null;
+  // Карточку тянем отдельно: в списке состава нет, а он нужен для правки
+  const card = useQuery({
+    queryKey: ["order", selectedId],
+    queryFn: () => api.orderCard(selectedId ?? ""),
+    enabled: selectedId !== null,
+  });
 
-  const metrics = useMemo(() => {
-    const active = allOrders.filter((order) => !CLOSED_STATUSES.has(asOrderStatus(order.status)));
-    const ready = active.filter((order) => order.status === "ready");
-    const delivering = active.filter((order) => order.status === "delivering");
-    const revenue = allOrders.reduce((sum, order) => sum + order.total_kopecks, 0);
+  const selectedOrder = card.data ?? null;
 
-    return {
-      active: active.length,
-      delivering: delivering.length,
-      ready: ready.length,
-      revenue,
-    };
-  }, [allOrders]);
+  // Считает сервер по всей выборке: на экране полсотни строк, а ресторанов
+  // двадцать пять, и «готовых» среди них может не оказаться ни одного
+  const metrics = {
+    active: counts?.active ?? 0,
+    cooking: counts?.cooking ?? 0,
+    ready: counts?.ready ?? 0,
+    delivering: counts?.delivering ?? 0,
+  };
 
-  const setOrderStatus = (order: Order, status: OrderStatus) => {
+  const setOrderStatus = (order: StatusTarget, status: OrderStatus) => {
     const currentStatus = asOrderStatus(order.status);
     if (currentStatus === status) return;
 
@@ -1004,6 +1644,31 @@ export function OrdersPage() {
     }
 
     setStatus.mutate({ id: order.id, number: order.number, status });
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  /**
+   * Выгрузка берёт весь текущий отбор, а не открытую страницу: оператор
+   * фильтрует и жмёт «Экспорт», ожидая получить именно то, что отфильтровал.
+   * Больше двухсот строк за раз сервер не отдаёт, поэтому идём порциями.
+   */
+  const runExport = async () => {
+    setExporting(true);
+    try {
+      const chunk = 200;
+      const rows: OrderListRow[] = [];
+      for (let offset = 0; offset < total && offset < 5_000; offset += chunk) {
+        const page = await api.orders({ ...params, limit: chunk, offset });
+        rows.push(...page.rows);
+        if (page.rows.length < chunk) break;
+      }
+      exportOrders(rows);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось выгрузить заказы");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const onDragStart = (event: DragStartEvent) => {
@@ -1064,9 +1729,9 @@ export function OrdersPage() {
             <div className="metric-note">заказы в пути</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Сумма</div>
-            <div className="metric-value">{formatPrice(metrics.revenue)}</div>
-            <div className="metric-note">по загруженному списку</div>
+            <div className="metric-label">На кухне</div>
+            <div className="metric-value">{metrics.cooking}</div>
+            <div className="metric-note">готовятся сейчас</div>
           </div>
         </div>
 
@@ -1078,17 +1743,35 @@ export function OrdersPage() {
           </div>
         ) : null}
 
+        <div className="tabs orders-groups" aria-label="Состояние заказов">
+          {GROUP_TABS.map((groupTab) => (
+            <button
+              key={groupTab.key}
+              className="tab-button"
+              data-active={group === groupTab.key}
+              type="button"
+              onClick={() => setGroup(groupTab.key)}
+            >
+              {groupTab.label}
+              <span className="tab-counter">{counts?.[groupTab.key] ?? 0}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="orders-toolbar">
-          <div className="tabs" aria-label="Вид заказов">
-            <button className="tab-button" data-active={view === "board"} type="button" onClick={() => setView("board")}>
-              <Columns3 size={14} aria-hidden />
-              Доска
-            </button>
-            <button className="tab-button" data-active={view === "table"} type="button" onClick={() => setView("table")}>
-              <Table2 size={14} aria-hidden />
-              Таблица
-            </button>
-          </div>
+          <div className="toolbar-filters">
+          {group === "active" ? (
+            <div className="tabs" aria-label="Вид заказов">
+              <button className="tab-button" data-active={view === "board"} type="button" onClick={() => setView("board")}>
+                <Columns3 size={14} aria-hidden />
+                Доска
+              </button>
+              <button className="tab-button" data-active={view === "table"} type="button" onClick={() => setView("table")}>
+                <Table2 size={14} aria-hidden />
+                Таблица
+              </button>
+            </div>
+          ) : null}
 
           <div className="filter-chips" aria-label="Тип заказа">
             {[
@@ -1108,20 +1791,60 @@ export function OrdersPage() {
             ))}
           </div>
 
-          <div className="toolbar-spacer" />
-
-          <label className="field toolbar-field">
-            <span className="field-label">Поиск</span>
-            <span className="search-control">
-              <Search className="search-icon" size={15} aria-hidden />
-              <input
+          <div className="toolbar-dates">
+            <span className="select-control">
+              <CalendarDays className="select-icon" size={15} aria-hidden />
+              <select
                 className="input"
-                placeholder="Поиск заказа"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
+                aria-label="Период"
+                value={period}
+                onChange={(event) => setPeriod(event.target.value as OrderPeriod)}
+              >
+                {PERIOD_OPTIONS.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </span>
-          </label>
+
+            {period === "custom" ? (
+              <>
+                <input
+                  className="input date-input"
+                  aria-label="С какой даты"
+                  lang="ru-RU"
+                  max={customTo}
+                  type="date"
+                  value={customFrom}
+                  onChange={(event) => setCustomFrom(event.target.value)}
+                />
+                <span className="toolbar-note">—</span>
+                <input
+                  className="input date-input"
+                  aria-label="По какую дату"
+                  lang="ru-RU"
+                  min={customFrom}
+                  type="date"
+                  value={customTo}
+                  onChange={(event) => setCustomTo(event.target.value)}
+                />
+              </>
+            ) : null}
+          </div>
+
+          </div>
+
+          <div className="toolbar-actions">
+          <span className="search-control toolbar-search">
+            <Search className="search-icon" size={15} aria-hidden />
+            <input
+              className="input"
+              placeholder="Номер, телефон, имя, адрес"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </span>
 
           {view === "table" ? (
             <div className="density-toggle" aria-label="Плотность таблицы">
@@ -1134,34 +1857,47 @@ export function OrdersPage() {
             </div>
           ) : null}
 
-          <Button size="sm" variant="ghost" onClick={() => void orders.refetch()}>
+          <IconButton
+            label="Обновить список"
+            size="sm"
+            variant="quiet"
+            onClick={() => void orders.refetch()}
+          >
             <RefreshCw size={15} aria-hidden />
-            Обновить
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => exportOrders(filteredOrders)}>
+          </IconButton>
+          <Button size="sm" variant="ghost" disabled={exporting} onClick={runExport}>
             <Download size={15} aria-hidden />
-            Экспорт
+            {exporting ? "Готовим…" : "Экспорт"}
           </Button>
+          </div>
         </div>
 
         {filteredOrders.length === 0 ? (
           <div className="empty-state">
-            <h2>По этим условиям ничего нет</h2>
-            <p>Сбросьте поиск или фильтр, чтобы увидеть активные заказы.</p>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery("");
-                setFilter("all");
-              }}
-            >
-              Сбросить фильтры
-            </Button>
+            <h2>{narrowed ? "По этим условиям ничего нет" : "Здесь пусто"}</h2>
+            <p>
+              {narrowed
+                ? "Сбросьте поиск, период или тип — и вкладка снова покажет заказы."
+                : "Заказы этой вкладки появятся здесь, как только они будут."}
+            </p>
+            {narrowed ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setQuery("");
+                  setFilter("all");
+                  setPeriod("all");
+                }}
+              >
+                Сбросить фильтры
+              </Button>
+            ) : null}
           </div>
         ) : view === "board" ? (
           <OrdersBoard
             activeId={activeId}
             busy={setStatus.isPending}
+            counts={counts}
             orders={boardOrders}
             selectedId={selectedId}
             onDragEnd={onDragEnd}
@@ -1178,13 +1914,42 @@ export function OrdersPage() {
             onSetStatus={setOrderStatus}
           />
         )}
+
+        {view === "table" && total > PAGE_SIZE ? (
+          <div className="pager">
+            <span className="row-sub">
+              {page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} из {total}
+            </span>
+            <span className="toolbar-spacer" />
+            <Button
+              disabled={page === 0 || orders.isFetching}
+              size="sm"
+              variant="ghost"
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+            >
+              <ChevronLeft size={15} aria-hidden />
+              Назад
+            </Button>
+            <Button
+              disabled={(page + 1) * PAGE_SIZE >= total || orders.isFetching}
+              size="sm"
+              variant="ghost"
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Дальше
+              <ChevronRight size={15} aria-hidden />
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {selectedOrder ? (
         <OrderDrawer
           busy={setStatus.isPending}
           order={selectedOrder}
+          saving={saveItems.isPending}
           onClose={() => setSelectedId(null)}
+          onSaveItems={(items) => saveItems.mutate(items)}
           onSetStatus={setOrderStatus}
         />
       ) : null}

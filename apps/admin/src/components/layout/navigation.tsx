@@ -64,7 +64,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Заказы",
     section: "operations",
     icon: ReceiptText,
-    description: "Доска статусов и таблица активных заказов",
+    description: "Смена на доске, история — во вкладках",
   },
   {
     path: "/reservations",
