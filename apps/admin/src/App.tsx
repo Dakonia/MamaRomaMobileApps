@@ -6,7 +6,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockKeyhole, Store } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import {
   Suspense,
   lazy,
@@ -20,6 +20,8 @@ import {
 import { OrdersPage } from "./app/orders/OrdersPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ApiError, api, getToken, mediaUrl, setToken, tenant } from "./api";
+import wordmark from "@mr/tenants/assets/mamaroma/wordmark.png";
+
 import { AdminSessionProvider } from "./lib/admin-session";
 import { Button } from "./ui";
 
@@ -233,7 +235,20 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
   const [password, setPassword] = useState("");
   const [failure, setFailure] = useState<string | null>(null);
 
-  const hall = mediaUrl(HALL_SHOT);
+  const [hall, setHall] = useState<string | null>(mediaUrl(HALL_SHOT));
+
+  const halls = useQuery({
+    queryKey: ["halls"],
+    queryFn: api.restaurants,
+    staleTime: 12 * 60 * 60 * 1000,
+    retry: false,
+    enabled: hall === null,
+  });
+
+  const spare = mediaUrl(
+    (halls.data ?? []).map((item) => item.image_url).find((path): path is string => Boolean(path)) ??
+      null,
+  );
 
   const login = useMutation({
     mutationFn: () => api.login(email, password),
@@ -256,18 +271,20 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
       className="login-shell"
       style={{ "--brand": tenant.branding.primary } as CSSProperties}
     >
-      {hall ? <img alt="" className="login-photo" src={hall} /> : null}
+      {hall ?? spare ? (
+        <img
+          alt=""
+          className="login-photo"
+          src={hall ?? spare ?? ""}
+          /* На разработке в базе другие файлы: закреплённого кадра там нет,
+             и вместо пустого экрана берём первый снимок из списка */
+          onError={() => setHall(null)}
+        />
+      ) : null}
       <div className="login-veil" />
 
       <div className="login-inner">
         <section className="login-aside">
-          <div className="login-aside-brand">
-            <div className="login-aside-mark">
-              <Store size={18} aria-hidden />
-            </div>
-            <span>{tenant.branding.displayName}</span>
-          </div>
-
           <h2 className="login-aside-title">Панель управления сетью</h2>
           <p className="login-aside-copy">
             Заказы и брони, меню и цены по ресторанам, зоны доставки, акции и рассылки.
@@ -283,6 +300,8 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
             login.mutate();
           }}
         >
+          <img alt={tenant.branding.displayName} className="login-logo" src={wordmark} />
+
           <div className="login-head">
             <h1 className="login-title">Вход</h1>
             <p className="login-copy">Для сотрудников сети</p>

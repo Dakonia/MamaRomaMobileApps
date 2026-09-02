@@ -231,9 +231,9 @@ textarea:focus-visible {
 
 @media (min-width: 940px) {
   .login-inner {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) 412px;
     align-items: center;
-    gap: 0;
+    gap: 64px;
     padding: 0 88px;
   }
 }
@@ -248,24 +248,6 @@ textarea:focus-visible {
     display: block;
     justify-self: start;
   }
-}
-
-.login-aside-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 44px;
-  font-weight: 600;
-}
-
-.login-aside-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  color: #fff;
-  background: var(--brand);
 }
 
 .login-aside-title {
@@ -290,20 +272,30 @@ textarea:focus-visible {
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 340px;
+  max-width: 412px;
   justify-self: end;
   display: grid;
   gap: 0;
-  padding: 30px;
-  background: rgba(255, 255, 255, .96);
+  padding: 36px 38px 34px;
+  background: rgba(255, 255, 255, .97);
   border: 0;
-  border-radius: 16px;
-  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .7);
+  border-radius: 18px;
+  box-shadow: 0 30px 70px -32px rgba(0, 0, 0, .75);
   color: #1B1614;
 }
 
+/* Логотип сети с текстом: он и представляет панель, поэтому стоит на светлом,
+   где красный с зелёным читаются, а не на тёмном снимке */
+.login-logo {
+  display: block;
+  width: 190px;
+  max-width: 100%;
+  height: auto;
+  margin-bottom: 26px;
+}
+
 .login-head {
-  margin-bottom: 24px;
+  margin-bottom: 26px;
 }
 
 .login-title {
@@ -322,7 +314,7 @@ textarea:focus-visible {
 }
 
 .login-card .field {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .login-card .field-label {
@@ -334,8 +326,8 @@ textarea:focus-visible {
 }
 
 .login-card .input {
-  min-height: 40px;
-  padding: 9px 12px;
+  min-height: 44px;
+  padding: 11px 14px;
   border: 1px solid #DDD6CE;
   border-radius: 8px;
   color: #1B1614;
@@ -357,8 +349,9 @@ textarea:focus-visible {
 
 .login-card .button {
   width: 100%;
-  min-height: 42px;
-  border-radius: 8px;
+  min-height: 46px;
+  margin-top: 4px;
+  border-radius: 10px;
   font-size: 14px;
 }
 
