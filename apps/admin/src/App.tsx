@@ -6,7 +6,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, LockKeyhole, Store } from "lucide-react";
+import { LockKeyhole, Store } from "lucide-react";
 import {
   Suspense,
   lazy,
@@ -21,7 +21,6 @@ import { OrdersPage } from "./app/orders/OrdersPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ApiError, api, getToken, mediaUrl, setToken, tenant } from "./api";
 import { AdminSessionProvider } from "./lib/admin-session";
-import { brightness, busyness } from "./lib/blurhash";
 import { Button } from "./ui";
 
 const ReservationsPage = lazy(() =>
@@ -221,53 +220,20 @@ declare module "@tanstack/react-router" {
 }
 
 /**
- * Кадр зала для экрана входа. Список ресторанов открыт и без входа, поэтому
- * снимок можно взять до авторизации.
+ * Кадр для экрана входа — тот самый зал с камином, выбранный на макете.
  *
- * Берём не любой, а из трети самых тёмных: поверх кадра лежит текст и белая
- * карточка, и на залитом солнцем зале с красными скатертями они тонут, а на
- * вечернем — читаются. Светлоту узнаём из хеша размытия, не скачивая снимки.
- * Внутри отобранных крутим по дню года: панель выглядит по-разному в разные
- * дни, но не мельтешит при каждой перерисовке.
+ * Не случайный и не подобранный расчётом: снимок утверждён глазами, и подмена
+ * его «похожим» каждый день ломала бы то, ради чего вариант и выбирали. Если
+ * файла не окажется, экран останется на тёмном фоне — форма читается и так.
  */
-function useHallShot(): string | null {
-  const halls = useQuery({
-    queryKey: ["halls"],
-    queryFn: api.restaurants,
-    staleTime: 12 * 60 * 60 * 1000,
-    retry: false,
-  });
-
-  /**
-   * Годный кадр — тёмный и спокойный. Одной темноты мало: витрина с бутылками
-   * и цветами тоже тёмная, но текст на ней не читается никаким затемнением.
-   * Поэтому считаем и пестроту, и берём восьмёрку лучших по сумме.
-   */
-  const shots = (halls.data ?? [])
-    .filter((item) => Boolean(item.image_url))
-    .map((item) => ({
-      item,
-      score: brightness(item.image_blurhash) * 2 + busyness(item.image_blurhash),
-    }))
-    .sort((left, right) => left.score - right.score)
-    .slice(0, 8)
-    .map(({ item }) => item);
-
-  if (shots.length === 0) return null;
-
-  const start = new Date(new Date().getFullYear(), 0, 0);
-  const day = Math.floor((Date.now() - start.getTime()) / 86_400_000);
-
-  return mediaUrl(shots[day % shots.length].image_url ?? null);
-}
+const HALL_SHOT = "/media/restaurants/89222a09da2cb58b14e83eee.webp";
 
 function Login({ onDone }: { onDone: (token: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [visible, setVisible] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
-  const hall = useHallShot();
+  const hall = mediaUrl(HALL_SHOT);
 
   const login = useMutation({
     mutationFn: () => api.login(email, password),
@@ -339,26 +305,15 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
 
           <label className="field">
             <span className="field-label">Пароль</span>
-            <div className="input-affix">
-              <input
-                autoComplete="current-password"
-                className="input"
-                name="password"
-                placeholder="••••••••"
-                type={visible ? "text" : "password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-              <button
-                aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
-                className="input-affix-button"
-                tabIndex={-1}
-                type="button"
-                onClick={() => setVisible((shown) => !shown)}
-              >
-                {visible ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
-              </button>
-            </div>
+            <input
+              autoComplete="current-password"
+              className="input"
+              name="password"
+              placeholder="••••••••"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
           </label>
 
           {failure ? (

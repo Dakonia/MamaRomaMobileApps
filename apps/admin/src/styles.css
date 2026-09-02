@@ -180,8 +180,8 @@ textarea:focus-visible {
   color: var(--ink);
 }
 
-/* Экран входа: снимок зала во весь экран, поверх — карточка со входом.
-   Своих залов у сети 238, и панель начинается с них, а не с пустой формы */
+/* Экран входа: снимок зала во весь экран, поверх — карточка. Пропорции и
+   цвета взяты с утверждённого макета один в один */
 .login-shell {
   position: relative;
   min-height: 100vh;
@@ -194,41 +194,35 @@ textarea:focus-visible {
 
 .login-photo {
   position: absolute;
-  inset: -12px;
-  width: calc(100% + 24px);
-  height: calc(100% + 24px);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  /* Лёгкое размытие: снимки залов сняты подробно, и мелкие блики спорят с
-     текстом. Полтора пикселя убирают дребезг, но зал остаётся узнаваем */
-  filter: blur(3px) saturate(.85);
-  /* Кадр проявляется, а не возникает рывком, когда доедет с сервера */
   animation: login-photo-in .8s ease-out both;
 }
 
 @keyframes login-photo-in {
-  from { opacity: 0; transform: scale(1.04); }
+  from { opacity: 0; transform: scale(1.03); }
   to { opacity: 1; transform: scale(1); }
 }
 
-/* Затемнение густое слева, где текст, и почти прозрачное справа: снимок
-   остаётся видно, а буквы не спорят с ним за внимание */
+/* Затемнение густое слева, где текст, и почти прозрачное справа: зал должен
+   остаться видимым, иначе снимок можно было и не показывать */
 .login-veil {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(
-      100deg,
-      rgba(16, 11, 9, .96) 0%,
-      rgba(16, 11, 9, .88) 38%,
-      rgba(16, 11, 9, .62) 70%,
-      rgba(16, 11, 9, .5) 100%
-    ),
-    radial-gradient(120% 80% at 20% 50%, rgba(16, 11, 9, .5), transparent 70%);
+  background: linear-gradient(
+    100deg,
+    rgba(20, 14, 12, .92) 0%,
+    rgba(20, 14, 12, .55) 45%,
+    rgba(20, 14, 12, .15) 100%
+  );
 }
 
 .login-inner {
   position: relative;
-  width: min(1180px, 100%);
+  width: 100%;
+  max-width: 1440px;
   display: grid;
   grid-template-columns: 1fr;
   justify-items: center;
@@ -237,12 +231,10 @@ textarea:focus-visible {
 
 @media (min-width: 940px) {
   .login-inner {
-    /* Правая колонка ровно под карточку, левая забирает остальное: раньше
-       карточку сжимало до трёхсот точек и прибивало к самому краю экрана */
-    grid-template-columns: minmax(0, 1fr) 374px;
+    grid-template-columns: 1fr 1fr;
     align-items: center;
-    gap: clamp(48px, 8vw, 120px);
-    padding: 0 clamp(24px, 5vw, 72px);
+    gap: 0;
+    padding: 0 88px;
   }
 }
 
@@ -253,9 +245,7 @@ textarea:focus-visible {
 
 @media (min-width: 940px) {
   .login-aside {
-    display: grid;
-    gap: 18px;
-    max-width: 460px;
+    display: block;
     justify-self: start;
   }
 }
@@ -264,9 +254,8 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 22px;
+  margin-bottom: 44px;
   font-weight: 600;
-  letter-spacing: .01em;
 }
 
 .login-aside-mark {
@@ -276,70 +265,100 @@ textarea:focus-visible {
   height: 34px;
   border-radius: 9px;
   color: #fff;
-  /* Знак сети — фирменного цвета, а не служебного синего панели */
   background: var(--brand);
 }
 
 .login-aside-title {
   margin: 0;
-  font-size: clamp(34px, 3.4vw, 46px);
+  max-width: 12ch;
+  font-size: 44px;
   font-weight: 700;
   line-height: 1.06;
   letter-spacing: -.03em;
-  text-wrap: balance;
 }
 
 .login-aside-copy {
-  margin: 0;
-  max-width: 36ch;
-  color: rgba(246, 241, 236, .78);
+  margin: 18px 0 0;
+  max-width: 34ch;
+  color: #C9BCB2;
   font-size: 15px;
-  line-height: 24px;
+  line-height: 23px;
 }
 
+/* Карточка всегда светлая: она лежит на тёмном снимке, и в тёмной теме
+   становилась бы пятном на пятне */
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 374px;
+  max-width: 340px;
   justify-self: end;
   display: grid;
-  gap: 16px;
+  gap: 0;
   padding: 30px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .96);
+  border: 0;
   border-radius: 16px;
   box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .7);
+  color: #1B1614;
+}
+
+.login-head {
+  margin-bottom: 24px;
+}
+
+.login-title {
+  margin: 0 0 4px;
+  color: #1B1614;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+.login-copy {
+  margin: 0;
+  color: #6B5F58;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.login-card .field {
+  margin-bottom: 14px;
+}
+
+.login-card .field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #6B5F58;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.login-card .input {
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid #DDD6CE;
+  border-radius: 8px;
+  color: #1B1614;
+  background: #fff;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.login-card .input::placeholder {
+  color: #9C8F86;
 }
 
 .login-card .input:focus,
 .login-card .input:focus-visible {
   border-color: var(--brand);
-  outline: 2px solid color-mix(in srgb, var(--brand) 26%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--brand) 22%, transparent);
   outline-offset: 1px;
 }
 
-/* Панель вся из плотных мелких элементов, но вход — не таблица заказов:
-   поля здесь выше, буквы крупнее, кнопка фирменного цвета сети, а не
-   служебного синего, которым покрашены действия внутри */
-.login-card .field-label {
-  font-size: 12px;
-}
-
-.login-card .input {
-  min-height: 42px;
-  padding: 10px 12px;
-  border-radius: 9px;
-  font-size: 14px;
-}
-
-.login-card .input-affix .input {
-  padding-right: 40px;
-}
-
 .login-card .button {
-  min-height: 44px;
-  margin-top: 4px;
-  border-radius: 9px;
+  width: 100%;
+  min-height: 42px;
+  border-radius: 8px;
   font-size: 14px;
 }
 
@@ -354,26 +373,8 @@ textarea:focus-visible {
   border-color: color-mix(in srgb, var(--brand) 88%, #000);
 }
 
-.login-head {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-
-.login-title {
-  margin: 0;
-  color: var(--ink);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 28px;
-  letter-spacing: -.01em;
-}
-
-.login-copy {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 13px;
-  line-height: 20px;
+.login-card .form-error {
+  margin-bottom: 14px;
 }
 
 /* Марка сети в шапке панели */
@@ -394,39 +395,6 @@ textarea:focus-visible {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0;
-}
-
-/* Поле с кнопкой внутри — показать пароль */
-.input-affix {
-  position: relative;
-  display: block;
-}
-
-.input-affix .input {
-  width: 100%;
-  padding-right: 38px;
-}
-
-.input-affix-button {
-  position: absolute;
-  top: 50%;
-  right: 6px;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: var(--ink-3);
-  background: transparent;
-  cursor: pointer;
-  transform: translateY(-50%);
-}
-
-.input-affix-button:hover {
-  color: var(--ink);
-  background: var(--sunken);
 }
 
 .form-error {
