@@ -6,7 +6,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockKeyhole } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole } from "lucide-react";
 import {
   Suspense,
   lazy,
@@ -233,6 +233,7 @@ const HALL_SHOT = "/media/restaurants/89222a09da2cb58b14e83eee.webp";
 function Login({ onDone }: { onDone: (token: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [visible, setVisible] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   const [hall, setHall] = useState<string | null>(mediaUrl(HALL_SHOT));
@@ -302,10 +303,9 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
         >
           <img alt={tenant.branding.displayName} className="login-logo" src={wordmark} />
 
-          <div className="login-head">
-            <h1 className="login-title">Вход</h1>
-            <p className="login-copy">Для сотрудников сети</p>
-          </div>
+          {/* Логотип уже сказал, чья это панель. Крупный заголовок «Вход» рядом
+              с ним спорил за внимание, поэтому осталась тонкая подпись-разделитель */}
+          <h1 className="login-head">Вход для сотрудников</h1>
 
           <label className="field">
             <span className="field-label">Логин</span>
@@ -324,15 +324,26 @@ function Login({ onDone }: { onDone: (token: string) => void }) {
 
           <label className="field">
             <span className="field-label">Пароль</span>
-            <input
-              autoComplete="current-password"
-              className="input"
-              name="password"
-              placeholder="••••••••"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
+            <div className="input-affix">
+              <input
+                autoComplete="current-password"
+                className="input"
+                name="password"
+                placeholder="••••••••"
+                type={visible ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
+                className="input-affix-button"
+                tabIndex={-1}
+                type="button"
+                onClick={() => setVisible((shown) => !shown)}
+              >
+                {visible ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+              </button>
+            </div>
           </label>
 
           {failure ? (

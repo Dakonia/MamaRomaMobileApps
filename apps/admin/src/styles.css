@@ -298,24 +298,46 @@ textarea:focus-visible {
   margin: 0 auto 24px;
 }
 
+/* Подпись-разделитель между логотипом и полями: тонкая линия по бокам,
+   мелкие разрядистые буквы. Заголовок в полный кегль спорил с логотипом */
 .login-head {
-  margin-bottom: 26px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 24px;
+  color: #A0938A;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  line-height: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
+.login-head::before,
+.login-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #E7DFD7;
+}
+
+/* Заголовки на других экранах входа — ошибка, ожидание — остаются обычными */
 .login-title {
   margin: 0 0 4px;
   color: #1B1614;
   font-size: 22px;
   font-weight: 700;
   line-height: 28px;
+  text-align: center;
 }
 
 .login-copy {
-  margin: 0;
+  margin: 0 0 20px;
   color: #6B5F58;
   font-size: 13px;
   line-height: 20px;
+  text-align: center;
 }
 
 .login-card .field {
@@ -373,6 +395,40 @@ textarea:focus-visible {
 
 .login-card .form-error {
   margin-bottom: 14px;
+}
+
+/* Поле с кнопкой внутри: глазок показать пароль. Кнопка лежит поверх поля
+   справа, поэтому самому полю нужен запас, чтобы текст под неё не заезжал */
+.input-affix {
+  position: relative;
+  display: block;
+}
+
+.input-affix .input {
+  width: 100%;
+  padding-right: 46px;
+}
+
+.input-affix-button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: #9C8F86;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.input-affix-button:hover {
+  color: #1B1614;
+  background: #F3EDE7;
 }
 
 /* Марка сети в шапке панели */
