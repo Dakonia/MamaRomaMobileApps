@@ -13444,3 +13444,214 @@ textarea:focus-visible {
   background: var(--ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
 }
+
+/* ─────────────── Журнал действий ─────────────── */
+
+.audit-feed {
+  display: grid;
+  gap: 20px;
+}
+
+.audit-day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.audit-day-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-transform: capitalize;
+}
+
+.audit-day-head span {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sunken);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.audit-day-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.audit-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 8px;
+}
+
+.audit-item:hover {
+  background: var(--sunken);
+}
+
+/* Нить времени: связывает события одного дня в ленту */
+.audit-item::before {
+  content: "";
+  position: absolute;
+  top: 34px;
+  bottom: -2px;
+  left: 23px;
+  width: 1px;
+  background: var(--line);
+}
+
+.audit-item:last-child::before {
+  display: none;
+}
+
+.audit-mark {
+  position: relative;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-3);
+}
+
+/* Цвет отметки говорит, что случилось: завели, поправили или удалили */
+.audit-item[data-tone="new"] .audit-mark {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+  background: var(--ok-sub);
+  color: var(--ok);
+}
+
+.audit-item[data-tone="edit"] .audit-mark {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+  background: var(--warn-sub);
+  color: var(--warn);
+}
+
+.audit-item[data-tone="gone"] .audit-mark {
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--line));
+  background: var(--bad-sub);
+  color: var(--bad);
+}
+
+.audit-body {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding-top: 3px;
+}
+
+.audit-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audit-line strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.audit-section {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--sunken);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.audit-summary {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.audit-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.audit-avatar {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--acc-sub);
+  color: var(--acc);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.audit-who {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.audit-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+
+.audit-ip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+@media (max-width: 640px) {
+  .audit-item {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 10px;
+    padding-left: 8px;
+  }
+
+  .audit-mark {
+    width: 24px;
+    height: 24px;
+  }
+
+  .audit-item::before {
+    top: 30px;
+    left: 19px;
+  }
+
+  .audit-ip {
+    display: none;
+  }
+}
