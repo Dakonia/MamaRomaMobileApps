@@ -217,6 +217,25 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
 
         <StatusSwitch enabled={draft.is_enabled} onChange={(is_enabled) => setDraft({ ...draft, is_enabled })} />
 
+        {/* Пока шаг не настроен вручную, на самовывозе может действовать своя
+            заготовка — менеджер должен видеть, что уходит гостю на самом деле */}
+        {rule.pickup_title && !dirty ? (
+          <div className="order-status-pickup">
+            <Badge
+              text={rule.pickup_enabled ? "на самовывозе push включён" : "на самовывозе тихо"}
+              tone={rule.pickup_enabled ? "ok" : "muted"}
+            />
+            <div>
+              <strong>{rule.pickup_title}</strong>
+              <span>{rule.pickup_body}</span>
+            </div>
+            <p className="row-sub">
+              Гость едет за заказом сам, поэтому текст другой. Сохраните свой — и он
+              заменит оба.
+            </p>
+          </div>
+        ) : null}
+
         <div className="order-status-compose">
           <label className="field">
             <span className="field-label">Заголовок</span>

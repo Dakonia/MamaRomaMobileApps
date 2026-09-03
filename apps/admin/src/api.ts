@@ -478,6 +478,10 @@ export type NotificationRule = {
   is_enabled: boolean;
   title: string;
   body: string;
+  /** Что уходит на самовывозе, если на этом шаге текст свой. */
+  pickup_enabled?: boolean | null;
+  pickup_title?: string | null;
+  pickup_body?: string | null;
 };
 
 export type QuietHours = {

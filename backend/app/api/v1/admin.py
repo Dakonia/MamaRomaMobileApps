@@ -2109,8 +2109,18 @@ async def notification_rules(
     for event, (enabled, title, body) in push_service.DEFAULT_RULES.items():
         if (None, event.value) in known:
             continue
+
+        pickup = push_service.PICKUP_RULES.get(event)
         result.append(
-            RuleRead(event=event.value, is_enabled=enabled, title=title, body=body)
+            RuleRead(
+                event=event.value,
+                is_enabled=enabled,
+                title=title,
+                body=body,
+                pickup_enabled=pickup[0] if pickup else None,
+                pickup_title=pickup[1] if pickup else None,
+                pickup_body=pickup[2] if pickup else None,
+            )
         )
 
     # События вне цепочки этапов: правка состава на кассе. Правятся там же,

@@ -642,6 +642,13 @@ class RuleRead(BaseModel):
     title: str
     body: str
 
+    # Заготовка для самовывоза, если на этом шаге она своя: гость едет сам, и
+    # ему важно другое. Заполнено, только пока шаг не настроен вручную —
+    # сохранённое правило действует на оба типа заказа
+    pickup_enabled: bool | None = None
+    pickup_title: str | None = None
+    pickup_body: str | None = None
+
 
 class RuleWrite(BaseModel):
     restaurant_id: UUID | None = None

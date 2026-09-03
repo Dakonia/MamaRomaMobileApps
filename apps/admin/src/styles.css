@@ -12114,6 +12114,38 @@ textarea:focus-visible {
 }
 
 /* Вкладки состояний над лентой */
+/* Заготовка самовывоза внутри карточки шага */
+.order-status-pickup {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--ok) 34%, var(--line));
+  border-radius: 8px;
+  background: var(--ok-sub);
+  justify-items: start;
+}
+
+.order-status-pickup > div {
+  display: grid;
+  gap: 2px;
+}
+
+.order-status-pickup strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.order-status-pickup span {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.order-status-pickup p {
+  margin: 0;
+}
+
 .orders-groups {
   align-self: start;
 }
