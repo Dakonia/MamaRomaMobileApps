@@ -10,14 +10,22 @@ from fastapi import (
     File,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
 from sqlalchemy import delete, func, insert, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import SessionDep, StaffDep, TenantDep, require, staff_permissions
-from app.core import cache
+from app.api.deps import (
+    ONLINE_PREFIX,
+    SessionDep,
+    StaffDep,
+    TenantDep,
+    require,
+    staff_permissions,
+)
+from app.core import audit, cache
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.permissions import (
@@ -31,6 +39,7 @@ from app.core.permissions import (
 )
 from app.core.security import create_token, hash_password, normalize_phone, verify_password
 from app.core.tenants import Tenant
+from app.models.audit import StaffAuditLog
 from app.models.enums import (
     CampaignStatus,
     IikoHandoffStatus,
@@ -69,6 +78,8 @@ from app.models.staff import StaffUser
 from app.models.sync import SyncChange, SyncRun
 from app.schemas.admin import (
     AudienceQuery,
+    AuditEntry,
+    AuditPage,
     AutomationRead,
     AutomationWrite,
     BridgeRow,
@@ -170,6 +181,18 @@ DUMMY_HASH = hash_password("no-such-account")
 # Что вправе переключить сотрудник с одним лишь restaurants.availability
 AVAILABILITY_FIELDS = frozenset({"is_paused", "pause_reason", "has_delivery", "has_pickup"})
 
+# Как статус называется для человека, читающего журнал
+ORDER_STATUS_TITLES: dict[OrderStatus, str] = {
+    OrderStatus.CREATED: "Оформлен",
+    OrderStatus.PAID: "Оплачен",
+    OrderStatus.ACCEPTED: "Принят",
+    OrderStatus.COOKING: "Готовится",
+    OrderStatus.READY: "Готов",
+    OrderStatus.DELIVERING: "В пути",
+    OrderStatus.COMPLETED: "Выполнен",
+    OrderStatus.CANCELLED: "Отменён",
+}
+
 router = APIRouter(prefix="/admin", tags=["Админка"])
 
 
@@ -221,8 +244,9 @@ async def me(staff: StaffDep) -> StaffRead:
 # --- Сотрудники --------------------------------------------------------------
 
 
-def _staff_read(staff: StaffUser) -> StaffRead:
+def _staff_read(staff: StaffUser, online: bool = False) -> StaffRead:
     return StaffRead(
+        online=online,
         id=staff.id,
         email=staff.email,
         name=staff.name,
@@ -303,12 +327,73 @@ async def _last_owner(session: AsyncSession, tenant: Tenant, staff_id: UUID) -> 
     dependencies=[Depends(require(Permission.STAFF_VIEW))],
 )
 async def staff_list(session: SessionDep, tenant: TenantDep) -> list[StaffRead]:
-    rows = await session.scalars(
-        select(StaffUser)
-        .where(StaffUser.tenant_id == tenant.id)
-        .order_by(StaffUser.is_active.desc(), StaffUser.name)
+    rows = list(
+        await session.scalars(
+            select(StaffUser)
+            .where(StaffUser.tenant_id == tenant.id)
+            .order_by(StaffUser.is_active.desc(), StaffUser.name)
+        )
     )
-    return [_staff_read(row) for row in rows]
+
+    online = {
+        row.id
+        for row in rows
+        if await cache.get_json(f"{ONLINE_PREFIX}{tenant.id}:{row.id}")
+    }
+
+    return [_staff_read(row, row.id in online) for row in rows]
+
+
+@router.get(
+    "/audit",
+    summary="Журнал действий сотрудников",
+    dependencies=[Depends(require(Permission.AUDIT_VIEW))],
+)
+async def audit_log(
+    session: SessionDep,
+    tenant: TenantDep,
+    staff_id: Annotated[UUID | None, Query()] = None,
+    section: Annotated[str | None, Query(max_length=32)] = None,
+    search: Annotated[str, Query(max_length=120)] = "",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AuditPage:
+    await audit.cleanup_old()
+
+    query = select(StaffAuditLog).where(StaffAuditLog.tenant_id == tenant.id)
+
+    if staff_id is not None:
+        query = query.where(StaffAuditLog.staff_id == staff_id)
+    if section:
+        query = query.where(StaffAuditLog.section == section)
+    if search.strip():
+        needle = f"%{search.strip().lower()}%"
+        query = query.where(
+            or_(
+                func.lower(StaffAuditLog.title).like(needle),
+                func.lower(StaffAuditLog.summary).like(needle),
+                func.lower(StaffAuditLog.staff_name).like(needle),
+            )
+        )
+
+    total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
+
+    rows = await session.scalars(
+        query.order_by(StaffAuditLog.created_at.desc()).limit(limit).offset(offset)
+    )
+
+    sections = await session.scalars(
+        select(StaffAuditLog.section)
+        .where(StaffAuditLog.tenant_id == tenant.id)
+        .distinct()
+        .order_by(StaffAuditLog.section)
+    )
+
+    return AuditPage(
+        rows=[AuditEntry.model_validate(row) for row in rows],
+        total=total,
+        sections=list(sections),
+    )
 
 
 @router.get(
@@ -346,6 +431,7 @@ async def staff_catalog() -> PermissionCatalog:
     dependencies=[Depends(require(Permission.STAFF_MANAGE))],
 )
 async def staff_create(
+    request: Request,
     payload: StaffCreate,
     session: SessionDep,
     tenant: TenantDep,
@@ -373,6 +459,12 @@ async def staff_create(
     await session.commit()
     await session.refresh(row)
 
+    audit.describe(
+        request,
+        f"Завёл сотрудника {row.name} ({row.email}), роль «{ROLE_TITLES[row.role]}»",
+        object_id=str(row.id),
+    )
+
     return _staff_read(row)
 
 
@@ -382,6 +474,7 @@ async def staff_create(
     dependencies=[Depends(require(Permission.STAFF_MANAGE))],
 )
 async def staff_update(
+    request: Request,
     staff_id: UUID,
     payload: StaffUpdate,
     session: SessionDep,
@@ -427,6 +520,9 @@ async def staff_update(
 
     await session.commit()
     await session.refresh(row)
+
+    changed_titles = ", ".join(sorted(changes)) or "ничего"
+    audit.describe(request, f"Изменил у {row.name}: {changed_titles}", object_id=str(row.id))
 
     return _staff_read(row)
 
@@ -1028,6 +1124,7 @@ async def edit_order_items(
     dependencies=[Depends(require(Permission.ORDERS_STATUS))],
 )
 async def set_order_status(
+    request: Request,
     order_id: UUID,
     payload: OrderStatusWrite,
     session: SessionDep,
@@ -1047,6 +1144,13 @@ async def set_order_status(
         and Permission.ORDERS_CANCEL not in staff_permissions(staff)
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет права отменять заказы")
+
+    audit.describe(
+        request,
+        f"Заказ №{order.number}: статус «{ORDER_STATUS_TITLES.get(payload.status, payload.status)}»"
+        + (f" · {payload.cancel_reason}" if payload.cancel_reason else ""),
+        object_id=str(order.id),
+    )
 
     now = datetime.now(UTC)
     order.status = payload.status
@@ -1700,13 +1804,14 @@ async def update_guest(
     dependencies=[Depends(require(Permission.GUESTS_POINTS))],
 )
 async def adjust_guest_points(
+    request: Request,
     guest_id: UUID,
     payload: GuestPointsAdjust,
     session: SessionDep,
     tenant: TenantDep,
     staff: StaffDep,
 ) -> GuestPointsRead:
-    await _guest_or_404(session, tenant, guest_id)
+    guest = await _guest_or_404(session, tenant, guest_id)
     if payload.points == 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Укажите количество баллов")
 
@@ -1717,6 +1822,14 @@ async def adjust_guest_points(
     balance_after = account.points_balance + payload.points
     if balance_after < 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя списать больше текущего баланса")
+
+    who = guest.name or guest.phone
+    verb = "Начислил" if payload.points > 0 else "Списал"
+    audit.describe(
+        request,
+        f"{verb} {abs(payload.points)} б. гостю {who}, стало {balance_after}"
+        + (f" · {payload.comment}" if payload.comment else ""),
+    )
 
     account.points_balance = balance_after
     transaction = LoyaltyTransaction(
@@ -2832,6 +2945,7 @@ async def campaign_audience(
     dependencies=[Depends(require(Permission.CAMPAIGNS_SEND))],
 )
 async def send_campaign_now(
+    request: Request,
     campaign_id: UUID,
     session: SessionDep,
     tenant: TenantDep,
@@ -2846,6 +2960,13 @@ async def send_campaign_now(
 
     await campaign_service.send_campaign(session, tenant, campaign, force=force)
     await session.refresh(campaign)
+
+    audit.describe(
+        request,
+        f"Отправил рассылку «{campaign.title}» на {campaign.sent_count} гостей",
+        object_id=str(campaign.id),
+    )
+
     return CampaignRead.model_validate(campaign)
 
 

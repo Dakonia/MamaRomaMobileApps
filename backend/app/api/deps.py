@@ -1,11 +1,12 @@
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import cache
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.permissions import WEB_ADMIN_ROLES, Permission, permissions_for
@@ -15,6 +16,10 @@ from app.models.guest import Guest
 from app.models.staff import StaffUser
 
 bearer = HTTPBearer(auto_error=False)
+
+# «Сейчас в админке» — отметка в Redis, которую продлевает каждый запрос сотрудника
+ONLINE_PREFIX = "staff-online:"
+ONLINE_TTL_SECONDS = 300
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -64,6 +69,7 @@ GuestDep = Annotated[Guest, Depends(get_current_guest)]
 
 
 async def get_current_staff(
+    request: Request,
     session: SessionDep,
     tenant: TenantDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)] = None,
@@ -88,6 +94,8 @@ async def get_current_staff(
     if staff.role not in WEB_ADMIN_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта роль не работает в админке")
 
+    await mark_seen(request, staff)
+
     return staff
 
 
@@ -98,19 +106,32 @@ def staff_permissions(staff: StaffUser) -> frozenset[Permission]:
     return permissions_for(staff.role, staff.permissions)
 
 
-def require(*needed: Permission) -> Callable[[StaffUser], Awaitable[StaffUser]]:
+async def mark_seen(request: Request, staff: StaffUser) -> None:
+    """Отметить сотрудника: кто сделал запрос и что он сейчас в админке.
+
+    Ставится в `require`, через который проходит каждая защищённая ручка, —
+    так журнал не зависит от того, как именно получен сотрудник.
+    """
+    request.state.staff = staff
+    await cache.set_json(
+        f"{ONLINE_PREFIX}{staff.tenant_id}:{staff.id}", True, ONLINE_TTL_SECONDS
+    )
+
+
+def require(*needed: Permission) -> Callable[..., Awaitable[StaffUser]]:
     """Ручка требует всех перечисленных прав.
 
     Ставится рядом со `StaffDep`, а не вместо него: сотрудник в теле ручки
     по-прежнему нужен, чтобы записать, кто выполнил действие.
     """
 
-    async def guard(staff: StaffDep) -> StaffUser:
+    async def guard(request: Request, staff: StaffDep) -> StaffUser:
         # Роль может иметь права и всё же не работать в вебе: у курьера свой
         # набор для приложения, но админка не его место
         if staff.role not in WEB_ADMIN_ROLES:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта роль не работает в админке")
 
+        await mark_seen(request, staff)
         granted = staff_permissions(staff)
         missing = [item for item in needed if item not in granted]
         if missing:

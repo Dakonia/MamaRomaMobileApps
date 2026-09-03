@@ -84,6 +84,33 @@ export type Staff = {
   overrides: Record<string, boolean>;
   restaurant_ids: string[];
   last_login_at: string | null;
+  /** Заходил в админку меньше пяти минут назад */
+  online: boolean;
+};
+
+export type AuditEntry = {
+  id: string;
+  staff_id: string | null;
+  staff_name: string;
+  staff_role: StaffRole;
+  section: string;
+  title: string;
+  summary: string | null;
+  method: string;
+  path: string;
+  object_id: string | null;
+  ip: string | null;
+  created_at: string;
+};
+
+export type AuditPage = { rows: AuditEntry[]; total: number; sections: string[] };
+
+export type AuditQuery = {
+  staff_id?: string;
+  section?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
 };
 
 export type StaffDraft = {
@@ -751,6 +778,14 @@ export const api = {
   updateStaff: (id: string, patch: StaffPatch) =>
     request<Staff>(`/admin/staff/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteStaff: (id: string) => request<void>(`/admin/staff/${id}`, { method: "DELETE" }),
+  audit: (query: AuditQuery = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    }
+    const tail = params.toString();
+    return request<AuditPage>(`/admin/audit${tail ? `?${tail}` : ""}`);
+  },
 
   categories: () => request<Category[]>("/admin/categories"),
   createCategory: (payload: { name: string; slug: string; sort_order: number }) =>

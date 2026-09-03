@@ -1,13 +1,14 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.v1 import api_router
+from app.core import audit
 from app.core.config import settings
 from app.core.db import engine
 
@@ -26,6 +27,30 @@ app = FastAPI(
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def write_audit_log(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Каждое изменение в админке попадает в журнал.
+
+    Пишем здесь, а не в самих ручках: восемьдесят с лишним ручек — и в любой
+    новой запись появится сама, забыть про неё нельзя. Подробности ручки
+    добавляют через `audit.describe`.
+    """
+    response = await call_next(request)
+
+    staff = getattr(request.state, "staff", None)
+    if (
+        staff is not None
+        and request.method in audit.WRITE_METHODS
+        and request.url.path not in audit.SKIP_PATHS
+        and response.status_code < 400
+    ):
+        await audit.record(request, staff, response.status_code)
+
+    return response
+
 
 # Меню сети — это триста килобайт JSON на каждое обновление. В сжатом виде их
 # около сорока: на телефоне разница между «моргнуло» и «висит секунду»

@@ -1871,7 +1871,8 @@ textarea:focus-visible {
 }
 
 .detail-drawer.reservation-drawer,
-.detail-drawer.feedback-drawer {
+.detail-drawer.feedback-drawer,
+.detail-drawer.staff-drawer {
   position: fixed;
   top: 0;
   right: 0;
@@ -1890,19 +1891,22 @@ textarea:focus-visible {
 }
 
 .detail-drawer.reservation-drawer .drawer-head,
-.detail-drawer.feedback-drawer .drawer-head {
+.detail-drawer.feedback-drawer .drawer-head,
+.detail-drawer.staff-drawer .drawer-head {
   flex: 0 0 auto;
 }
 
 .detail-drawer.reservation-drawer .drawer-body,
-.detail-drawer.feedback-drawer .drawer-body {
+.detail-drawer.feedback-drawer .drawer-body,
+.detail-drawer.staff-drawer .drawer-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }
 
 .detail-drawer.reservation-drawer .drawer-foot,
-.detail-drawer.feedback-drawer .drawer-foot {
+.detail-drawer.feedback-drawer .drawer-foot,
+.detail-drawer.staff-drawer .drawer-foot {
   position: static;
   flex: 0 0 auto;
 }
@@ -12503,7 +12507,8 @@ textarea:focus-visible {
   .promo-code-drawer-shell,
   .campaign-drawer-shell,
   .detail-drawer.reservation-drawer,
-  .detail-drawer.feedback-drawer {
+  .detail-drawer.feedback-drawer,
+  .detail-drawer.staff-drawer {
     width: 100vw;
     max-width: 100vw;
   }
@@ -13038,7 +13043,8 @@ textarea:focus-visible {
   }
 
   .detail-drawer.reservation-drawer,
-  .detail-drawer.feedback-drawer {
+  .detail-drawer.feedback-drawer,
+  .detail-drawer.staff-drawer {
     width: 100vw;
   }
 
@@ -13286,228 +13292,155 @@ textarea:focus-visible {
 
 /* ─────────────── Сотрудники и права ─────────────── */
 
-.staff-grid {
+.staff-count {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) 1fr;
-  gap: 16px;
-  align-items: start;
+  gap: 1px;
+  justify-items: end;
 }
 
-.staff-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.staff-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  padding: 12px 14px;
-  text-align: left;
-  cursor: pointer;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-admin-xl);
-  background: var(--surface);
-  box-shadow: var(--sh-1);
-}
-
-.staff-card:hover {
-  border-color: var(--line-2);
-}
-
-.staff-card[data-active="true"] {
-  border-color: var(--acc);
-  background: var(--acc-sub);
-}
-
-.staff-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.staff-card-mail,
-.staff-card-foot {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-.staff-card-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.staff-count span {
   color: var(--ink-3);
-}
-
-.staff-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-admin-xl);
-  background: var(--surface);
-  box-shadow: var(--sh-1);
-}
-
-.staff-detail-empty {
-  align-items: center;
-  justify-content: center;
-  min-height: 220px;
-  color: var(--ink-3);
-  text-align: center;
-}
-
-.staff-detail-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.staff-detail-head h3 {
-  margin: 0 0 2px;
-  font-size: 17px;
-}
-
-.staff-detail-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.staff-role-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 420px;
-}
-
-.staff-role-row > span {
-  min-width: 44px;
-  font-size: 13px;
-  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .staff-owner-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 12px 14px;
-  font-size: 14px;
-  color: var(--acc);
-  background: var(--acc-sub);
-  border-radius: var(--radius-admin-lg);
-}
-
-.staff-permissions {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.staff-permissions-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.staff-permission-group {
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-admin-lg);
-}
-
-.staff-permission-group legend {
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.staff-permission {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   gap: 10px;
-  padding: 5px 0;
-  font-size: 14px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--acc) 30%, var(--line));
+  border-radius: 8px;
+  background: var(--acc-sub);
+  color: var(--acc);
 }
 
-.staff-permission input:disabled + span {
-  color: var(--ink-3);
-}
-
-/* Отличие от набора роли: видно, что право трогали руками */
-.staff-permission[data-changed="true"] > span::after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-left: 7px;
-  vertical-align: 2px;
-  border-radius: 50%;
-  background: var(--warn);
-}
-
-.staff-draft {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 420px;
-  margin-top: 16px;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-admin-xl);
-  background: var(--surface);
-  box-shadow: var(--sh-2);
-}
-
-.staff-draft-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.staff-draft-head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.staff-draft label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 13px;
+.staff-owner-note .row-sub {
   color: var(--ink-2);
 }
 
-.staff-draft input {
-  padding: 9px 11px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--ink);
+.drawer-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.staff-group {
+  display: grid;
+  gap: 6px;
+}
+
+.staff-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.staff-group-count {
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--acc);
+}
+
+.staff-group-count[data-empty="true"] {
+  color: var(--ink-3);
+}
+
+.staff-permission-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.staff-permission {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-admin-md);
+  cursor: pointer;
 }
 
-.staff-draft input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+.staff-permission:hover {
+  border-color: var(--line-2);
+  background: var(--sunken);
 }
 
-@media (max-width: 900px) {
-  .staff-grid {
-    grid-template-columns: 1fr;
-  }
+.staff-permission[data-checked="true"] {
+  border-color: color-mix(in srgb, var(--acc) 34%, var(--line));
+  background: var(--acc-sub);
+}
+
+/* Право отличается от набора роли — его трогали руками */
+.staff-permission[data-overridden="true"] {
+  border-color: color-mix(in srgb, var(--warn) 46%, var(--line));
+}
+
+.staff-permission[data-locked="true"] {
+  cursor: default;
+  opacity: .62;
+}
+
+.staff-permission[data-locked="true"]:hover {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.staff-permission input {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  accent-color: var(--acc);
+}
+
+.staff-permission-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.staff-permission .row-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: -.01em;
+}
+
+.staff-permission svg {
+  margin-top: 3px;
+  color: var(--ink-3);
+}
+
+.staff-online {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.staff-online i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
 }

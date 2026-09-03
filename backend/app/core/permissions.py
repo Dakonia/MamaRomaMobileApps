@@ -15,6 +15,7 @@ from app.models.enums import StaffRole
 class Permission(StrEnum):
     STAFF_VIEW = "staff.view"
     STAFF_MANAGE = "staff.manage"
+    AUDIT_VIEW = "audit.view"
 
     ORDERS_VIEW = "orders.view"
     ORDERS_STATUS = "orders.status"
@@ -72,6 +73,7 @@ OWNER_ONLY: frozenset[Permission] = frozenset({Permission.STAFF_MANAGE, Permissi
 _NETWORK_MANAGER = frozenset(
     {
         Permission.STAFF_VIEW,
+        Permission.AUDIT_VIEW,
         Permission.ORDERS_VIEW,
         Permission.ORDERS_STATUS,
         Permission.ORDERS_EDIT_ITEMS,
@@ -199,6 +201,7 @@ ROLE_TITLES: dict[StaffRole, str] = {
 PERMISSION_TITLES: dict[Permission, tuple[str, str]] = {
     Permission.STAFF_VIEW: ("Сотрудники", "Смотреть список сотрудников"),
     Permission.STAFF_MANAGE: ("Сотрудники", "Заводить, менять роли и права"),
+    Permission.AUDIT_VIEW: ("Сотрудники", "Смотреть журнал действий"),
     Permission.ORDERS_VIEW: ("Заказы", "Смотреть заказы и карточку"),
     Permission.ORDERS_STATUS: ("Заказы", "Менять статус"),
     Permission.ORDERS_EDIT_ITEMS: ("Заказы", "Менять состав заказа"),

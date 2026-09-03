@@ -17,6 +17,7 @@ from app.api.deps import get_current_staff, get_session
 from app.core.permissions import OWNER_ONLY, Permission, permissions_for
 from app.core.security import hash_password
 from app.main import app
+from app.models.audit import StaffAuditLog
 from app.models.enums import OrderStatus, OrderType, PaymentMethod, StaffRole
 from app.models.geo import Restaurant
 from app.models.guest import Guest
@@ -229,6 +230,8 @@ async def acting_owner(session: AsyncSession) -> AsyncGenerator[StaffUser]:
 
     app.dependency_overrides.clear()
     await session.rollback()
+    # Действия этого владельца попали в журнал — убираем и их
+    await session.execute(delete(StaffAuditLog).where(StaffAuditLog.staff_id == row_id))
     await session.execute(delete(StaffUser).where(StaffUser.id == row_id))
     await session.commit()
 

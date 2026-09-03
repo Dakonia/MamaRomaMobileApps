@@ -37,6 +37,8 @@ class StaffRead(BaseModel):
     overrides: dict[str, bool] = {}
     restaurant_ids: list[str] = []
     last_login_at: datetime | None = None
+    # Заходил в админку меньше пяти минут назад
+    online: bool = False
 
 
 class StaffSession(BaseModel):
@@ -61,6 +63,29 @@ class StaffUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=10, max_length=72)
     overrides: dict[str, bool] | None = None
     restaurant_ids: list[str] | None = None
+
+
+class AuditEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    staff_id: UUID | None
+    staff_name: str
+    staff_role: StaffRole
+    section: str
+    title: str
+    summary: str | None
+    method: str
+    path: str
+    object_id: str | None
+    ip: str | None
+    created_at: datetime
+
+
+class AuditPage(BaseModel):
+    rows: list[AuditEntry]
+    total: int
+    sections: list[str]
 
 
 class PermissionInfo(BaseModel):

@@ -13,6 +13,7 @@ import {
   Network,
   ReceiptText,
   RefreshCw,
+  ScrollText,
   Settings2,
   Store,
   UserCog,
@@ -37,7 +38,8 @@ export type AdminPath =
   | "/zones"
   | "/iiko"
   | "/sync"
-  | "/staff";
+  | "/staff"
+  | "/audit";
 
 export type NavItem = {
   path: AdminPath;
@@ -174,6 +176,14 @@ export const NAV_ITEMS: NavItem[] = [
     icon: UserCog,
     description: "Доступы, роли и права",
     permission: "staff.view",
+  },
+  {
+    path: "/audit",
+    label: "Журнал",
+    section: "system",
+    icon: ScrollText,
+    description: "Кто что менял в админке",
+    permission: "audit.view",
   },
 ];
 

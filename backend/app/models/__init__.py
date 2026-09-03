@@ -1,3 +1,4 @@
+from app.models.audit import StaffAuditLog
 from app.models.auth import PhoneCode
 from app.models.enums import (
     DevicePlatform,
@@ -74,6 +75,7 @@ __all__ = [
     "ReservationStatus",
     "Restaurant",
     "RestaurantPhoto",
+    "StaffAuditLog",
     "StaffRole",
     "StaffUser",
     "StopListEntry",
