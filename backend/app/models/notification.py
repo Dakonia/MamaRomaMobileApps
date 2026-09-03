@@ -8,7 +8,16 @@
 from datetime import datetime, time
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Time, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,13 +39,16 @@ class NotificationRule(UUIDMixin, TenantMixin, TimestampMixin, Base):
 
     __tablename__ = "notification_rules"
     __table_args__ = (
-        UniqueConstraint(
+        # Уникальность по выражениям: NULL в Postgres друг другу не равны, и
+        # обычное ограничение пропустило бы второе сетевое правило или второе
+        # общее по способу получения
+        Index(
+            "uq_notification_rules_scope",
             "tenant_id",
-            "restaurant_id",
+            text("coalesce(restaurant_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
             "event",
-            "order_type",
-            name="uq_notification_rules_scope",
-            postgresql_nulls_not_distinct=True,
+            text("coalesce(order_type, '')"),
+            unique=True,
         ),
     )
 
