@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
-import { track } from '@/lib/analytics';
+import { track, trackCartAdd, trackCartRemove } from '@/lib/analytics';
+import type { SoldItem } from '@/lib/analytics';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { Dish } from '@/api/client';
@@ -23,6 +24,11 @@ export type CartItem = {
 export function itemPrice(item: CartItem): number {
   const extras = item.extras ?? [];
   return item.priceKopecks + extras.reduce((sum, extra) => sum + extra.priceKopecks, 0);
+}
+
+/** Строка корзины в виде, который уходит в товарные отчёты аналитики. */
+export function soldItem(item: CartItem, quantity = item.quantity): SoldItem {
+  return { sku: item.dishId, name: item.name, priceKopecks: itemPrice(item), quantity };
 }
 
 /** Один и тот же набор добавок даёт один ключ независимо от порядка выбора. */
@@ -153,15 +159,26 @@ export const useCart = create<CartState>()(
 
       /** Убрать из корзины всё, что сейчас недоступно. */
       dropItems: (keys) =>
-        set((state) => ({ items: state.items.filter((item) => !keys.includes(item.key)) })),
+        set((state) => {
+          for (const item of state.items) {
+            if (keys.includes(item.key)) trackCartRemove(soldItem(item));
+          }
+
+          return { items: state.items.filter((item) => !keys.includes(item.key)) };
+        }),
 
       add: (dish, extras = []) =>
         set((state) => {
+          const withExtras =
+            dish.price_kopecks + extras.reduce((sum, extra) => sum + extra.priceKopecks, 0);
+
           track('dish_added', {
             dish: dish.name,
             price: Math.round(dish.price_kopecks / 100),
             extras: extras.length,
           });
+
+          trackCartAdd({ sku: dish.id, name: dish.name, priceKopecks: withExtras, quantity: 1 });
 
           const key = lineKey(dish.id, extras);
           const existing = state.items.find((item) => item.key === key);
@@ -192,12 +209,24 @@ export const useCart = create<CartState>()(
       repeat: (restaurantId, items) => set({ restaurantId, items }),
 
       setQuantity: (key, quantity) =>
-        set((state) => ({
-          items:
-            quantity <= 0
-              ? state.items.filter((item) => item.key !== key)
-              : state.items.map((item) => (item.key === key ? { ...item, quantity } : item)),
-        })),
+        set((state) => {
+          // Кнопки «+» и «−» в корзине: без них товарная воронка разъедется —
+          // добавления считались бы, а отказы нет
+          const line = state.items.find((item) => item.key === key);
+
+          if (line !== undefined && quantity !== line.quantity) {
+            const delta = Math.max(0, quantity) - line.quantity;
+            if (delta > 0) trackCartAdd(soldItem(line, delta));
+            else trackCartRemove(soldItem(line, -delta));
+          }
+
+          return {
+            items:
+              quantity <= 0
+                ? state.items.filter((item) => item.key !== key)
+                : state.items.map((item) => (item.key === key ? { ...item, quantity } : item)),
+          };
+        }),
 
       clear: () => set({ items: [] }),
 

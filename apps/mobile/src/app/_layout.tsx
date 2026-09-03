@@ -31,7 +31,7 @@ import { PushInvite } from '@/components/push-invite';
 import { RatingGate } from '@/components/rating-gate';
 import { UpdateReady } from '@/components/update-ready';
 import { UpdateGate } from '@/components/update-gate';
-import { startAnalytics, trackError, trackScreen } from '@/lib/analytics';
+import { startAnalytics, track, trackError, trackScreen } from '@/lib/analytics';
 import * as Notifications from 'expo-notifications';
 
 import { useBoot } from '@/lib/boot';
@@ -81,10 +81,19 @@ export default function RootLayout() {
      * новые сценарии добавляются в админке, а не переписыванием приложения.
      */
     const open = (raw: Record<string, unknown> | undefined) => {
-      const screen = typeof raw?.screen === 'string' ? raw.screen : null;
-      const id = typeof raw?.id === 'string' ? raw.id : null;
+      if (raw === undefined) return;
 
-      if (screen === 'order' && typeof raw?.orderId === 'string') {
+      const screen = typeof raw.screen === 'string' ? raw.screen : null;
+      const id = typeof raw.id === 'string' ? raw.id : null;
+
+      // Доставку писем считает Expo, а вот открытия — только мы: без этого
+      // не видно, доводит ли рассылка до заказа
+      track('push_opened', {
+        screen: screen ?? 'unknown',
+        campaign: typeof raw.campaignId === 'string' ? raw.campaignId : null,
+      });
+
+      if (screen === 'order' && typeof raw.orderId === 'string') {
         router.push(`/order/${raw.orderId}`);
         return;
       }

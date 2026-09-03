@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { create } from 'zustand';
 
-import { identify, track } from '@/lib/analytics';
+import { describe, identify, track } from '@/lib/analytics';
 
 import { useCart } from '@/store/cart';
 
@@ -61,6 +61,7 @@ export const useSession = create<SessionState>((set) => ({
     try {
       const profile = await api.me();
       identify(profile.guest.id);
+      describe({ tier: profile.loyalty?.tier_code ?? null });
       set({ status: 'authorized', guest: profile.guest, loyalty: profile.loyalty });
     } catch {
       // Обе стороны пары мертвы — начинаем как аноним, без падений
@@ -76,6 +77,7 @@ export const useSession = create<SessionState>((set) => ({
     await storage.set(REFRESH_KEY, session.refresh_token);
     setTokens(session.access_token, session.refresh_token);
     identify(session.guest.id);
+    describe({ tier: session.loyalty?.tier_code ?? null });
     track('signed_in', { tier: session.loyalty?.tier_code ?? null });
     set({ status: 'authorized', guest: session.guest, loyalty: session.loyalty });
   },

@@ -25,6 +25,7 @@ import { EmptyState } from '@/components/empty-state';
 import { ExtraIcon } from '@/components/extra-icon';
 import { ExtrasSheet } from '@/components/extras-sheet';
 import { PressableScale } from '@/components/pressable-scale';
+import { track, trackProductView } from '@/lib/analytics';
 import { formatPrice, plural } from '@/lib/format';
 import { cartSubtotal, lineKey, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
@@ -134,6 +135,25 @@ export default function DishScreen() {
   const category = menu.data?.categories.find((item) =>
     item.dishes.some((entry) => entry.id === id),
   );
+
+  // Между «зашёл в меню» и «положил в корзину» иначе пусто: не видно, какие
+  // карточки смотрят и не заказывают
+  useEffect(() => {
+    if (dish === undefined) return;
+
+    track('dish_opened', {
+      dish: dish.name,
+      category: category?.name ?? null,
+      price: Math.round(dish.price_kopecks / 100),
+      available: dish.is_available,
+    });
+
+    trackProductView(
+      { sku: dish.id, name: dish.name, priceKopecks: dish.price_kopecks, quantity: 1 },
+      category?.name,
+    );
+    // Один просмотр на одно блюдо: остальные поля меняются вместе с id
+  }, [dish?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [picked, setPicked] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);

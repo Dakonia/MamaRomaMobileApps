@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { track } from '@/lib/analytics';
+import { describe, track } from '@/lib/analytics';
 import { BLOCKED_BY_SETTINGS, disablePush, enablePush, lastPushError } from '@/lib/push';
 import { usePushPermission } from '@/lib/use-push-permission';
 import { usePushAsk } from '@/store/push-ask';
@@ -45,6 +45,7 @@ export function PushSwitch() {
       if (next) {
         const token = await enablePush(true);
         track('push_toggled', { on: token !== null });
+        describe({ pushEnabled: token !== null });
         setFailure(token === null ? lastPushError : null);
 
         if (token === null) {
@@ -55,6 +56,7 @@ export function PushSwitch() {
       } else {
         await disablePush();
         track('push_toggled', { on: false });
+        describe({ pushEnabled: false });
         setFailure(null);
       }
 

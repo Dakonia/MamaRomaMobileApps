@@ -49,9 +49,9 @@ import { Skeleton } from '@/components/skeleton';
 import { formatPrice } from '@/lib/format';
 import { keyboardScroll } from '@/lib/keyboard';
 import { tenant } from '@/lib/tenant';
-import { cartCount, cartSubtotal, useCart } from '@/store/cart';
+import { cartCount, cartSubtotal, soldItem, useCart } from '@/store/cart';
 import { usePushAsk } from '@/store/push-ask';
-import { track } from '@/lib/analytics';
+import { track, trackCheckout, trackPurchase, trackRevenue } from '@/lib/analytics';
 import { useSession } from '@/store/session';
 import { useTheme } from '@/theme/theme-provider';
 
@@ -151,6 +151,8 @@ export default function CartScreen() {
   const [extraPortions, setExtraPortions] = useState(1);
   const [flight, setFlight] = useState<FlightStart | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // Оформление и покупка должны прийти в товарную воронку одной парой
+  const checkoutId = useRef<string | null>(null);
   const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const paymentY = useRef(0);
 
@@ -399,9 +401,18 @@ export default function CartScreen() {
       track('checkout_started', {
         type: cart.mode,
         payment,
+        restaurant: bill?.restaurant_name ?? restaurants.data?.name ?? null,
         positions: cart.items.length,
         total: Math.round((bill?.total_kopecks ?? 0) / 100),
       });
+
+      // Товарная воронка склеивает оформление с покупкой по одному
+      // идентификатору, а номер заказа появится только после ответа сервера
+      checkoutId.current = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      trackCheckout(
+        checkoutId.current,
+        cart.items.map((item) => soldItem(item)),
+      );
 
       return api.createOrder({
         restaurant_id: cart.restaurantId ?? '',
@@ -430,14 +441,29 @@ export default function CartScreen() {
       });
     },
     onSuccess: (order) => {
-      track('order_created', {
+      const facts = {
         type: order.type,
         payment: order.payment_method,
+        restaurant: order.restaurant_name,
         // Деньги в аналитике храним в рублях: копейки там нечитаемы
         total: Math.round(order.total_kopecks / 100),
         points_spent: Math.round((order.points_spent ?? 0) / 100),
         promo: order.promo_code ?? null,
-      });
+      };
+
+      track('order_created', facts);
+
+      // Отдельным вызовом, иначе выручки не будет в отчёте «Доход»:
+      // сумма внутри события туда не попадает
+      trackRevenue(order.id, order.total_kopecks, { ...facts, number: order.number });
+
+      trackPurchase(
+        checkoutId.current ?? order.id,
+        cart.items.map((item) => soldItem(item)),
+        { number: order.number, restaurant: order.restaurant_name },
+      );
+
+      checkoutId.current = null;
 
       usePushAsk.getState().revive();
       cart.clear();

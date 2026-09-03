@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    trackError(`Экран не отрисовался: ${error.message}`, error);
+    trackError('Экран не отрисовался', error);
   }
 
   render() {
