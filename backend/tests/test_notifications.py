@@ -299,3 +299,12 @@ async def test_pravilo_seti_primenyaetsya(session: AsyncSession, tenant, restaur
 
     assert rule is not None
     assert rule[1] == "Общий заголовок"
+
+
+def test_imya_gostya_ne_uhodit_v_tekst_pisma():
+    """Шаблоны с {name} чистятся: персональные данные не идут через Apple и Google."""
+    assert campaign_service.without_name("С днём рождения, {name}!") == "С днём рождения!"
+    assert campaign_service.without_name("Скучаем, {name}") == "Скучаем"
+    assert campaign_service.without_name("{name}, ваша корзина ждёт") == "Ваша корзина ждёт"
+    assert campaign_service.without_name("{name}") == ""
+    assert campaign_service.without_name("Баллы скоро сгорят") == "Баллы скоро сгорят"

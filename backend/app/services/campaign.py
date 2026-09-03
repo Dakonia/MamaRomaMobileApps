@@ -5,6 +5,7 @@
 заказа, но по другому каналу: рекламу гость может отключить отдельно.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -28,6 +29,24 @@ from app.models.notification import (
 from app.models.order import Order
 from app.models.reservation import Reservation
 from app.services import push as push_service
+
+# Обращение по имени в тексте письма ушло бы через сервис доставки за пределы
+# РФ: уведомления физически доставляют только Apple и Google. Номер заказа и
+# статус — обезличены, имя гостя — нет, поэтому из шаблонов оно вырезается
+NAME_PLACEHOLDER = "{name}"
+
+
+def without_name(text: str) -> str:
+    """Шаблон без имени гостя: «Скучаем, {name}» → «Скучаем»."""
+    result = text.replace(NAME_PLACEHOLDER, "")
+
+    # После выреза остаются висячие запятые и двойные пробелы
+    result = re.sub(r"\s*,\s*([!?.])", r"\1", result)
+    result = re.sub(r"^[\s,;:—–-]+", "", result)
+    result = re.sub(r"\s*,\s*$", "", result)
+    result = re.sub(r"\s{2,}", " ", result).strip()
+
+    return result[:1].upper() + result[1:]
 
 
 async def audience(session: AsyncSession, tenant: Tenant, filters: dict[str, Any]) -> list[Guest]:
@@ -364,8 +383,8 @@ async def run_automation(session: AsyncSession, tenant: Tenant, rule: Automation
         if not tokens:
             continue
 
-        title = rule.title.replace("{name}", guest.name or "")
-        body = rule.body.replace("{name}", guest.name or "")
+        title = without_name(rule.title)
+        body = without_name(rule.body)
 
         delivered = await push_service.send(
             session,

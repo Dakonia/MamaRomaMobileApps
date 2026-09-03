@@ -49,7 +49,7 @@ const KINDS: AutomationKind[] = [
     when: "по дате рождения",
     param: { key: "days_before", label: "За сколько дней", hint: "0 — в сам день", fallback: 3, unit: "дн." },
     target: "loyalty",
-    title: "С днём рождения, {name}!",
+    title: "С днём рождения!",
     body: "Дарим подарок к вашему заказу — загляните в приложение",
     icon: <Gift size={17} aria-hidden />,
   },
@@ -61,7 +61,7 @@ const KINDS: AutomationKind[] = [
     when: "после паузы в заказах",
     param: { key: "days", label: "Дней без заказа", hint: "Обычно 30-45", fallback: 30, unit: "дн." },
     target: "menu",
-    title: "Скучаем, {name}",
+    title: "Скучаем по вам",
     body: "Ваша любимая пицца на месте — и мы придумали пару новинок",
     icon: <Clock3 size={17} aria-hidden />,
   },
@@ -160,8 +160,8 @@ function AutomationPreview({ automation }: { automation: Automation }) {
         <small>авто</small>
       </div>
       <div className="automation-mini-push">
-        <strong>{automation.title.replaceAll("{name}", "Владислав") || "Заголовок"}</strong>
-        <span>{automation.body.replaceAll("{name}", "Владислав") || "Текст уведомления"}</span>
+        <strong>{automation.title || "Заголовок"}</strong>
+        <span>{automation.body || "Текст уведомления"}</span>
       </div>
       <div className="automation-mini-target">
         <Target size={13} aria-hidden />
@@ -292,7 +292,7 @@ function AutomationCard({
         </label>
 
         <div className="automation-card-actions">
-          <span className="toolbar-note">Переменная {`{name}`} заменится именем гостя.</span>
+          <span className="toolbar-note">Имя гостя в тексте не используем: письмо идёт через Apple и Google.</span>
           <Button disabled={save.isPending || !canSave} onClick={() => save.mutate(normalizeAutomation(draft, kind))}>
             <Save size={15} aria-hidden />
             {save.isPending ? "Сохраняем..." : "Сохранить"}

@@ -37,7 +37,8 @@ class NotificationRule(UUIDMixin, TenantMixin, TimestampMixin, Base):
     event: Mapped[str] = mapped_column(String(40))
     is_enabled: Mapped[bool] = mapped_column(default=True)
 
-    # В тексте доступны {number}, {restaurant}, {time}, {name}
+    # В тексте доступны {number}, {restaurant}, {time}. Имени гостя тут быть не
+    # может: письмо идёт через Apple и Google, персональные данные туда не отдаём
     title: Mapped[str] = mapped_column(String(120))
     body: Mapped[str] = mapped_column(String(240))
 
