@@ -8,6 +8,7 @@ from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import CampaignStatus, NotificationKind, OrderStatus
@@ -34,8 +35,12 @@ async def _set_rule(
     )
     if rule is None:
         rule = NotificationRule(
-            tenant_id=tenant.id, restaurant_id=restaurant_id, event=event.value,
-            is_enabled=True, title="", body="",
+            tenant_id=tenant.id,
+            restaurant_id=restaurant_id,
+            event=event.value,
+            is_enabled=True,
+            title="",
+            body="",
         )
         session.add(rule)
 
@@ -45,17 +50,25 @@ async def _set_rule(
     await session.commit()
 
 
-async def test_pravilo_restorana_glavnee_setevogo(
-    session: AsyncSession, tenant, restaurant
-):
+async def test_pravilo_restorana_glavnee_setevogo(session: AsyncSession, tenant, restaurant):
     """У точки могут быть свои порядки: её правило перекрывает общее."""
     await _set_rule(
-        session, tenant, None, OrderStatus.READY,
-        is_enabled=True, title="Общий заголовок", body="Общий текст",
+        session,
+        tenant,
+        None,
+        OrderStatus.READY,
+        is_enabled=True,
+        title="Общий заголовок",
+        body="Общий текст",
     )
     await _set_rule(
-        session, tenant, restaurant.id, OrderStatus.READY,
-        is_enabled=False, title="Своё", body="Своё",
+        session,
+        tenant,
+        restaurant.id,
+        OrderStatus.READY,
+        is_enabled=False,
+        title="Своё",
+        body="Своё",
     )
 
     rule = await push_service.rule_for(session, tenant.id, restaurant.id, OrderStatus.READY)
@@ -82,6 +95,55 @@ async def test_shag_gotovim_po_umolchaniyu_molchit(session: AsyncSession, tenant
 
     assert rule is not None
     assert rule[0] is False
+
+
+async def test_na_samovyvoze_gotovim_govorim(session: AsyncSession, tenant, restaurant):
+    """За заказом ехать самому — значит, начало готовки это сигнал выходить."""
+    from app.models.enums import OrderType
+
+    rule = await push_service.rule_for(
+        session, tenant.id, restaurant.id, OrderStatus.COOKING, OrderType.PICKUP
+    )
+
+    assert rule is not None
+    enabled, title, _ = rule
+    assert enabled is True
+    assert "готовим" in title.lower()
+
+
+async def test_svoj_tekst_pobezhdaet_i_na_samovyvoze(session: AsyncSession, tenant, restaurant):
+    """Настроенное в админке правило главнее заготовки для самовывоза."""
+    from app.models.enums import OrderType
+
+    await _set_rule(
+        session,
+        tenant,
+        restaurant.id,
+        OrderStatus.COOKING,
+        is_enabled=False,
+        title="Молчим",
+        body="Молчим",
+    )
+
+    try:
+        rule = await push_service.rule_for(
+            session, tenant.id, restaurant.id, OrderStatus.COOKING, OrderType.PICKUP
+        )
+
+        assert rule is not None
+        assert rule[0] is False
+        assert rule[1] == "Молчим"
+    finally:
+        # Правило живёт в общей базе: оставь его здесь — и соседняя проверка
+        # заготовки для самовывоза упадёт на следующем прогоне
+        await session.execute(
+            delete(NotificationRule).where(
+                NotificationRule.tenant_id == tenant.id,
+                NotificationRule.restaurant_id == restaurant.id,
+                NotificationRule.event == OrderStatus.COOKING.value,
+            )
+        )
+        await session.commit()
 
 
 async def test_podstanovki_v_tekste(session: AsyncSession, tenant, restaurant, guest):
@@ -163,9 +225,7 @@ async def test_rassylka_ne_uhodit_v_tihie_chasy(session: AsyncSession, tenant):
     assert "тихие часы" in campaign.error.lower()
 
 
-async def test_v_auditoriyu_popadayut_tolko_soglasnye(
-    session: AsyncSession, tenant, guest
-):
+async def test_v_auditoriyu_popadayut_tolko_soglasnye(session: AsyncSession, tenant, guest):
     """Отписался от акций — в рассылку не попадает, даже с включёнными пушами."""
     session.add(
         Device(
@@ -196,9 +256,7 @@ async def test_bez_ustroystva_v_auditoriyu_ne_popast(session: AsyncSession, tena
     assert report["count"] <= report["with_push"]
 
 
-async def test_davno_ne_zakazyval_beret_tolko_byvshih_gostey(
-    session: AsyncSession, tenant, guest
-):
+async def test_davno_ne_zakazyval_beret_tolko_byvshih_gostey(session: AsyncSession, tenant, guest):
     """Молчун — это тот, кто заказывал раньше. Новичок в сценарий не попадает."""
     quiet = await campaign_service._inactive_guests(session, tenant, days=30)
 
@@ -260,9 +318,7 @@ async def test_svezhaya_korzina_ne_schitaetsya_zabytoy(session: AsyncSession, te
     assert guest.id not in {row.id for row in found}
 
 
-async def test_sgorayushchie_bally_ne_bespokoyat_iz_za_meloch(
-    session: AsyncSession, tenant, guest
-):
+async def test_sgorayushchie_bally_ne_bespokoyat_iz_za_meloch(session: AsyncSession, tenant, guest):
     """Ради десятка баллов гостя не тревожим."""
     found = await campaign_service._points_expiring(session, tenant, days_before=7)
 

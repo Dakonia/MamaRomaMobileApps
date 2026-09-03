@@ -15,7 +15,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.enums import NotificationKind, OrderStatus
+from app.models.enums import NotificationKind, OrderStatus, OrderType
 from app.models.geo import Restaurant
 from app.models.guest import Device
 from app.models.notification import NotificationHours, NotificationRule
@@ -39,6 +39,13 @@ DEFAULT_RULES: dict[OrderStatus, tuple[bool, str, str]] = {
         "Оцените заказ — это одно касание",
     ),
     OrderStatus.CANCELLED: (True, "Заказ отменён", "Загляните в приложение — расскажем почему"),
+}
+
+# Самовывоз живёт по другому расписанию: гостю ехать самому, и знать, что
+# заказ пошёл на кухню, ему нужнее, чем тому, кто ждёт курьера дома.
+# Всё остальное здесь то же самое, поэтому переопределяем один шаг
+PICKUP_RULES: dict[OrderStatus, tuple[bool, str, str]] = {
+    OrderStatus.COOKING: (True, "Готовим ваш заказ", "Можно выезжать — скоро будет готов"),
 }
 
 # Событие вне цепочки этапов: ресторан поправил состав заказа на кассе —
@@ -151,9 +158,17 @@ def public_url(path: str | None) -> str | None:
 
 
 async def rule_for(
-    session: AsyncSession, tenant_id: str, restaurant_id: UUID, event: OrderStatus
+    session: AsyncSession,
+    tenant_id: str,
+    restaurant_id: UUID,
+    event: OrderStatus,
+    order_type: OrderType = OrderType.DELIVERY,
 ) -> tuple[bool, str, str] | None:
-    """Правило шага: сначала своё у ресторана, потом общее по сети, потом заготовка."""
+    """Правило шага: сначала своё у ресторана, потом общее по сети, потом заготовка.
+
+    Заготовка зависит от того, как гость получает заказ: тому, кто едет за ним
+    сам, важно знать, что готовка началась, — он собирается выходить.
+    """
     rows = (
         await session.scalars(
             select(NotificationRule).where(
@@ -177,6 +192,9 @@ async def rule_for(
 
     if rule is not None:
         return rule.is_enabled, rule.title, rule.body
+
+    if order_type is OrderType.PICKUP and event in PICKUP_RULES:
+        return PICKUP_RULES[event]
 
     return DEFAULT_RULES.get(event)
 
@@ -224,7 +242,7 @@ def fill(text: str, order: Order, restaurant_name: str) -> str:
 
 async def notify_order(session: AsyncSession, tenant_id: str, order: Order) -> int:
     """Сообщает гостю о новом статусе его заказа, если этот шаг включён."""
-    rule = await rule_for(session, tenant_id, order.restaurant_id, order.status)
+    rule = await rule_for(session, tenant_id, order.restaurant_id, order.status, order.type)
     if rule is None:
         return 0
 

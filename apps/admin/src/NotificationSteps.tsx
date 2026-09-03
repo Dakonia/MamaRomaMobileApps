@@ -42,7 +42,7 @@ const STEP_META: Record<string, StepMeta> = {
     icon: Utensils,
     label: "Готовится",
     phase: "Кухня",
-    role: "Промежуточный шаг, часто лучше оставить тихим",
+    role: "На доставке тихий шаг, на самовывозе — сигнал выезжать",
     tone: "warn",
   },
   ready: {
