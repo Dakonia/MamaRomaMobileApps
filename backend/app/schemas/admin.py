@@ -631,28 +631,30 @@ class DishExtraAdminRead(BaseModel):
 
 
 class RuleRead(BaseModel):
-    """Шаг заказа: пишем ли гостю и какими словами."""
+    """Шаг заказа для одного способа получения: пишем ли гостю и какими словами."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID | None = None
     restaurant_id: UUID | None = None
     event: str
+    # Кому адресован текст: доставке или самовывозу. Пусто — общее правило
+    order_type: OrderType | None = None
     is_enabled: bool
     title: str
     body: str
 
-    # Заготовка для самовывоза, если на этом шаге она своя: гость едет сам, и
-    # ему важно другое. Заполнено, только пока шаг не настроен вручную —
-    # сохранённое правило действует на оба типа заказа
-    pickup_enabled: bool | None = None
-    pickup_title: str | None = None
-    pickup_body: str | None = None
+    # Откуда взят текст: "rule" — заведён в админке, "shared" — общее правило
+    # на оба способа, "default" — заготовка приложения. Менеджеру важно
+    # понимать, правит он свой текст или впервые заводит его
+    source: str = "rule"
 
 
 class RuleWrite(BaseModel):
     restaurant_id: UUID | None = None
     event: str = Field(min_length=3, max_length=40)
+    # Пусто — правило общее и действует и на доставку, и на самовывоз
+    order_type: OrderType | None = None
     is_enabled: bool = True
     title: str = Field(min_length=2, max_length=120)
     body: str = Field(min_length=2, max_length=240)

@@ -24,6 +24,8 @@ async def _set_rule(
     """Правило заводим или правим: в базе оно одно на пару «ресторан плюс шаг»."""
     from sqlalchemy import select
 
+    order_type = values.pop("order_type", None)
+
     rule = await session.scalar(
         select(NotificationRule).where(
             NotificationRule.tenant_id == tenant.id,
@@ -31,6 +33,9 @@ async def _set_rule(
             NotificationRule.restaurant_id.is_(None)
             if restaurant_id is None
             else NotificationRule.restaurant_id == restaurant_id,
+            NotificationRule.order_type.is_(None)
+            if order_type is None
+            else NotificationRule.order_type == order_type,
         )
     )
     if rule is None:
@@ -38,6 +43,7 @@ async def _set_rule(
             tenant_id=tenant.id,
             restaurant_id=restaurant_id,
             event=event.value,
+            order_type=order_type,
             is_enabled=True,
             title="",
             body="",
@@ -109,6 +115,39 @@ async def test_na_samovyvoze_gotovim_govorim(session: AsyncSession, tenant, rest
     enabled, title, _ = rule
     assert enabled is True
     assert "готовим" in title.lower()
+
+
+async def test_pravilo_samovyvoza_ne_trogaet_dostavku(
+    session: AsyncSession, tenant, restaurant
+):
+    """Тексты по способам получения независимы: правка одного не меняет второй."""
+    from app.models.enums import OrderType
+
+    await _set_rule(
+        session, tenant, restaurant.id, OrderStatus.READY,
+        order_type=OrderType.PICKUP, is_enabled=True,
+        title="Ждём вас", body="Заказ на стойке",
+    )
+
+    try:
+        pickup = await push_service.rule_for(
+            session, tenant.id, restaurant.id, OrderStatus.READY, OrderType.PICKUP
+        )
+        delivery = await push_service.rule_for(
+            session, tenant.id, restaurant.id, OrderStatus.READY, OrderType.DELIVERY
+        )
+
+        assert pickup is not None and pickup[1] == "Ждём вас"
+        assert delivery is not None and delivery[1] != "Ждём вас"
+    finally:
+        await session.execute(
+            delete(NotificationRule).where(
+                NotificationRule.tenant_id == tenant.id,
+                NotificationRule.restaurant_id == restaurant.id,
+                NotificationRule.event == OrderStatus.READY.value,
+            )
+        )
+        await session.commit()
 
 
 async def test_svoj_tekst_pobezhdaet_i_na_samovyvoze(session: AsyncSession, tenant, restaurant):

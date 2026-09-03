@@ -471,17 +471,19 @@ export type AdminRestaurant = {
 
 export type RestaurantDraft = Omit<AdminRestaurant, "id">;
 
+export type OrderKind = "delivery" | "pickup";
+
 export type NotificationRule = {
   id?: string | null;
   restaurant_id?: string | null;
   event: string;
+  /** Кому адресован текст. Пусто — правило общее на оба способа получения. */
+  order_type?: OrderKind | null;
   is_enabled: boolean;
   title: string;
   body: string;
-  /** Что уходит на самовывозе, если на этом шаге текст свой. */
-  pickup_enabled?: boolean | null;
-  pickup_title?: string | null;
-  pickup_body?: string | null;
+  /** rule — заведён в админке, shared — общий текст, default — заготовка. */
+  source?: "rule" | "shared" | "default";
 };
 
 export type QuietHours = {

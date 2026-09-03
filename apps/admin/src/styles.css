@@ -3129,8 +3129,7 @@ textarea:focus-visible {
   gap: 8px;
 }
 
-.order-status-summary span,
-.order-status-tokens span {
+.order-status-summary span {
   min-width: 0;
   display: grid;
   gap: 2px;
@@ -3140,8 +3139,7 @@ textarea:focus-visible {
   background: var(--sunken);
 }
 
-.order-status-summary small,
-.order-status-tokens small {
+.order-status-summary small {
   overflow: hidden;
   color: var(--ink-3);
   font-size: 11px;
@@ -3380,39 +3378,17 @@ textarea:focus-visible {
 .order-status-foot {
   min-width: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .order-status-tokens {
-  min-width: 0;
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  align-items: center;
   gap: 6px;
-}
-
-.order-status-tokens strong,
-.order-status-tokens em {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.order-status-tokens strong {
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 18px;
-}
-
-.order-status-tokens em {
-  color: var(--ink-2);
-  font-size: 11px;
-  font-style: normal;
-  line-height: 16px;
+  flex-wrap: wrap;
 }
 
 .order-status-preview {
@@ -12114,36 +12090,58 @@ textarea:focus-visible {
 }
 
 /* Вкладки состояний над лентой */
-/* Заготовка самовывоза внутри карточки шага */
-.order-status-pickup {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px dashed color-mix(in srgb, var(--ok) 34%, var(--line));
-  border-radius: 8px;
-  background: var(--ok-sub);
-  justify-items: start;
+/* Способ получения и переключатель push — одной строкой над текстом */
+.order-status-kinds {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 
-.order-status-pickup > div {
-  display: grid;
-  gap: 2px;
-}
-
-.order-status-pickup strong {
-  color: var(--ink);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.order-status-pickup span {
-  color: var(--ink-2);
-  font-size: 13px;
-  line-height: 19px;
-}
-
-.order-status-pickup p {
+.order-status-note {
   margin: 0;
+  padding: 8px 10px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--sunken);
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+}
+
+.order-status-tokens button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 9px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.order-status-tokens button:hover {
+  border-color: var(--acc);
+  background: var(--acc-sub);
+}
+
+.order-status-tokens button strong {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.order-status-tokens button em {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.order-status-tokens-hint {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .orders-groups {

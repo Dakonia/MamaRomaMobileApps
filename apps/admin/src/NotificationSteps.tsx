@@ -9,15 +9,16 @@ import {
   PackageCheck,
   Save,
   ShieldAlert,
+  Store,
   Truck,
   Utensils,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { api, ApiError, type NotificationRule, type QuietHours } from "./api";
+import { api, ApiError, type NotificationRule, type OrderKind, type QuietHours } from "./api";
 import { Badge, Button } from "./ui";
 
 type StepTone = "ok" | "warn" | "muted" | "bad" | "accent";
@@ -171,10 +172,31 @@ function StatusSwitch({
   );
 }
 
-function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
+/** Пара правил одного шага: для доставки и для самовывоза. */
+type StepPair = { delivery: NotificationRule; event: string; pickup: NotificationRule };
+
+const KIND_TABS: { key: OrderKind; label: string }[] = [
+  { key: "delivery", label: "Доставка" },
+  { key: "pickup", label: "Самовывоз" },
+];
+
+const SOURCE_NOTE: Record<string, string> = {
+  shared: "Пока действует общий текст этого шага — сохраните, чтобы задать свой",
+  default: "Текст по умолчанию — сохраните, чтобы задать свой",
+};
+
+function StepCard({ index, step }: { index: number; step: StepPair }) {
   const queryClient = useQueryClient();
+  const [kind, setKind] = useState<OrderKind>("delivery");
+  const rule = step[kind];
   const [draft, setDraft] = useState(rule);
-  const meta = metaFor(draft.event);
+  // Подстановку вставляем туда, где стоял курсор: иначе менеджеру пришлось бы
+  // набирать {number} руками и попадать в фигурные скобки
+  const titleRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [field, setField] = useState<"title" | "body">("body");
+
+  const meta = metaFor(step.event);
   const Icon = meta.icon;
 
   useEffect(() => {
@@ -186,7 +208,9 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
     onError: (error) => toast.error(errorMessage(error)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["notification-rules"] });
-      toast.success("Статус заказа сохранён");
+      toast.success(
+        kind === "pickup" ? "Текст для самовывоза сохранён" : "Текст для доставки сохранён",
+      );
     },
   });
 
@@ -195,6 +219,21 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
     draft.is_enabled !== rule.is_enabled ||
     draft.title !== rule.title;
   const preview = previewText(draft);
+  const note = dirty ? null : SOURCE_NOTE[rule.source ?? "rule"];
+
+  const insert = (token: string) => {
+    const node = field === "title" ? titleRef.current : bodyRef.current;
+    const value = field === "title" ? draft.title : draft.body;
+    const at = node?.selectionStart ?? value.length;
+    const next = `${value.slice(0, at)}${token}${value.slice(node?.selectionEnd ?? at)}`;
+
+    setDraft({ ...draft, [field]: next });
+
+    requestAnimationFrame(() => {
+      node?.focus();
+      node?.setSelectionRange(at + token.length, at + token.length);
+    });
+  };
 
   return (
     <section className="order-status-card" data-enabled={draft.is_enabled} data-tone={meta.tone}>
@@ -212,36 +251,42 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
             <h3>{meta.label}</h3>
             <p>{meta.role}</p>
           </div>
-          <Badge text={draft.is_enabled ? "push включён" : "тихий шаг"} tone={draft.is_enabled ? meta.tone : "muted"} />
+          <Badge
+            text={draft.is_enabled ? "push включён" : "тихий шаг"}
+            tone={draft.is_enabled ? "ok" : "muted"}
+          />
         </div>
 
-        <StatusSwitch enabled={draft.is_enabled} onChange={(is_enabled) => setDraft({ ...draft, is_enabled })} />
-
-        {/* Пока шаг не настроен вручную, на самовывозе может действовать своя
-            заготовка — менеджер должен видеть, что уходит гостю на самом деле */}
-        {rule.pickup_title && !dirty ? (
-          <div className="order-status-pickup">
-            <Badge
-              text={rule.pickup_enabled ? "на самовывозе push включён" : "на самовывозе тихо"}
-              tone={rule.pickup_enabled ? "ok" : "muted"}
-            />
-            <div>
-              <strong>{rule.pickup_title}</strong>
-              <span>{rule.pickup_body}</span>
-            </div>
-            <p className="row-sub">
-              Гость едет за заказом сам, поэтому текст другой. Сохраните свой — и он
-              заменит оба.
-            </p>
+        <div className="order-status-kinds">
+          <div className="tabs" aria-label="Способ получения">
+            {KIND_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                className="tab-button"
+                data-active={kind === tab.key}
+                type="button"
+                onClick={() => setKind(tab.key)}
+              >
+                {tab.key === "pickup" ? <Store size={14} aria-hidden /> : <Truck size={14} aria-hidden />}
+                {tab.label}
+                <span className="tab-counter">{step[tab.key].is_enabled ? "push" : "тихо"}</span>
+              </button>
+            ))}
           </div>
-        ) : null}
+
+          <StatusSwitch enabled={draft.is_enabled} onChange={(is_enabled) => setDraft({ ...draft, is_enabled })} />
+        </div>
+
+        {note ? <p className="order-status-note">{note}</p> : null}
 
         <div className="order-status-compose">
           <label className="field">
             <span className="field-label">Заголовок</span>
             <input
+              ref={titleRef}
               className="input"
               value={draft.title}
+              onFocus={() => setField("title")}
               onChange={(event) => setDraft({ ...draft, title: event.target.value })}
             />
           </label>
@@ -249,8 +294,10 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
           <label className="field">
             <span className="field-label">Текст уведомления</span>
             <textarea
+              ref={bodyRef}
               className="textarea order-status-message"
               value={draft.body}
+              onFocus={() => setField("body")}
               onChange={(event) => setDraft({ ...draft, body: event.target.value })}
             />
           </label>
@@ -258,15 +305,17 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
 
         <div className="order-status-foot">
           <div className="order-status-tokens">
+            <span className="order-status-tokens-hint">
+              Подставить в {field === "title" ? "заголовок" : "текст"}:
+            </span>
             {TOKENS.map((token) => (
-              <span key={token.token}>
-                <small>{token.label}</small>
+              <button key={token.token} type="button" onClick={() => insert(token.token)}>
                 <strong>{token.token}</strong>
-                <em>{token.value}</em>
-              </span>
+                <em>{token.label.toLowerCase()}</em>
+              </button>
             ))}
           </div>
-          <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(draft)}>
+          <Button disabled={!dirty || save.isPending} onClick={() => save.mutate({ ...draft, order_type: kind })}>
             <Save size={15} aria-hidden />
             {save.isPending ? "Сохраняем..." : "Сохранить"}
           </Button>
@@ -278,23 +327,34 @@ function StepCard({ index, rule }: { index: number; rule: NotificationRule }) {
   );
 }
 
-function NotificationFlow({ rules }: { rules: NotificationRule[] }) {
+function NotificationFlow({ steps }: { steps: StepPair[] }) {
   return (
-    <div className="order-status-flow" aria-label="Цепочка статусов заказа">
-      {rules.map((rule, index) => {
-        const meta = metaFor(rule.event);
+    <div className="order-status-flow" aria-label="Порядок шагов">
+      {steps.map((step, index) => {
+        const meta = metaFor(step.event);
         const Icon = meta.icon;
+        // Шаг «звучит», если пишем хотя бы одному из способов получения
+        const loud = step.delivery.is_enabled || step.pickup.is_enabled;
+        const both = step.delivery.is_enabled && step.pickup.is_enabled;
+
         return (
-          <div key={rule.event} className="order-status-flow-step" data-enabled={rule.is_enabled} data-tone={meta.tone}>
-            <span className="order-status-flow-dot">
-              <Icon size={14} aria-hidden />
+          <div key={step.event} className="order-status-flow-step" data-enabled={loud} data-tone={meta.tone}>
+            <span className="order-status-flow-icon">
+              <Icon size={15} aria-hidden />
             </span>
-            <span className="order-status-flow-copy">
+            <div className="min-w-0">
               <strong>{meta.label}</strong>
               <small>
-                {String(index + 1).padStart(2, "0")} · {rule.is_enabled ? "push" : "тихо"}
+                {String(index + 1).padStart(2, "0")} ·{" "}
+                {both
+                  ? "push"
+                  : loud
+                    ? step.pickup.is_enabled
+                      ? "push на самовывозе"
+                      : "push на доставке"
+                    : "тихо"}
               </small>
-            </span>
+            </div>
           </div>
         );
       })}
@@ -304,13 +364,13 @@ function NotificationFlow({ rules }: { rules: NotificationRule[] }) {
 
 function NotificationOverview({
   hours,
-  rules,
+  steps,
 }: {
   hours: QuietHours | undefined;
-  rules: NotificationRule[];
+  steps: StepPair[];
 }) {
-  const enabled = rules.filter((rule) => rule.is_enabled).length;
-  const muted = rules.length - enabled;
+  const enabled = steps.filter((step) => step.delivery.is_enabled || step.pickup.is_enabled).length;
+  const muted = steps.length - enabled;
 
   return (
     <section className="order-status-hero">
@@ -415,11 +475,20 @@ export function NotificationSteps() {
   const rules = useQuery({ queryKey: ["notification-rules"], queryFn: api.notificationRules });
   const hours = useQuery({ queryKey: ["notification-hours"], queryFn: api.notificationHours });
 
-  const { exceptionRules, statusRules } = useMemo(() => {
-    const list = rules.data ?? [];
+  const { exceptionSteps, statusSteps } = useMemo(() => {
+    const steps: StepPair[] = [];
+
+    for (const rule of rules.data ?? []) {
+      const kind: OrderKind = rule.order_type === "pickup" ? "pickup" : "delivery";
+      const found = steps.find((step) => step.event === rule.event);
+
+      if (found) found[kind] = rule;
+      else steps.push({ delivery: rule, event: rule.event, pickup: rule, [kind]: rule });
+    }
+
     return {
-      exceptionRules: list.filter((rule) => rule.event === "items_changed"),
-      statusRules: list.filter((rule) => rule.event !== "items_changed"),
+      exceptionSteps: steps.filter((step) => step.event === "items_changed"),
+      statusSteps: steps.filter((step) => step.event !== "items_changed"),
     };
   }, [rules.data]);
 
@@ -447,16 +516,16 @@ export function NotificationSteps() {
 
   return (
     <div className="page-stack">
-      <NotificationOverview hours={hours.data} rules={rules.data ?? []} />
-      <NotificationFlow rules={statusRules} />
+      <NotificationOverview hours={hours.data} steps={statusSteps} />
+      <NotificationFlow steps={statusSteps} />
 
       <div className="notification-status-list">
-        {statusRules.map((rule, index) => (
-          <StepCard key={`${rule.restaurant_id ?? "all"}-${rule.event}`} index={index} rule={rule} />
+        {statusSteps.map((step, index) => (
+          <StepCard key={step.event} index={index} step={step} />
         ))}
       </div>
 
-      {exceptionRules.length > 0 ? (
+      {exceptionSteps.length > 0 ? (
         <section className="notification-exception-section">
           <div className="notification-exception-head">
             <ShieldAlert size={18} aria-hidden />
@@ -466,12 +535,8 @@ export function NotificationSteps() {
             </div>
           </div>
           <div className="notification-status-list">
-            {exceptionRules.map((rule, index) => (
-              <StepCard
-                key={`${rule.restaurant_id ?? "all"}-${rule.event}`}
-                index={statusRules.length + index}
-                rule={rule}
-              />
+            {exceptionSteps.map((step, index) => (
+              <StepCard key={step.event} index={statusSteps.length + index} step={step} />
             ))}
           </div>
         </section>

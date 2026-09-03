@@ -164,10 +164,12 @@ async def rule_for(
     event: OrderStatus,
     order_type: OrderType = OrderType.DELIVERY,
 ) -> tuple[bool, str, str] | None:
-    """Правило шага: сначала своё у ресторана, потом общее по сети, потом заготовка.
+    """Правило шага под этот заказ.
 
-    Заготовка зависит от того, как гость получает заказ: тому, кто едет за ним
-    сам, важно знать, что готовка началась, — он собирается выходить.
+    Ищем от частного к общему: правило ресторана для этого способа получения,
+    потом общее правило ресторана, потом то же по сети, и только затем
+    заготовка. Так точка может отличаться от сети, а самовывоз — от доставки,
+    и при этом достаточно завести один текст, если разницы нет.
     """
     rows = (
         await session.scalars(
@@ -181,14 +183,26 @@ async def rule_for(
                     NotificationRule.restaurant_id == restaurant_id,
                     NotificationRule.restaurant_id.is_(None),
                 ),
+                or_(
+                    NotificationRule.order_type == order_type,
+                    NotificationRule.order_type.is_(None),
+                ),
             )
         )
     ).all()
 
-    # Ресторан главнее сети: у точки могут быть свои порядки
-    own = next((row for row in rows if row.restaurant_id == restaurant_id), None)
-    shared = next((row for row in rows if row.restaurant_id is None), None)
-    rule = own or shared
+    def pick(own_restaurant: bool, own_type: bool) -> NotificationRule | None:
+        return next(
+            (
+                row
+                for row in rows
+                if (row.restaurant_id == restaurant_id) is own_restaurant
+                and (row.order_type == order_type) is own_type
+            ),
+            None,
+        )
+
+    rule = pick(True, True) or pick(True, False) or pick(False, True) or pick(False, False)
 
     if rule is not None:
         return rule.is_enabled, rule.title, rule.body

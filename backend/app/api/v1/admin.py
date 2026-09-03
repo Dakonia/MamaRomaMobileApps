@@ -2097,45 +2097,61 @@ async def delete_extra(
 async def notification_rules(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[RuleRead]:
-    """Что сохранено в базе плюс заготовки для шагов, которых там ещё нет."""
+    """Шаги заказа по способам получения: что уйдёт гостю на каждом из них.
+
+    На каждый шаг возвращаем две строки — доставку и самовывоз, — потому что
+    настраиваются они порознь. Если своего текста ещё нет, подставляем общее
+    правило или заготовку и честно помечаем, откуда он взялся.
+    """
     saved = list(
         await session.scalars(
-            select(NotificationRule).where(NotificationRule.tenant_id == tenant.id)
-        )
-    )
-    known = {(row.restaurant_id, row.event) for row in saved}
-    result = [RuleRead.model_validate(row) for row in saved]
-
-    for event, (enabled, title, body) in push_service.DEFAULT_RULES.items():
-        if (None, event.value) in known:
-            continue
-
-        pickup = push_service.PICKUP_RULES.get(event)
-        result.append(
-            RuleRead(
-                event=event.value,
-                is_enabled=enabled,
-                title=title,
-                body=body,
-                pickup_enabled=pickup[0] if pickup else None,
-                pickup_title=pickup[1] if pickup else None,
-                pickup_body=pickup[2] if pickup else None,
+            select(NotificationRule).where(
+                NotificationRule.tenant_id == tenant.id,
+                NotificationRule.restaurant_id.is_(None),
             )
         )
+    )
+    by_key = {(row.event, row.order_type): row for row in saved}
 
-    # События вне цепочки этапов: правка состава на кассе. Правятся там же,
-    # где шаги заказа — менеджеру всё равно, как это устроено внутри
-    for event_name, (enabled, title, body) in push_service.DEFAULT_EVENT_RULES.items():
-        if (None, event_name) in known:
-            continue
-        result.append(
-            RuleRead(event=event_name, is_enabled=enabled, title=title, body=body)
+    def row_for(event: str, order_type: OrderType) -> RuleRead:
+        own = by_key.get((event, order_type))
+        if own is not None:
+            return RuleRead.model_validate(own)
+
+        shared = by_key.get((event, None))
+        if shared is not None:
+            row = RuleRead.model_validate(shared)
+            return row.model_copy(update={"order_type": order_type, "source": "shared"})
+
+        status = next((item for item in OrderStatus if item.value == event), None)
+        preset = None
+        if status is not None and order_type is OrderType.PICKUP:
+            preset = push_service.PICKUP_RULES.get(status)
+        if preset is None and status is not None:
+            preset = push_service.DEFAULT_RULES.get(status)
+        if preset is None:
+            preset = push_service.DEFAULT_EVENT_RULES.get(event)
+        if preset is None:
+            preset = (False, "", "")
+
+        enabled, title, body = preset
+        return RuleRead(
+            event=event,
+            order_type=order_type,
+            is_enabled=enabled,
+            title=title,
+            body=body,
+            source="default",
         )
 
-    # Порядок шагов заказа, а не алфавитный: менеджер читает их сверху вниз
-    order = [event.value for event in push_service.DEFAULT_RULES]
-    order += list(push_service.DEFAULT_EVENT_RULES)
-    result.sort(key=lambda row: order.index(row.event) if row.event in order else len(order))
+    events = [event.value for event in push_service.DEFAULT_RULES]
+    events += list(push_service.DEFAULT_EVENT_RULES)
+
+    result: list[RuleRead] = []
+    for event in events:
+        for order_type in (OrderType.DELIVERY, OrderType.PICKUP):
+            result.append(row_for(event, order_type))
+
     return result
 
 
@@ -2150,12 +2166,18 @@ async def save_notification_rule(
             NotificationRule.restaurant_id.is_(payload.restaurant_id)
             if payload.restaurant_id is None
             else NotificationRule.restaurant_id == payload.restaurant_id,
+            NotificationRule.order_type.is_(None)
+            if payload.order_type is None
+            else NotificationRule.order_type == payload.order_type,
         )
     )
 
     if rule is None:
         rule = NotificationRule(
-            tenant_id=tenant.id, event=payload.event, restaurant_id=payload.restaurant_id
+            tenant_id=tenant.id,
+            event=payload.event,
+            restaurant_id=payload.restaurant_id,
+            order_type=payload.order_type,
         )
         session.add(rule)
 

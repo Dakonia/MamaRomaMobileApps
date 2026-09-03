@@ -13,7 +13,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, TenantMixin, TimestampMixin, UUIDMixin
-from app.models.enums import CampaignStatus, NotificationKind, TriggerKind, enum_column
+from app.models.enums import (
+    CampaignStatus,
+    NotificationKind,
+    OrderType,
+    TriggerKind,
+    enum_column,
+)
 
 
 class NotificationRule(UUIDMixin, TenantMixin, TimestampMixin, Base):
@@ -25,13 +31,23 @@ class NotificationRule(UUIDMixin, TenantMixin, TimestampMixin, Base):
     __tablename__ = "notification_rules"
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "restaurant_id", "event", name="uq_notification_rules_scope"
+            "tenant_id",
+            "restaurant_id",
+            "event",
+            "order_type",
+            name="uq_notification_rules_scope",
+            postgresql_nulls_not_distinct=True,
         ),
     )
 
     restaurant_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("restaurants.id", ondelete="CASCADE"), index=True, default=None
     )
+
+    # Доставка и самовывоз живут по разному расписанию: гостю, который едет
+    # сам, важно одно, тому, кто ждёт курьера, — другое. Пусто — правило
+    # общее и действует на оба способа получения
+    order_type: Mapped[OrderType | None] = mapped_column(enum_column(OrderType), default=None)
 
     # Событие заказа: created, accepted, cooking, ready, delivering, completed…
     event: Mapped[str] = mapped_column(String(40))
