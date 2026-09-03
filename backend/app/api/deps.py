@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_session
+from app.core.permissions import WEB_ADMIN_ROLES, Permission, permissions_for
 from app.core.security import InvalidTokenError, decode_token
 from app.core.tenants import Tenant, get_tenant
 from app.models.guest import Guest
@@ -83,7 +85,39 @@ async def get_current_staff(
     if staff is None or not staff.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Сотрудник не найден")
 
+    if staff.role not in WEB_ADMIN_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта роль не работает в админке")
+
     return staff
 
 
 StaffDep = Annotated[StaffUser, Depends(get_current_staff)]
+
+
+def staff_permissions(staff: StaffUser) -> frozenset[Permission]:
+    return permissions_for(staff.role, staff.permissions)
+
+
+def require(*needed: Permission) -> Callable[[StaffUser], Awaitable[StaffUser]]:
+    """Ручка требует всех перечисленных прав.
+
+    Ставится рядом со `StaffDep`, а не вместо него: сотрудник в теле ручки
+    по-прежнему нужен, чтобы записать, кто выполнил действие.
+    """
+
+    async def guard(staff: StaffDep) -> StaffUser:
+        # Роль может иметь права и всё же не работать в вебе: у курьера свой
+        # набор для приложения, но админка не его место
+        if staff.role not in WEB_ADMIN_ROLES:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта роль не работает в админке")
+
+        granted = staff_permissions(staff)
+        missing = [item for item in needed if item not in granted]
+        if missing:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Недостаточно прав для этого действия",
+            )
+        return staff
+
+    return guard

@@ -64,7 +64,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export type Staff = { id: string; email: string; name: string; role: string };
+export type StaffRole =
+  | "owner"
+  | "network_manager"
+  | "delivery_operator"
+  | "marketing"
+  | "courier"
+  | "restaurant";
+
+export type Staff = {
+  id: string;
+  email: string;
+  name: string;
+  role: StaffRole;
+  is_active: boolean;
+  /** Права, с которыми сотрудник работает: набор роли, поправленный флагами */
+  permissions: string[];
+  /** Сами флаги — только отклонения от роли */
+  overrides: Record<string, boolean>;
+  restaurant_ids: string[];
+  last_login_at: string | null;
+};
+
+export type StaffDraft = {
+  email: string;
+  name: string;
+  role: StaffRole;
+  password: string;
+  overrides: Record<string, boolean>;
+  restaurant_ids: string[];
+};
+
+export type StaffPatch = Partial<Omit<StaffDraft, "email">> & { is_active?: boolean };
+
+export type PermissionInfo = {
+  code: string;
+  group: string;
+  title: string;
+  owner_only: boolean;
+};
+
+export type RoleInfo = {
+  code: StaffRole;
+  title: string;
+  permissions: string[];
+  web_admin: boolean;
+};
+
+export type PermissionCatalog = { roles: RoleInfo[]; permissions: PermissionInfo[] };
 
 /** Вкладки списка заказов: активные, завершённые, отменённые и всё сразу. */
 export type OrderGroup = "active" | "done" | "cancelled" | "all";
@@ -696,6 +743,14 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<Staff>("/admin/me"),
+
+  staff: () => request<Staff[]>("/admin/staff"),
+  staffCatalog: () => request<PermissionCatalog>("/admin/staff/catalog"),
+  createStaff: (payload: StaffDraft) =>
+    request<Staff>("/admin/staff", { method: "POST", body: JSON.stringify(payload) }),
+  updateStaff: (id: string, patch: StaffPatch) =>
+    request<Staff>(`/admin/staff/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteStaff: (id: string) => request<void>(`/admin/staff/${id}`, { method: "DELETE" }),
 
   categories: () => request<Category[]>("/admin/categories"),
   createCategory: (payload: { name: string; slug: string; sort_order: number }) =>

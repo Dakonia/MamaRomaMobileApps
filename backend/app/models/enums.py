@@ -65,8 +65,15 @@ class Gender(StrEnum):
 
 
 class StaffRole(StrEnum):
+    """Роль задаёт набор прав по умолчанию, сам набор — в app/core/permissions.py."""
+
     OWNER = "owner"
-    MANAGER = "manager"
+    NETWORK_MANAGER = "network_manager"
+    DELIVERY_OPERATOR = "delivery_operator"
+    MARKETING = "marketing"
+    # Заведены заранее: набор прав есть, входа в веб-админку пока нет
+    COURIER = "courier"
+    RESTAURANT = "restaurant"
 
 
 class IikoHandoffStatus(StrEnum):
@@ -77,6 +84,7 @@ class IikoHandoffStatus(StrEnum):
     ACCEPTED = "accepted"
     FAILED = "failed"
     SKIPPED = "skipped"
+
 
 class DevicePlatform(StrEnum):
     IOS = "ios"

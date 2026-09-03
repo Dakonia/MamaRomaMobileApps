@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Toaster } from "sonner";
 
 import { api } from "../../api";
-import { useAdminSession } from "../../lib/admin-session";
+import { useAdminSession, usePermissions } from "../../lib/admin-session";
 import { Button, IconButton, cn } from "../../ui";
 import { CommandMenu } from "./CommandMenu";
 import {
@@ -25,7 +25,7 @@ import {
   NAV_SECTIONS,
   getNavItem,
   getSection,
-  getSectionItems,
+  visibleNavItems,
   type AdminPath,
   type AdminSection,
 } from "./navigation";
@@ -91,22 +91,20 @@ function getStoredQuickAccess(): AdminPath[] {
   }
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Суперпользователь",
+  network_manager: "Управляющий сетью",
+  delivery_operator: "Оператор доставки",
+  marketing: "Маркетинг",
+  courier: "Доставщик",
+  restaurant: "Ресторан",
+};
+
 function roleLabel(role?: string | null): string {
   const normalized = role?.trim().toLocaleLowerCase("ru-RU");
+  if (!normalized) return "Сотрудник";
 
-  if (!normalized || normalized === "admin" || normalized === "administrator") {
-    return "Админ";
-  }
-
-  if (normalized === "owner" || normalized === "super_admin" || normalized === "superadmin") {
-    return "Владелец";
-  }
-
-  if (normalized === "manager") {
-    return "Менеджер";
-  }
-
-  return role ?? "Администратор панели";
+  return ROLE_LABELS[normalized] ?? role ?? "Сотрудник";
 }
 
 function refreshTimeLabel(date: Date | null): string {
@@ -120,6 +118,7 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { staff, logout } = useAdminSession();
+  const { can } = usePermissions();
   const activeItem = getNavItem(pathname);
   const [activeSection, setActiveSection] = useState<AdminSection>(activeItem.section);
   const [collapsed, setCollapsed] = useStoredBoolean(COLLAPSED_KEY, false);
@@ -186,16 +185,23 @@ export function AdminLayout() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [setCollapsed]);
 
+  // Разделы, куда сотруднику вообще можно: скрытый пункт — не защита,
+  // сервер всё равно проверит право, но нет смысла показывать то, что не откроется
+  const allowedItems = visibleNavItems(can);
+  const sectionItemsOf = (key: AdminSection) =>
+    allowedItems.filter((item) => item.section === key);
+  const allowedSections = NAV_SECTIONS.filter((item) => sectionItemsOf(item.key).length > 0);
+
   const quickAccess = useMemo(
     () =>
       getStoredQuickAccess()
-        .map((path) => NAV_ITEMS.find((item) => item.path === path))
+        .map((path) => allowedItems.find((item) => item.path === path))
         .filter((item): item is (typeof NAV_ITEMS)[number] => Boolean(item)),
-    [],
+    [allowedItems],
   );
 
   const section = getSection(activeSection);
-  const sectionItems = getSectionItems(activeSection);
+  const sectionItems = sectionItemsOf(activeSection);
   const activeSectionCount = sectionItems.reduce((sum, item) => sum + (counts[item.path] ?? 0), 0);
 
   const navigateTo = (path: AdminPath) => {
@@ -226,10 +232,10 @@ export function AdminLayout() {
     <div className="admin-app app-shell" data-mobile-menu-open={mobileMenuOpen} data-nav-collapsed={collapsed}>
       <aside className="rail" aria-label="Разделы админки">
         <nav className="rail-nav">
-          {NAV_SECTIONS.map((item) => {
+          {allowedSections.map((item) => {
             const Icon = item.icon;
-            const sectionHasProblems = getSectionItems(item.key).some((navItem) => (counts[navItem.path] ?? 0) > 0);
-            const firstPath = getSectionItems(item.key)[0]?.path ?? "/orders";
+            const sectionHasProblems = sectionItemsOf(item.key).some((navItem) => (counts[navItem.path] ?? 0) > 0);
+            const firstPath = sectionItemsOf(item.key)[0]?.path ?? "/orders";
 
             return (
               <button
@@ -415,9 +421,9 @@ export function AdminLayout() {
             </header>
 
             <div className="mobile-section-strip" aria-label="Группы разделов">
-              {NAV_SECTIONS.map((item) => {
+              {allowedSections.map((item) => {
                 const Icon = item.icon;
-                const sectionHasProblems = getSectionItems(item.key).some((navItem) => (counts[navItem.path] ?? 0) > 0);
+                const sectionHasProblems = sectionItemsOf(item.key).some((navItem) => (counts[navItem.path] ?? 0) > 0);
 
                 return (
                   <button

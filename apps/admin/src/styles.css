@@ -13283,3 +13283,231 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─────────────── Сотрудники и права ─────────────── */
+
+.staff-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.staff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-admin-xl);
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+.staff-card:hover {
+  border-color: var(--line-2);
+}
+
+.staff-card[data-active="true"] {
+  border-color: var(--acc);
+  background: var(--acc-sub);
+}
+
+.staff-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-card-mail,
+.staff-card-foot {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.staff-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+}
+
+.staff-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-admin-xl);
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+.staff-detail-empty {
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.staff-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.staff-detail-head h3 {
+  margin: 0 0 2px;
+  font-size: 17px;
+}
+
+.staff-detail-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.staff-role-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.staff-role-row > span {
+  min-width: 44px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.staff-owner-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--acc);
+  background: var(--acc-sub);
+  border-radius: var(--radius-admin-lg);
+}
+
+.staff-permissions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.staff-permissions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staff-permission-group {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-admin-lg);
+}
+
+.staff-permission-group legend {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.staff-permission {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 14px;
+}
+
+.staff-permission input:disabled + span {
+  color: var(--ink-3);
+}
+
+/* Отличие от набора роли: видно, что право трогали руками */
+.staff-permission[data-changed="true"] > span::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  vertical-align: 2px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.staff-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-admin-xl);
+  background: var(--surface);
+  box-shadow: var(--sh-2);
+}
+
+.staff-draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.staff-draft-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.staff-draft label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.staff-draft input {
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-admin-md);
+}
+
+.staff-draft input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 900px) {
+  .staff-grid {
+    grid-template-columns: 1fr;
+  }
+}

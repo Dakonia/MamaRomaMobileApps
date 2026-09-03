@@ -10,9 +10,10 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../api";
+import { usePermissions } from "../../lib/admin-session";
 import { formatDateTime, formatPrice } from "../../lib/format";
 import { cn } from "../../ui";
-import { NAV_ITEMS, type AdminPath } from "./navigation";
+import { visibleNavItems, type AdminPath } from "./navigation";
 
 type CommandResult = {
   id: string;
@@ -36,6 +37,7 @@ export function CommandMenu({
   onClose: () => void;
   onNavigate: (path: AdminPath) => void;
 }) {
+  const { can } = usePermissions();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -75,7 +77,7 @@ export function CommandMenu({
   }, [open]);
 
   const results = useMemo<CommandResult[]>(() => {
-    const sectionResults = NAV_ITEMS.filter((item) => {
+    const sectionResults = visibleNavItems(can).filter((item) => {
       if (!normalized) return true;
       return (
         normalize(item.label).includes(normalized) ||
@@ -124,7 +126,7 @@ export function CommandMenu({
         })) ?? [];
 
     return [...sectionResults.slice(0, normalized ? 6 : 13), ...orderResults, ...guestResults, ...dishResults];
-  }, [dishes.data, guests.data, normalized, orders.data]);
+  }, [can, dishes.data, guests.data, normalized, orders.data]);
 
   useEffect(() => {
     setActiveIndex(0);

@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Settings2,
   Store,
+  UserCog,
   TicketPercent,
   Users,
 } from "lucide-react";
@@ -35,7 +36,8 @@ export type AdminPath =
   | "/restaurants"
   | "/zones"
   | "/iiko"
-  | "/sync";
+  | "/sync"
+  | "/staff";
 
 export type NavItem = {
   path: AdminPath;
@@ -43,6 +45,8 @@ export type NavItem = {
   section: AdminSection;
   icon: LucideIcon;
   description: string;
+  /** Право, без которого раздел сотруднику не показываем */
+  permission: string;
 };
 
 export const NAV_SECTIONS: {
@@ -65,6 +69,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "operations",
     icon: ReceiptText,
     description: "Смена на доске, история — во вкладках",
+    permission: "orders.view",
   },
   {
     path: "/reservations",
@@ -72,6 +77,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "operations",
     icon: CalendarDays,
     description: "Сегодняшние бронирования и подтверждения",
+    permission: "reservations.view",
   },
   {
     path: "/feedback",
@@ -79,6 +85,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "operations",
     icon: MessageSquareText,
     description: "Оценки гостей и быстрый ответ",
+    permission: "feedback.view",
   },
   {
     path: "/menu",
@@ -86,6 +93,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "menu",
     icon: ChefHat,
     description: "Категории, блюда, фото, цены и стоп-лист",
+    permission: "menu.view",
   },
   {
     path: "/extras",
@@ -93,6 +101,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "menu",
     icon: GitBranch,
     description: "Группы добавок и привязка к категориям",
+    permission: "menu.view",
   },
   {
     path: "/promos",
@@ -100,6 +109,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "marketing",
     icon: Gift,
     description: "Витрина акций и порядок показа",
+    permission: "promos.view",
   },
   {
     path: "/promo-codes",
@@ -107,6 +117,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "marketing",
     icon: TicketPercent,
     description: "Коды, лимиты и сроки действия",
+    permission: "promocodes.view",
   },
   {
     path: "/notifications",
@@ -114,6 +125,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "marketing",
     icon: BellRing,
     description: "Правила, кампании и автоматизации",
+    permission: "campaigns.view",
   },
   {
     path: "/guests",
@@ -121,6 +133,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "marketing",
     icon: Users,
     description: "Поиск, профиль, баллы и история",
+    permission: "guests.view",
   },
   {
     path: "/restaurants",
@@ -128,6 +141,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "network",
     icon: Store,
     description: "Адреса, часы, доставка и паузы",
+    permission: "restaurants.view",
   },
   {
     path: "/zones",
@@ -135,6 +149,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "network",
     icon: Map,
     description: "Карта зон, минималки и время доставки",
+    permission: "zones.view",
   },
   {
     path: "/iiko",
@@ -142,6 +157,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: "system",
     icon: DatabaseZap,
     description: "Связь с Front, сопоставление и очередь",
+    permission: "iiko.view",
   },
   {
     path: "/sync",
@@ -149,8 +165,21 @@ export const NAV_ITEMS: NavItem[] = [
     section: "system",
     icon: RefreshCw,
     description: "Синхронизация меню, ресторанов и акций",
+    permission: "sync.run",
+  },
+  {
+    path: "/staff",
+    label: "Сотрудники",
+    section: "system",
+    icon: UserCog,
+    description: "Доступы, роли и права",
+    permission: "staff.view",
   },
 ];
+
+export function visibleNavItems(can: (permission: string) => boolean): NavItem[] {
+  return NAV_ITEMS.filter((item) => can(item.permission));
+}
 
 export const DEFAULT_QUICK_ACCESS: AdminPath[] = ["/iiko", "/sync", "/zones"];
 

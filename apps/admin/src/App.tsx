@@ -39,6 +39,7 @@ const NotificationsTab = lazy(() =>
 const PromoCodesTab = lazy(() => import("./PromoCodesTab").then((module) => ({ default: module.PromoCodesTab })));
 const PromosTab = lazy(() => import("./PromosTab").then((module) => ({ default: module.PromosTab })));
 const RestaurantsTab = lazy(() => import("./RestaurantsTab").then((module) => ({ default: module.RestaurantsTab })));
+const StaffTab = lazy(() => import("./StaffTab").then((module) => ({ default: module.StaffTab })));
 const SyncTab = lazy(() => import("./SyncTab").then((module) => ({ default: module.SyncTab })));
 const ZonesTab = lazy(() => import("./ZonesTab").then((module) => ({ default: module.ZonesTab })));
 
@@ -196,6 +197,16 @@ const syncRoute = createRoute({
   ),
 });
 
+const staffRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/staff",
+  component: () => (
+    <LegacyScreen>
+      <StaffTab />
+    </LegacyScreen>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   ordersRoute,
@@ -211,6 +222,7 @@ const routeTree = rootRoute.addChildren([
   zonesRoute,
   iikoRoute,
   syncRoute,
+  staffRoute,
 ]);
 
 /**

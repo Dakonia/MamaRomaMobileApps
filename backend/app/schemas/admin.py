@@ -30,12 +30,58 @@ class StaffRead(BaseModel):
     email: str
     name: str
     role: StaffRole
+    is_active: bool = True
+    # Права, с которыми сотрудник работает: набор роли, поправленный флагами
+    permissions: list[str] = []
+    # Сами флаги — только отклонения от роли, админка показывает их переключателями
+    overrides: dict[str, bool] = {}
+    restaurant_ids: list[str] = []
+    last_login_at: datetime | None = None
 
 
 class StaffSession(BaseModel):
     access_token: str
     token_type: str = "bearer"
     staff: StaffRead
+
+
+class StaffCreate(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=120)
+    role: StaffRole
+    password: str = Field(min_length=10, max_length=72)
+    overrides: dict[str, bool] = {}
+    restaurant_ids: list[str] = []
+
+
+class StaffUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    role: StaffRole | None = None
+    is_active: bool | None = None
+    password: str | None = Field(default=None, min_length=10, max_length=72)
+    overrides: dict[str, bool] | None = None
+    restaurant_ids: list[str] | None = None
+
+
+class PermissionInfo(BaseModel):
+    code: str
+    group: str
+    title: str
+    owner_only: bool
+
+
+class RoleInfo(BaseModel):
+    code: StaffRole
+    title: str
+    permissions: list[str]
+    web_admin: bool
+
+
+class PermissionCatalog(BaseModel):
+    """Справочник для экрана сотрудников: какие роли и флаги вообще бывают."""
+
+    roles: list[RoleInfo]
+    permissions: list[PermissionInfo]
 
 
 class CategoryWrite(BaseModel):

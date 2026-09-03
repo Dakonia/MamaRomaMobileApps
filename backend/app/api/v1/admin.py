@@ -3,14 +3,32 @@ from datetime import UTC, date, datetime, time
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy import delete, func, insert, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import SessionDep, StaffDep, TenantDep
+from app.api.deps import SessionDep, StaffDep, TenantDep, require, staff_permissions
 from app.core import cache
 from app.core.config import settings
 from app.core.db import SessionLocal
+from app.core.permissions import (
+    OWNER_ONLY,
+    PERMISSION_TITLES,
+    ROLE_DEFAULTS,
+    ROLE_TITLES,
+    WEB_ADMIN_ROLES,
+    Permission,
+    assignable_permissions,
+)
 from app.core.security import create_token, hash_password, normalize_phone, verify_password
 from app.core.tenants import Tenant
 from app.models.enums import (
@@ -20,6 +38,7 @@ from app.models.enums import (
     OrderStatus,
     OrderType,
     ReservationStatus,
+    StaffRole,
     TriggerKind,
 )
 from app.models.feedback import OrderFeedback
@@ -97,6 +116,8 @@ from app.schemas.admin import (
     OrderPage,
     OrderRow,
     OrderStatusWrite,
+    PermissionCatalog,
+    PermissionInfo,
     ProductGroupRow,
     PromoCodePatch,
     PromoCodeRead,
@@ -107,11 +128,14 @@ from app.schemas.admin import (
     RestaurantDishRead,
     RestaurantPatch,
     RestaurantWrite,
+    RoleInfo,
     RuleRead,
     RuleWrite,
+    StaffCreate,
     StaffLogin,
     StaffRead,
     StaffSession,
+    StaffUpdate,
     StopListRead,
     StopListWrite,
     ZoneCreate,
@@ -143,6 +167,9 @@ from app.services.sync import KIND_TITLES, Change, ChangeAction, SyncKind
 # сколько с настоящим паролем
 DUMMY_HASH = hash_password("no-such-account")
 
+# Что вправе переключить сотрудник с одним лишь restaurants.availability
+AVAILABILITY_FIELDS = frozenset({"is_paused", "pause_reason", "has_delivery", "has_pickup"})
+
 router = APIRouter(prefix="/admin", tags=["Админка"])
 
 
@@ -171,6 +198,9 @@ async def login(payload: StaffLogin, session: SessionDep, tenant: TenantDep) -> 
     if staff is None or not staff.is_active or not correct:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверная почта или пароль")
 
+    if staff.role not in WEB_ADMIN_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта роль не работает в админке")
+
     await cache.forget(attempts_key)
 
     staff.last_login_at = datetime.now(UTC)
@@ -179,16 +209,261 @@ async def login(payload: StaffLogin, session: SessionDep, tenant: TenantDep) -> 
 
     return StaffSession(
         access_token=create_token(staff.id, tenant.id, "staff"),
-        staff=StaffRead.model_validate(staff),
+        staff=_staff_read(staff),
     )
 
 
 @router.get("/me", summary="Текущий сотрудник")
 async def me(staff: StaffDep) -> StaffRead:
-    return StaffRead.model_validate(staff)
+    return _staff_read(staff)
 
 
-@router.post("/uploads", summary="Загрузить фотографию")
+# --- Сотрудники --------------------------------------------------------------
+
+
+def _staff_read(staff: StaffUser) -> StaffRead:
+    return StaffRead(
+        id=staff.id,
+        email=staff.email,
+        name=staff.name,
+        role=staff.role,
+        is_active=staff.is_active,
+        permissions=sorted(staff_permissions(staff)),
+        overrides=staff.permissions,
+        restaurant_ids=staff.restaurant_ids,
+        last_login_at=staff.last_login_at,
+    )
+
+
+def _clean_overrides(role: StaffRole, overrides: dict[str, bool]) -> dict[str, bool]:
+    """Отклонения от роли: отбрасываем то, чего вообще нельзя выдать.
+
+    Права суперпользователя флагом не раздаются, а самому владельцу отклонения
+    не нужны — у него весь набор.
+    """
+    if role is StaffRole.OWNER:
+        return {}
+
+    allowed = assignable_permissions(role)
+    cleaned: dict[str, bool] = {}
+
+    for name, enabled in overrides.items():
+        try:
+            permission = Permission(name)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Неизвестное право: {name}") from exc
+
+        if permission in OWNER_ONLY:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Право «{PERMISSION_TITLES[permission][1]}» остаётся за суперпользователем",
+            )
+
+        if permission in allowed:
+            cleaned[permission.value] = enabled
+
+    return cleaned
+
+
+async def _check_restaurants(session: AsyncSession, tenant: Tenant, ids: list[str]) -> list[str]:
+    if not ids:
+        return []
+
+    found = await session.scalars(
+        select(Restaurant.id).where(
+            Restaurant.tenant_id == tenant.id, Restaurant.id.in_([UUID(item) for item in ids])
+        )
+    )
+    known = {str(item) for item in found}
+    unknown = set(ids) - known
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Такого ресторана в сети нет")
+
+    return sorted(known)
+
+
+async def _last_owner(session: AsyncSession, tenant: Tenant, staff_id: UUID) -> bool:
+    """Последний действующий владелец: его нельзя ни выключить, ни понизить."""
+    others = await session.scalar(
+        select(func.count())
+        .select_from(StaffUser)
+        .where(
+            StaffUser.tenant_id == tenant.id,
+            StaffUser.role == StaffRole.OWNER,
+            StaffUser.is_active.is_(True),
+            StaffUser.id != staff_id,
+        )
+    )
+    return not others
+
+
+@router.get(
+    "/staff",
+    summary="Сотрудники сети",
+    dependencies=[Depends(require(Permission.STAFF_VIEW))],
+)
+async def staff_list(session: SessionDep, tenant: TenantDep) -> list[StaffRead]:
+    rows = await session.scalars(
+        select(StaffUser)
+        .where(StaffUser.tenant_id == tenant.id)
+        .order_by(StaffUser.is_active.desc(), StaffUser.name)
+    )
+    return [_staff_read(row) for row in rows]
+
+
+@router.get(
+    "/staff/catalog",
+    summary="Роли и права, которые бывают",
+    dependencies=[Depends(require(Permission.STAFF_VIEW))],
+)
+async def staff_catalog() -> PermissionCatalog:
+    return PermissionCatalog(
+        roles=[
+            RoleInfo(
+                code=role,
+                title=ROLE_TITLES[role],
+                permissions=sorted(ROLE_DEFAULTS[role]),
+                web_admin=role in WEB_ADMIN_ROLES,
+            )
+            for role in StaffRole
+        ],
+        permissions=[
+            PermissionInfo(
+                code=permission.value,
+                group=PERMISSION_TITLES[permission][0],
+                title=PERMISSION_TITLES[permission][1],
+                owner_only=permission in OWNER_ONLY,
+            )
+            for permission in Permission
+        ],
+    )
+
+
+@router.post(
+    "/staff",
+    status_code=status.HTTP_201_CREATED,
+    summary="Завести сотрудника",
+    dependencies=[Depends(require(Permission.STAFF_MANAGE))],
+)
+async def staff_create(
+    payload: StaffCreate,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> StaffRead:
+    email = payload.email.strip().lower()
+
+    taken = await session.scalar(
+        select(StaffUser).where(StaffUser.tenant_id == tenant.id, StaffUser.email == email)
+    )
+    if taken is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Сотрудник с такой почтой уже заведён")
+
+    row = StaffUser(
+        tenant_id=tenant.id,
+        email=email,
+        password_hash=hash_password(payload.password),
+        name=payload.name.strip(),
+        role=payload.role,
+        permissions=_clean_overrides(payload.role, payload.overrides),
+        restaurant_ids=await _check_restaurants(session, tenant, payload.restaurant_ids),
+        invited_by_id=staff.id,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+
+    return _staff_read(row)
+
+
+@router.patch(
+    "/staff/{staff_id}",
+    summary="Изменить сотрудника",
+    dependencies=[Depends(require(Permission.STAFF_MANAGE))],
+)
+async def staff_update(
+    staff_id: UUID,
+    payload: StaffUpdate,
+    session: SessionDep,
+    tenant: TenantDep,
+    staff: StaffDep,
+) -> StaffRead:
+    row = await session.scalar(
+        select(StaffUser).where(StaffUser.id == staff_id, StaffUser.tenant_id == tenant.id)
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Сотрудник не найден")
+
+    changes = payload.model_dump(exclude_unset=True)
+
+    # Над собой доступны только имя и пароль: иначе можно снять с себя роль
+    # и остаться в админке без доступа, а сеть — без владельца
+    if row.id == staff.id and set(changes) & {"role", "is_active", "overrides", "restaurant_ids"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Свою роль и права менять нельзя")
+
+    losing_owner = (changes.get("role") not in (None, StaffRole.OWNER)) or (
+        changes.get("is_active") is False
+    )
+    if row.role is StaffRole.OWNER and losing_owner and await _last_owner(session, tenant, row.id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Это последний суперпользователь сети — сначала назначьте другого",
+        )
+
+    if "name" in changes:
+        row.name = changes["name"].strip()
+    if changes.get("password"):
+        row.password_hash = hash_password(changes["password"])
+    if "is_active" in changes:
+        row.is_active = changes["is_active"]
+    if "role" in changes:
+        row.role = changes["role"]
+        # Роль сменилась — прежние отклонения относились к другому набору прав
+        row.permissions = _clean_overrides(row.role, {})
+    if "overrides" in changes and changes["overrides"] is not None:
+        row.permissions = _clean_overrides(row.role, changes["overrides"])
+    if "restaurant_ids" in changes and changes["restaurant_ids"] is not None:
+        row.restaurant_ids = await _check_restaurants(session, tenant, changes["restaurant_ids"])
+
+    await session.commit()
+    await session.refresh(row)
+
+    return _staff_read(row)
+
+
+@router.delete(
+    "/staff/{staff_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить сотрудника",
+    dependencies=[Depends(require(Permission.STAFF_MANAGE))],
+)
+async def staff_delete(
+    staff_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
+) -> None:
+    row = await session.scalar(
+        select(StaffUser).where(StaffUser.id == staff_id, StaffUser.tenant_id == tenant.id)
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Сотрудник не найден")
+
+    if row.id == staff.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Себя удалить нельзя")
+
+    if row.role is StaffRole.OWNER and await _last_owner(session, tenant, row.id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Это последний суперпользователь сети — сначала назначьте другого",
+        )
+
+    await session.delete(row)
+    await session.commit()
+
+
+@router.post(
+    "/uploads",
+    summary="Загрузить фотографию",
+    dependencies=[Depends(require(Permission.MEDIA_UPLOAD))],
+)
 async def upload(
     staff: StaffDep,
     file: Annotated[UploadFile, File()],
@@ -204,7 +479,9 @@ async def upload(
 # ─────────────────────────── меню ───────────────────────────
 
 
-@router.get("/categories", summary="Категории меню")
+@router.get(
+    "/categories", summary="Категории меню", dependencies=[Depends(require(Permission.MENU_VIEW))]
+)
 async def categories(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[CategoryAdminRead]:
@@ -236,7 +513,12 @@ async def categories(
     ]
 
 
-@router.post("/categories", status_code=status.HTTP_201_CREATED, summary="Создать категорию")
+@router.post(
+    "/categories",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать категорию",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def create_category(
     payload: CategoryWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> CategoryAdminRead:
@@ -255,7 +537,11 @@ async def create_category(
     return CategoryAdminRead.model_validate(category)
 
 
-@router.patch("/categories/{category_id}", summary="Изменить категорию")
+@router.patch(
+    "/categories/{category_id}",
+    summary="Изменить категорию",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def update_category(
     category_id: UUID,
     payload: CategoryPatch,
@@ -282,6 +568,7 @@ async def update_category(
     "/categories/{category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить категорию",
+    dependencies=[Depends(require(Permission.MENU_DELETE))],
 )
 async def delete_category(
     category_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -307,7 +594,7 @@ async def delete_category(
     await session.commit()
 
 
-@router.get("/dishes", summary="Блюда")
+@router.get("/dishes", summary="Блюда", dependencies=[Depends(require(Permission.MENU_VIEW))])
 async def dishes(
     session: SessionDep,
     tenant: TenantDep,
@@ -322,7 +609,12 @@ async def dishes(
     return [DishAdminRead.model_validate(row) for row in rows]
 
 
-@router.post("/dishes", status_code=status.HTTP_201_CREATED, summary="Создать блюдо")
+@router.post(
+    "/dishes",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать блюдо",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def create_dish(
     payload: DishWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> DishAdminRead:
@@ -341,7 +633,11 @@ async def create_dish(
     return DishAdminRead.model_validate(dish)
 
 
-@router.patch("/dishes/{dish_id}", summary="Изменить блюдо")
+@router.patch(
+    "/dishes/{dish_id}",
+    summary="Изменить блюдо",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def update_dish(
     dish_id: UUID,
     payload: DishPatch,
@@ -361,14 +657,15 @@ async def update_dish(
 
 
 @router.delete(
-    "/dishes/{dish_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить блюдо"
+    "/dishes/{dish_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить блюдо",
+    dependencies=[Depends(require(Permission.MENU_DELETE))],
 )
 async def delete_dish(
     dish_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> None:
-    dish = await session.scalar(
-        select(Dish).where(Dish.id == dish_id, Dish.tenant_id == tenant.id)
-    )
+    dish = await session.scalar(select(Dish).where(Dish.id == dish_id, Dish.tenant_id == tenant.id))
     if dish is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Блюдо не найдено")
 
@@ -380,7 +677,11 @@ async def delete_dish(
 # ─────────────────────────── стоп-лист ───────────────────────────
 
 
-@router.get("/stop-list", summary="Что сейчас в стоп-листе")
+@router.get(
+    "/stop-list",
+    summary="Что сейчас в стоп-листе",
+    dependencies=[Depends(require(Permission.MENU_VIEW))],
+)
 async def stop_list(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[StopListRead]:
     now = datetime.now(UTC)
     rows = (
@@ -410,7 +711,12 @@ async def stop_list(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> 
     ]
 
 
-@router.post("/stop-list", status_code=status.HTTP_201_CREATED, summary="Поставить в стоп-лист")
+@router.post(
+    "/stop-list",
+    status_code=status.HTTP_201_CREATED,
+    summary="Поставить в стоп-лист",
+    dependencies=[Depends(require(Permission.MENU_STOPLIST))],
+)
 async def add_to_stop_list(
     payload: StopListWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> dict[str, str]:
@@ -432,7 +738,10 @@ async def add_to_stop_list(
 
 
 @router.delete(
-    "/stop-list/{entry_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Убрать из стоп-листа"
+    "/stop-list/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Убрать из стоп-листа",
+    dependencies=[Depends(require(Permission.MENU_STOPLIST))],
 )
 async def remove_from_stop_list(
     entry_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -467,7 +776,9 @@ ORDER_GROUPS: dict[str, list[OrderStatus]] = {
 }
 
 
-@router.get("/orders", summary="Заказы сети")
+@router.get(
+    "/orders", summary="Заказы сети", dependencies=[Depends(require(Permission.ORDERS_VIEW))]
+)
 async def orders(
     session: SessionDep,
     tenant: TenantDep,
@@ -544,9 +855,7 @@ async def orders(
         query = query.where(Order.status.in_(ORDER_GROUPS[group]))
 
     rows = (
-        await session.execute(
-            query.order_by(Order.created_at.desc()).limit(limit).offset(offset)
-        )
+        await session.execute(query.order_by(Order.created_at.desc()).limit(limit).offset(offset))
     ).all()
 
     return OrderPage(
@@ -644,7 +953,11 @@ async def _order_card(session: AsyncSession, tenant: Tenant, order: Order) -> Or
     )
 
 
-@router.get("/orders/{order_id}", summary="Карточка заказа")
+@router.get(
+    "/orders/{order_id}",
+    summary="Карточка заказа",
+    dependencies=[Depends(require(Permission.ORDERS_VIEW))],
+)
 async def order_card(
     order_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> OrderCard:
@@ -657,7 +970,11 @@ async def order_card(
     return await _order_card(session, tenant, order)
 
 
-@router.put("/orders/{order_id}/items", summary="Изменить состав заказа")
+@router.put(
+    "/orders/{order_id}/items",
+    summary="Изменить состав заказа",
+    dependencies=[Depends(require(Permission.ORDERS_EDIT_ITEMS))],
+)
 async def edit_order_items(
     order_id: UUID,
     payload: OrderItemsWrite,
@@ -677,9 +994,7 @@ async def edit_order_items(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
 
     if order.status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Заказ уже закрыт — состав менять нельзя"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Заказ уже закрыт — состав менять нельзя")
 
     account = await session.scalar(
         select(LoyaltyAccount).where(
@@ -707,7 +1022,11 @@ async def edit_order_items(
     return await _order_card(session, tenant, order)
 
 
-@router.patch("/orders/{order_id}", summary="Сменить статус заказа")
+@router.patch(
+    "/orders/{order_id}",
+    summary="Сменить статус заказа",
+    dependencies=[Depends(require(Permission.ORDERS_STATUS))],
+)
 async def set_order_status(
     order_id: UUID,
     payload: OrderStatusWrite,
@@ -720,6 +1039,14 @@ async def set_order_status(
     )
     if order is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
+
+    # Отмена — не просто ещё один статус: за оплаченным заказом идёт возврат денег,
+    # поэтому она отделена от обычной смены статуса своим правом
+    if (
+        payload.status is OrderStatus.CANCELLED
+        and Permission.ORDERS_CANCEL not in staff_permissions(staff)
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет права отменять заказы")
 
     now = datetime.now(UTC)
     order.status = payload.status
@@ -742,7 +1069,11 @@ async def set_order_status(
     return await _order_card(session, tenant, order)
 
 
-@router.get("/reservations", summary="Брони сети")
+@router.get(
+    "/reservations",
+    summary="Брони сети",
+    dependencies=[Depends(require(Permission.RESERVATIONS_VIEW))],
+)
 async def reservations(
     session: SessionDep,
     tenant: TenantDep,
@@ -757,7 +1088,11 @@ async def reservations(
     return [reservation_service.to_read(row) for row in rows]
 
 
-@router.patch("/reservations/{reservation_id}", summary="Сменить статус брони")
+@router.patch(
+    "/reservations/{reservation_id}",
+    summary="Сменить статус брони",
+    dependencies=[Depends(require(Permission.RESERVATIONS_MANAGE))],
+)
 async def set_reservation_status(
     reservation_id: UUID,
     payload: ReservationStatusWrite,
@@ -820,7 +1155,9 @@ async def _link_restaurants(
     promotion.restaurants = list(rows)
 
 
-@router.get("/promotions", summary="Все акции")
+@router.get(
+    "/promotions", summary="Все акции", dependencies=[Depends(require(Permission.PROMOS_VIEW))]
+)
 async def promotions(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[PromotionAdminRead]:
@@ -832,7 +1169,12 @@ async def promotions(
     return [_promotion_read(row) for row in rows]
 
 
-@router.post("/promotions", status_code=status.HTTP_201_CREATED, summary="Создать акцию")
+@router.post(
+    "/promotions",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать акцию",
+    dependencies=[Depends(require(Permission.PROMOS_EDIT))],
+)
 async def create_promotion(
     payload: PromotionWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> PromotionAdminRead:
@@ -849,7 +1191,11 @@ async def create_promotion(
     return _promotion_read(promotion)
 
 
-@router.patch("/promotions/{promotion_id}", summary="Изменить акцию")
+@router.patch(
+    "/promotions/{promotion_id}",
+    summary="Изменить акцию",
+    dependencies=[Depends(require(Permission.PROMOS_EDIT))],
+)
 async def update_promotion(
     promotion_id: UUID,
     payload: PromotionPatch,
@@ -882,6 +1228,7 @@ async def update_promotion(
     "/promotions/{promotion_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить акцию",
+    dependencies=[Depends(require(Permission.PROMOS_EDIT))],
 )
 async def delete_promotion(
     promotion_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -900,7 +1247,11 @@ async def delete_promotion(
 # --- Рестораны ---------------------------------------------------------------
 
 
-@router.get("/restaurants", summary="Рестораны сети")
+@router.get(
+    "/restaurants",
+    summary="Рестораны сети",
+    dependencies=[Depends(require(Permission.RESTAURANTS_VIEW))],
+)
 async def admin_restaurants(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[RestaurantAdminRead]:
@@ -910,7 +1261,12 @@ async def admin_restaurants(
     return [RestaurantAdminRead.model_validate(row) for row in rows]
 
 
-@router.post("/restaurants", status_code=status.HTTP_201_CREATED, summary="Создать ресторан")
+@router.post(
+    "/restaurants",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать ресторан",
+    dependencies=[Depends(require(Permission.RESTAURANTS_EDIT))],
+)
 async def create_restaurant(
     payload: RestaurantWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> RestaurantAdminRead:
@@ -927,7 +1283,11 @@ async def create_restaurant(
     return RestaurantAdminRead.model_validate(restaurant)
 
 
-@router.patch("/restaurants/{restaurant_id}", summary="Изменить ресторан")
+@router.patch(
+    "/restaurants/{restaurant_id}",
+    summary="Изменить ресторан",
+    dependencies=[Depends(require(Permission.RESTAURANTS_AVAILABILITY))],
+)
 async def update_restaurant(
     restaurant_id: UUID,
     payload: RestaurantPatch,
@@ -936,14 +1296,24 @@ async def update_restaurant(
     staff: StaffDep,
 ) -> RestaurantAdminRead:
     restaurant = await session.scalar(
-        select(Restaurant).where(
-            Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id
-        )
+        select(Restaurant).where(Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id)
     )
     if restaurant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+
+    # Оператору смены доступны только пауза и каналы обслуживания: он снимает
+    # доставку, когда некому везти, но адреса и условия менять не должен
+    if set(changes) - AVAILABILITY_FIELDS and Permission.RESTAURANTS_EDIT not in staff_permissions(
+        staff
+    ):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Доступны только пауза, доставка и самовывоз",
+        )
+
+    for field, value in changes.items():
         setattr(restaurant, field, value)
 
     # Сняли с паузы — причина больше не нужна, иначе она всплывёт в следующий раз
@@ -959,14 +1329,13 @@ async def update_restaurant(
     "/restaurants/{restaurant_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить ресторан",
+    dependencies=[Depends(require(Permission.RESTAURANTS_DELETE))],
 )
 async def delete_restaurant(
     restaurant_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> None:
     restaurant = await session.scalar(
-        select(Restaurant).where(
-            Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id
-        )
+        select(Restaurant).where(Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id)
     )
     if restaurant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
@@ -988,7 +1357,9 @@ async def delete_restaurant(
 # --- Гости -------------------------------------------------------------------
 
 
-@router.get("/guests", summary="Гости сети")
+@router.get(
+    "/guests", summary="Гости сети", dependencies=[Depends(require(Permission.GUESTS_VIEW))]
+)
 async def admin_guests(
     session: SessionDep,
     tenant: TenantDep,
@@ -1088,7 +1459,11 @@ async def _guest_or_404(session: SessionDep, tenant: TenantDep, guest_id: UUID) 
     return guest
 
 
-@router.get("/guests/{guest_id}", summary="Карточка гостя")
+@router.get(
+    "/guests/{guest_id}",
+    summary="Карточка гостя",
+    dependencies=[Depends(require(Permission.GUESTS_VIEW))],
+)
 async def guest_card(
     guest_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> GuestCardRead:
@@ -1259,7 +1634,12 @@ async def guest_card(
     )
 
 
-@router.post("/guests", status_code=status.HTTP_201_CREATED, summary="Завести гостя")
+@router.post(
+    "/guests",
+    status_code=status.HTTP_201_CREATED,
+    summary="Завести гостя",
+    dependencies=[Depends(require(Permission.GUESTS_EDIT))],
+)
 async def create_guest(
     payload: GuestWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> GuestAdminRead:
@@ -1292,7 +1672,11 @@ async def create_guest(
     return GuestAdminRead.model_validate(guest)
 
 
-@router.patch("/guests/{guest_id}", summary="Изменить гостя")
+@router.patch(
+    "/guests/{guest_id}",
+    summary="Изменить гостя",
+    dependencies=[Depends(require(Permission.GUESTS_EDIT))],
+)
 async def update_guest(
     guest_id: UUID,
     payload: GuestPatch,
@@ -1310,7 +1694,11 @@ async def update_guest(
     return GuestAdminRead.model_validate(guest)
 
 
-@router.post("/guests/{guest_id}/points", summary="Начислить или списать баллы")
+@router.post(
+    "/guests/{guest_id}/points",
+    summary="Начислить или списать баллы",
+    dependencies=[Depends(require(Permission.GUESTS_POINTS))],
+)
 async def adjust_guest_points(
     guest_id: UUID,
     payload: GuestPointsAdjust,
@@ -1352,7 +1740,10 @@ async def adjust_guest_points(
 
 
 @router.delete(
-    "/guests/{guest_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить гостя"
+    "/guests/{guest_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить гостя",
+    dependencies=[Depends(require(Permission.GUESTS_DELETE))],
 )
 async def delete_guest(
     guest_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -1377,7 +1768,9 @@ async def delete_guest(
 # --- Зоны доставки -----------------------------------------------------------
 
 
-@router.get("/zones", summary="Зоны доставки")
+@router.get(
+    "/zones", summary="Зоны доставки", dependencies=[Depends(require(Permission.ZONES_VIEW))]
+)
 async def admin_zones(
     session: SessionDep,
     tenant: TenantDep,
@@ -1401,7 +1794,12 @@ async def admin_zones(
     return result
 
 
-@router.post("/zones", status_code=status.HTTP_201_CREATED, summary="Добавить зону")
+@router.post(
+    "/zones",
+    status_code=status.HTTP_201_CREATED,
+    summary="Добавить зону",
+    dependencies=[Depends(require(Permission.ZONES_EDIT))],
+)
 async def create_zone(
     payload: ZoneCreate,
     session: SessionDep,
@@ -1426,7 +1824,11 @@ async def create_zone(
     return row
 
 
-@router.patch("/zones/{zone_id}", summary="Изменить зону")
+@router.patch(
+    "/zones/{zone_id}",
+    summary="Изменить зону",
+    dependencies=[Depends(require(Permission.ZONES_EDIT))],
+)
 async def update_zone(
     zone_id: UUID,
     payload: ZonePatch,
@@ -1435,9 +1837,7 @@ async def update_zone(
     staff: StaffDep,
 ) -> ZoneRead:
     zone = await session.scalar(
-        select(DeliveryZone).where(
-            DeliveryZone.id == zone_id, DeliveryZone.tenant_id == tenant.id
-        )
+        select(DeliveryZone).where(DeliveryZone.id == zone_id, DeliveryZone.tenant_id == tenant.id)
     )
     if zone is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Зона не найдена")
@@ -1454,14 +1854,17 @@ async def update_zone(
     return row
 
 
-@router.delete("/zones/{zone_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить зону")
+@router.delete(
+    "/zones/{zone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить зону",
+    dependencies=[Depends(require(Permission.ZONES_EDIT))],
+)
 async def delete_zone(
     zone_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> None:
     zone = await session.scalar(
-        select(DeliveryZone).where(
-            DeliveryZone.id == zone_id, DeliveryZone.tenant_id == tenant.id
-        )
+        select(DeliveryZone).where(DeliveryZone.id == zone_id, DeliveryZone.tenant_id == tenant.id)
     )
     if zone is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Зона не найдена")
@@ -1473,7 +1876,11 @@ async def delete_zone(
 # --- Меню конкретного ресторана ---------------------------------------------
 
 
-@router.get("/restaurants/{restaurant_id}/menu", summary="Меню ресторана")
+@router.get(
+    "/restaurants/{restaurant_id}/menu",
+    summary="Меню ресторана",
+    dependencies=[Depends(require(Permission.MENU_VIEW))],
+)
 async def restaurant_menu(
     restaurant_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[RestaurantDishRead]:
@@ -1518,7 +1925,11 @@ async def restaurant_menu(
     return result
 
 
-@router.put("/restaurants/{restaurant_id}/menu", summary="Изменить меню ресторана")
+@router.put(
+    "/restaurants/{restaurant_id}/menu",
+    summary="Изменить меню ресторана",
+    dependencies=[Depends(require(Permission.MENU_PRICES))],
+)
 async def update_restaurant_menu(
     restaurant_id: UUID,
     payload: RestaurantDishPatch,
@@ -1643,9 +2054,7 @@ async def _apply_changes(run_id: UUID, kind: SyncKind, change_ids: list[UUID]) -
 
         rows = list(
             await session.scalars(
-                select(SyncChange).where(
-                    SyncChange.run_id == run_id, SyncChange.id.in_(change_ids)
-                )
+                select(SyncChange).where(SyncChange.run_id == run_id, SyncChange.id.in_(change_ids))
             )
         )
 
@@ -1693,7 +2102,11 @@ async def _load_run(session: SessionDep, run: SyncRun) -> SyncRunRead:
     return _sync_read(run, changes)
 
 
-@router.get("/sync", summary="Последние сверки с сайтом")
+@router.get(
+    "/sync",
+    summary="Последние сверки с сайтом",
+    dependencies=[Depends(require(Permission.SYNC_RUN))],
+)
 async def sync_runs(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[SyncRunRead]:
     latest: list[SyncRunRead] = []
 
@@ -1710,7 +2123,11 @@ async def sync_runs(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> 
     return latest
 
 
-@router.post("/sync/{kind}", summary="Сверить раздел с сайтом")
+@router.post(
+    "/sync/{kind}",
+    summary="Сверить раздел с сайтом",
+    dependencies=[Depends(require(Permission.SYNC_RUN))],
+)
 async def start_sync(
     kind: SyncKind,
     tasks: BackgroundTasks,
@@ -1735,9 +2152,7 @@ async def start_sync(
     for previous in old:
         await session.delete(previous)
 
-    run = SyncRun(
-        tenant_id=tenant.id, kind=kind, status="checking", started_at=datetime.now(UTC)
-    )
+    run = SyncRun(tenant_id=tenant.id, kind=kind, status="checking", started_at=datetime.now(UTC))
     session.add(run)
     await session.commit()
     await session.refresh(run)
@@ -1746,7 +2161,11 @@ async def start_sync(
     return _sync_read(run)
 
 
-@router.post("/sync/{run_id}/apply", summary="Записать выбранные изменения")
+@router.post(
+    "/sync/{run_id}/apply",
+    summary="Записать выбранные изменения",
+    dependencies=[Depends(require(Permission.SYNC_RUN))],
+)
 async def apply_sync(
     run_id: UUID,
     payload: SyncApply,
@@ -1776,6 +2195,7 @@ async def apply_sync(
     "/sync/{run_id}/changes/{change_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Убрать изменение из списка",
+    dependencies=[Depends(require(Permission.SYNC_RUN))],
 )
 async def drop_change(
     run_id: UUID, change_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -1797,7 +2217,9 @@ async def drop_change(
 # ─────────────────────────── промокоды ───────────────────────────
 
 
-@router.get("/promo-codes", summary="Промокоды")
+@router.get(
+    "/promo-codes", summary="Промокоды", dependencies=[Depends(require(Permission.PROMOCODES_VIEW))]
+)
 async def promo_codes(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[PromoCodeRead]:
@@ -1809,7 +2231,12 @@ async def promo_codes(
     return [PromoCodeRead.model_validate(row) for row in rows]
 
 
-@router.post("/promo-codes", status_code=status.HTTP_201_CREATED, summary="Создать промокод")
+@router.post(
+    "/promo-codes",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать промокод",
+    dependencies=[Depends(require(Permission.PROMOCODES_EDIT))],
+)
 async def create_promo_code(
     payload: PromoCodeWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> PromoCodeRead:
@@ -1827,7 +2254,11 @@ async def create_promo_code(
     return PromoCodeRead.model_validate(promo)
 
 
-@router.patch("/promo-codes/{promo_id}", summary="Изменить промокод")
+@router.patch(
+    "/promo-codes/{promo_id}",
+    summary="Изменить промокод",
+    dependencies=[Depends(require(Permission.PROMOCODES_EDIT))],
+)
 async def update_promo_code(
     promo_id: UUID,
     payload: PromoCodePatch,
@@ -1853,6 +2284,7 @@ async def update_promo_code(
     "/promo-codes/{promo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить промокод",
+    dependencies=[Depends(require(Permission.PROMOCODES_EDIT))],
 )
 async def delete_promo_code(
     promo_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -1914,7 +2346,9 @@ async def _extra_read(session: SessionDep, extra: DishExtra) -> DishExtraAdminRe
     )
 
 
-@router.get("/extras", summary="Справочник добавок")
+@router.get(
+    "/extras", summary="Справочник добавок", dependencies=[Depends(require(Permission.MENU_VIEW))]
+)
 async def extras(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[DishExtraAdminRead]:
@@ -1974,7 +2408,12 @@ async def extras(
     ]
 
 
-@router.post("/extras", status_code=status.HTTP_201_CREATED, summary="Создать добавку")
+@router.post(
+    "/extras",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать добавку",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def create_extra(
     payload: DishExtraWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> DishExtraAdminRead:
@@ -1985,7 +2424,11 @@ async def create_extra(
     return await _extra_read(session, extra)
 
 
-@router.patch("/extras/{extra_id}", summary="Изменить добавку")
+@router.patch(
+    "/extras/{extra_id}",
+    summary="Изменить добавку",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def update_extra(
     extra_id: UUID,
     payload: DishExtraPatch,
@@ -2006,7 +2449,11 @@ async def update_extra(
     return await _extra_read(session, extra)
 
 
-@router.put("/extras/{extra_id}/categories", summary="Разделы, где предлагается добавка")
+@router.put(
+    "/extras/{extra_id}/categories",
+    summary="Разделы, где предлагается добавка",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def set_extra_categories(
     extra_id: UUID,
     payload: ExtraCategoriesWrite,
@@ -2039,7 +2486,11 @@ async def set_extra_categories(
     return await _extra_read(session, extra)
 
 
-@router.put("/extras/{extra_id}/dishes", summary="Блюда, где предлагается добавка")
+@router.put(
+    "/extras/{extra_id}/dishes",
+    summary="Блюда, где предлагается добавка",
+    dependencies=[Depends(require(Permission.MENU_EDIT))],
+)
 async def set_extra_dishes(
     extra_id: UUID,
     payload: ExtraDishesWrite,
@@ -2075,7 +2526,10 @@ async def set_extra_dishes(
 
 
 @router.delete(
-    "/extras/{extra_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить добавку"
+    "/extras/{extra_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить добавку",
+    dependencies=[Depends(require(Permission.MENU_DELETE))],
 )
 async def delete_extra(
     extra_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -2093,7 +2547,11 @@ async def delete_extra(
 # --- Уведомления -------------------------------------------------------------
 
 
-@router.get("/notifications/rules", summary="Правила уведомлений по шагам заказа")
+@router.get(
+    "/notifications/rules",
+    summary="Правила уведомлений по шагам заказа",
+    dependencies=[Depends(require(Permission.NOTIFICATIONS_SETTINGS))],
+)
 async def notification_rules(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[RuleRead]:
@@ -2155,7 +2613,11 @@ async def notification_rules(
     return result
 
 
-@router.put("/notifications/rules", summary="Изменить правило шага")
+@router.put(
+    "/notifications/rules",
+    summary="Изменить правило шага",
+    dependencies=[Depends(require(Permission.NOTIFICATIONS_SETTINGS))],
+)
 async def save_notification_rule(
     payload: RuleWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> RuleRead:
@@ -2190,10 +2652,12 @@ async def save_notification_rule(
     return RuleRead.model_validate(rule)
 
 
-@router.get("/notifications/hours", summary="Тихие часы и частота рассылок")
-async def notification_hours(
-    session: SessionDep, tenant: TenantDep, staff: StaffDep
-) -> HoursRead:
+@router.get(
+    "/notifications/hours",
+    summary="Тихие часы и частота рассылок",
+    dependencies=[Depends(require(Permission.NOTIFICATIONS_SETTINGS))],
+)
+async def notification_hours(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> HoursRead:
     hours = await session.scalar(
         select(NotificationHours).where(
             NotificationHours.tenant_id == tenant.id, NotificationHours.restaurant_id.is_(None)
@@ -2205,7 +2669,11 @@ async def notification_hours(
     return HoursRead.model_validate(hours)
 
 
-@router.put("/notifications/hours", summary="Изменить тихие часы")
+@router.put(
+    "/notifications/hours",
+    summary="Изменить тихие часы",
+    dependencies=[Depends(require(Permission.NOTIFICATIONS_SETTINGS))],
+)
 async def save_notification_hours(
     payload: HoursWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> HoursRead:
@@ -2227,7 +2695,9 @@ async def save_notification_hours(
     return HoursRead.model_validate(hours)
 
 
-@router.get("/campaigns", summary="Рассылки")
+@router.get(
+    "/campaigns", summary="Рассылки", dependencies=[Depends(require(Permission.CAMPAIGNS_VIEW))]
+)
 async def campaigns(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[CampaignRead]:
     rows = await session.scalars(
         select(Campaign).where(Campaign.tenant_id == tenant.id).order_by(Campaign.created_at.desc())
@@ -2235,16 +2705,19 @@ async def campaigns(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> 
     return [CampaignRead.model_validate(row) for row in rows]
 
 
-@router.post("/campaigns", status_code=status.HTTP_201_CREATED, summary="Создать рассылку")
+@router.post(
+    "/campaigns",
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать рассылку",
+    dependencies=[Depends(require(Permission.CAMPAIGNS_EDIT))],
+)
 async def create_campaign(
     payload: CampaignWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> CampaignRead:
     campaign = Campaign(tenant_id=tenant.id, **payload.model_dump())
 
     # Охват считаем сразу: менеджеру важно видеть его и у черновика
-    campaign.planned_count = await campaign_service.preview_size(
-        session, tenant, campaign.audience
-    )
+    campaign.planned_count = await campaign_service.preview_size(session, tenant, campaign.audience)
     # Указано время — рассылка ждёт его, иначе остаётся черновиком
     if campaign.scheduled_at is not None:
         campaign.status = CampaignStatus.SCHEDULED
@@ -2255,7 +2728,11 @@ async def create_campaign(
     return CampaignRead.model_validate(campaign)
 
 
-@router.patch("/campaigns/{campaign_id}", summary="Изменить рассылку")
+@router.patch(
+    "/campaigns/{campaign_id}",
+    summary="Изменить рассылку",
+    dependencies=[Depends(require(Permission.CAMPAIGNS_EDIT))],
+)
 async def update_campaign(
     campaign_id: UUID,
     payload: CampaignWrite,
@@ -2272,9 +2749,7 @@ async def update_campaign(
     for field, value in payload.model_dump().items():
         setattr(campaign, field, value)
 
-    campaign.planned_count = await campaign_service.preview_size(
-        session, tenant, campaign.audience
-    )
+    campaign.planned_count = await campaign_service.preview_size(session, tenant, campaign.audience)
 
     if campaign.status in (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED):
         campaign.status = (
@@ -2290,6 +2765,7 @@ async def update_campaign(
     "/campaigns/{campaign_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить рассылку",
+    dependencies=[Depends(require(Permission.CAMPAIGNS_EDIT))],
 )
 async def delete_campaign(
     campaign_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -2308,6 +2784,7 @@ async def delete_campaign(
     "/campaigns/{campaign_id}/copy",
     status_code=status.HTTP_201_CREATED,
     summary="Копия рассылки",
+    dependencies=[Depends(require(Permission.CAMPAIGNS_EDIT))],
 )
 async def copy_campaign(
     campaign_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
@@ -2337,7 +2814,11 @@ async def copy_campaign(
     return CampaignRead.model_validate(copy)
 
 
-@router.post("/campaigns/audience", summary="Сколько гостей попадёт в рассылку")
+@router.post(
+    "/campaigns/audience",
+    summary="Сколько гостей попадёт в рассылку",
+    dependencies=[Depends(require(Permission.CAMPAIGNS_VIEW))],
+)
 async def campaign_audience(
     payload: AudienceQuery, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> dict[str, int]:
@@ -2345,7 +2826,11 @@ async def campaign_audience(
     return await campaign_service.reach_report(session, tenant, payload.audience)
 
 
-@router.post("/campaigns/{campaign_id}/send", summary="Отправить рассылку сейчас")
+@router.post(
+    "/campaigns/{campaign_id}/send",
+    summary="Отправить рассылку сейчас",
+    dependencies=[Depends(require(Permission.CAMPAIGNS_SEND))],
+)
 async def send_campaign_now(
     campaign_id: UUID,
     session: SessionDep,
@@ -2364,7 +2849,11 @@ async def send_campaign_now(
     return CampaignRead.model_validate(campaign)
 
 
-@router.get("/automations", summary="Сценарии")
+@router.get(
+    "/automations",
+    summary="Сценарии",
+    dependencies=[Depends(require(Permission.AUTOMATIONS_MANAGE))],
+)
 async def automations(
     session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> list[AutomationRead]:
@@ -2374,7 +2863,11 @@ async def automations(
     return [AutomationRead.model_validate(row) for row in rows]
 
 
-@router.put("/automations", summary="Изменить сценарий")
+@router.put(
+    "/automations",
+    summary="Изменить сценарий",
+    dependencies=[Depends(require(Permission.AUTOMATIONS_MANAGE))],
+)
 async def save_automation(
     payload: AutomationWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> AutomationRead:
@@ -2401,7 +2894,11 @@ async def save_automation(
 # --- Отзывы ------------------------------------------------------------------
 
 
-@router.get("/feedback", summary="Отзывы о заказах")
+@router.get(
+    "/feedback",
+    summary="Отзывы о заказах",
+    dependencies=[Depends(require(Permission.FEEDBACK_VIEW))],
+)
 async def feedback(
     session: SessionDep,
     tenant: TenantDep,
@@ -2444,7 +2941,11 @@ async def feedback(
     ]
 
 
-@router.get("/feedback/summary", summary="Сводка по оценкам")
+@router.get(
+    "/feedback/summary",
+    summary="Сводка по оценкам",
+    dependencies=[Depends(require(Permission.FEEDBACK_VIEW))],
+)
 async def feedback_summary(
     session: SessionDep,
     tenant: TenantDep,
@@ -2468,7 +2969,11 @@ async def feedback_summary(
 # ─────────────────────────── касса iiko ───────────────────────────
 
 
-@router.get("/iiko/bridges", summary="Плагины по ресторанам")
+@router.get(
+    "/iiko/bridges",
+    summary="Плагины по ресторанам",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
 async def iiko_bridges(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> list[BridgeRow]:
     """Список всех точек: где плагин заведён, где молчит, сколько сопоставлено."""
     restaurants = list(
@@ -2574,15 +3079,17 @@ async def _iiko_counters(session: SessionDep, tenant_id: str) -> dict[UUID, dict
     return counters
 
 
-@router.post("/iiko/bridges/{restaurant_id}/secret", summary="Выдать или сменить ключ плагина")
+@router.post(
+    "/iiko/bridges/{restaurant_id}/secret",
+    summary="Выдать или сменить ключ плагина",
+    dependencies=[Depends(require(Permission.IIKO_SECRETS))],
+)
 async def iiko_secret(
     restaurant_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> BridgeSecret:
     """Новый ключ этой точки. Показываем один раз — сохранить его в настройках плагина."""
     restaurant = await session.scalar(
-        select(Restaurant).where(
-            Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id
-        )
+        select(Restaurant).where(Restaurant.id == restaurant_id, Restaurant.tenant_id == tenant.id)
     )
     if restaurant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ресторан не найден")
@@ -2605,7 +3112,11 @@ async def iiko_secret(
     return BridgeSecret(restaurant_id=restaurant_id, secret=secret)
 
 
-@router.patch("/iiko/bridges/{restaurant_id}", summary="Включить или выключить плагин точки")
+@router.patch(
+    "/iiko/bridges/{restaurant_id}",
+    summary="Включить или выключить плагин точки",
+    dependencies=[Depends(require(Permission.IIKO_SECRETS))],
+)
 async def iiko_toggle(
     restaurant_id: UUID,
     payload: BridgeToggle,
@@ -2626,7 +3137,11 @@ async def iiko_toggle(
     return BridgeToggle(is_active=bridge.is_active)
 
 
-@router.get("/iiko/groups", summary="Группы номенклатуры кассы")
+@router.get(
+    "/iiko/groups",
+    summary="Группы номенклатуры кассы",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
 async def iiko_groups(
     session: SessionDep,
     tenant: TenantDep,
@@ -2638,7 +3153,11 @@ async def iiko_groups(
     return [ProductGroupRow(**row) for row in rows]
 
 
-@router.get("/iiko/products", summary="Номенклатура кассы этой точки")
+@router.get(
+    "/iiko/products",
+    summary="Номенклатура кассы этой точки",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
 async def iiko_products(
     session: SessionDep,
     tenant: TenantDep,
@@ -2653,9 +3172,7 @@ async def iiko_products(
     )
     # Без фильтра список неподъёмный: у точки бывает больше десяти тысяч позиций
     if group:
-        query = query.where(
-            (IikoProduct.group_path == group) | (IikoProduct.group_name == group)
-        )
+        query = query.where((IikoProduct.group_path == group) | (IikoProduct.group_name == group))
 
     rows = await session.scalars(query)
 
@@ -2675,7 +3192,11 @@ async def iiko_products(
     ]
 
 
-@router.get("/iiko/search", summary="Поиск по номенклатуре кассы")
+@router.get(
+    "/iiko/search",
+    summary="Поиск по номенклатуре кассы",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
 async def iiko_search(
     session: SessionDep,
     tenant: TenantDep,
@@ -2703,7 +3224,11 @@ async def iiko_search(
     ]
 
 
-@router.get("/iiko/links", summary="Сопоставление блюд с товарами кассы")
+@router.get(
+    "/iiko/links",
+    summary="Сопоставление блюд с товарами кассы",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
 async def iiko_links(
     session: SessionDep,
     tenant: TenantDep,
@@ -2830,7 +3355,11 @@ async def iiko_links(
     return rows
 
 
-@router.put("/iiko/links", summary="Сохранить сопоставление")
+@router.put(
+    "/iiko/links",
+    summary="Сохранить сопоставление",
+    dependencies=[Depends(require(Permission.IIKO_LINKS))],
+)
 async def iiko_save_links(
     payload: LinkBatch, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> SyncResult:
@@ -2844,7 +3373,11 @@ async def iiko_save_links(
     return SyncResult(applied=saved)
 
 
-@router.post("/iiko/links/auto", summary="Сопоставить по названиям")
+@router.post(
+    "/iiko/links/auto",
+    summary="Сопоставить по названиям",
+    dependencies=[Depends(require(Permission.IIKO_LINKS))],
+)
 async def iiko_auto_links(
     session: SessionDep,
     tenant: TenantDep,
@@ -2862,7 +3395,11 @@ async def iiko_auto_links(
     return MatchResult(matched=matched, skipped=skipped)
 
 
-@router.get("/iiko/queue", summary="Очередь заказов на кассу")
+@router.get(
+    "/iiko/queue",
+    summary="Очередь заказов на кассу",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
 async def iiko_queue(
     session: SessionDep,
     tenant: TenantDep,
@@ -2900,7 +3437,11 @@ async def iiko_queue(
     ]
 
 
-@router.post("/iiko/queue/{order_id}/retry", summary="Отдать заказ на кассу заново")
+@router.post(
+    "/iiko/queue/{order_id}/retry",
+    summary="Отдать заказ на кассу заново",
+    dependencies=[Depends(require(Permission.IIKO_QUEUE_RETRY))],
+)
 async def iiko_retry(
     order_id: UUID, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> SyncResult:
@@ -2923,10 +3464,12 @@ async def iiko_retry(
     return SyncResult(applied=1)
 
 
-@router.get("/iiko/menu-tree", summary="Дерево номенклатуры сети")
-async def iiko_menu_tree(
-    session: SessionDep, tenant: TenantDep, staff: StaffDep
-) -> MenuTreeRead:
+@router.get(
+    "/iiko/menu-tree",
+    summary="Дерево номенклатуры сети",
+    dependencies=[Depends(require(Permission.IIKO_VIEW))],
+)
+async def iiko_menu_tree(session: SessionDep, tenant: TenantDep, staff: StaffDep) -> MenuTreeRead:
     """Где искать блюда каждой категории и что считать мусором.
 
     Настройка общая на сеть: в iiko chain товары заводят централизованно,
@@ -2972,7 +3515,11 @@ async def iiko_menu_tree(
     )
 
 
-@router.put("/iiko/menu-tree", summary="Сохранить дерево номенклатуры")
+@router.put(
+    "/iiko/menu-tree",
+    summary="Сохранить дерево номенклатуры",
+    dependencies=[Depends(require(Permission.IIKO_LINKS))],
+)
 async def iiko_save_menu_tree(
     payload: MenuTreeWrite, session: SessionDep, tenant: TenantDep, staff: StaffDep
 ) -> SyncResult:
@@ -2988,7 +3535,11 @@ async def iiko_save_menu_tree(
     return SyncResult(applied=saved)
 
 
-@router.post("/iiko/links/copy", summary="Перенести сопоставление на другую точку")
+@router.post(
+    "/iiko/links/copy",
+    summary="Перенести сопоставление на другую точку",
+    dependencies=[Depends(require(Permission.IIKO_LINKS))],
+)
 async def iiko_copy_links(
     session: SessionDep,
     tenant: TenantDep,
@@ -2998,8 +3549,6 @@ async def iiko_copy_links(
     overwrite: Annotated[bool, Query()] = False,
 ) -> CopyLinksResult:
     """Настроили одну точку — остальные получают то же самое одним нажатием."""
-    copied, skipped = await iiko_bridge.copy_links(
-        session, tenant, source_id, target_id, overwrite
-    )
+    copied, skipped = await iiko_bridge.copy_links(session, tenant, source_id, target_id, overwrite)
     await session.commit()
     return CopyLinksResult(copied=copied, skipped=skipped)
