@@ -81,6 +81,13 @@ app.mount(
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 
+@app.get("/ping")
+async def ping() -> dict[str, bool]:
+    """Жив ли сервер. Приложение спрашивает это у каждого телефона раз в минуту,
+    поэтому здесь не должно быть ни базы, ни зависимостей — только ответ."""
+    return {"ok": True}
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     async with engine.connect() as conn:

@@ -2,15 +2,26 @@ import NetInfo from '@react-native-community/netinfo';
 import { onlineManager } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { apiUrl } from '@/lib/tenant';
+
 /**
- * Проверку «а ходит ли интернет» делаем быстрой: по умолчанию она ждёт ответа
- * секундами, и в авиарежиме приложение узнавало о потере связи с задержкой.
+ * Связь проверяем по нашему серверу, а не по гугловской заглушке.
+ *
+ * Гостю всё равно, ходит ли интернет вообще: меню, заказы и баллы живут у
+ * нас, и «интернет есть, а сервер недоступен» для него то же самое, что
+ * офлайн. К тому же в российских сетях гугловский адрес отвечает через раз,
+ * и приложение объявляло офлайн там, где всё работало.
+ *
+ * Проверку делаем быстрой: по умолчанию она ждёт ответа секундами, и в
+ * авиарежиме приложение узнавало о потере связи с задержкой.
  */
 NetInfo.configure({
-  reachabilityUrl: 'https://clients3.google.com/generate_204',
-  reachabilityTest: async (response) => response.status === 204,
+  reachabilityUrl: `${apiUrl}/ping`,
+  reachabilityTest: async (response) => response.status === 200,
   reachabilityShortTimeout: 3_000,
-  reachabilityLongTimeout: 30_000,
+  // Реже, чем раз в минуту, спрашивать незачем: на двадцати пяти ресторанах
+  // это тысячи телефонов, и каждая проверка — запрос к серверу
+  reachabilityLongTimeout: 60_000,
   reachabilityRequestTimeout: 4_000,
 });
 
