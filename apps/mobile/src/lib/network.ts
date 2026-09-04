@@ -28,13 +28,16 @@ NetInfo.configure({
 type State = { isConnected: boolean | null; isInternetReachable: boolean | null };
 
 /**
- * Связь есть, если телефон подключён к сети и интернет через неё ходит.
- * Отключение сети (авиарежим) видно сразу, а «вайфай без интернета» —
- * только после проверки, поэтому неизвестность считаем связью.
+ * Связи нет только тогда, когда телефон сам говорит, что сети нет: авиарежим,
+ * выключенный вайфай без мобильного интернета.
+ *
+ * На вывод библиотеки о доступности интернета не смотрим. Он ошибается: в
+ * Expo Go на iPhone приходит «интернета нет» при живой сети, и приложение
+ * закрывалось заглушкой, хотя сервер отвечал. Недоступность сервера честнее
+ * показывать по самим запросам — у каждого экрана есть ошибка с повтором.
  */
 function alive(state: State): boolean {
-  if (state.isConnected === false) return false;
-  return state.isInternetReachable !== false;
+  return state.isConnected !== false;
 }
 
 /** React Query должен знать о сети: без этого запросы уходят в пустоту. */
@@ -55,8 +58,21 @@ export function useOnline(): boolean {
   return online;
 }
 
-/** Перепроверить связь по кнопке: гость включил вайфай и хочет продолжить. */
+/**
+ * Перепроверить связь по кнопке: гость включил вайфай и хочет продолжить.
+ * Здесь спрашиваем сервер напрямую — это единственный ответ, который что-то
+ * значит: доступен он или нет.
+ */
 export async function recheck(): Promise<boolean> {
   const state = await NetInfo.refresh();
-  return alive(state);
+  if (!alive(state)) return false;
+
+  try {
+    const response = await fetch(`${apiUrl}/ping`, {
+      signal: AbortSignal.timeout(4_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
