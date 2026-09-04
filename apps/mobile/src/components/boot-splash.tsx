@@ -148,7 +148,7 @@ export function BootSplash({ progress, ready, onDone }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: StyleSheet.absoluteFillObject,
+  root: StyleSheet.absoluteFill,
   fire: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   glow: { position: 'absolute' },
   bottom: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },

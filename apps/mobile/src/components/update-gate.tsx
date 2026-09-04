@@ -106,7 +106,7 @@ export function UpdateGate() {
 }
 
 const styles = StyleSheet.create({
-  root: { ...StyleSheet.absoluteFillObject, zIndex: 50 },
+  root: { ...StyleSheet.absoluteFill, zIndex: 50 },
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   center: { textAlign: 'center' },
   mark: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center' },

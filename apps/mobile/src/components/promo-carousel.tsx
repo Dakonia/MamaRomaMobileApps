@@ -19,10 +19,6 @@ export function PromoCarousel({ promotions, onOpen, boxWidth, gutter }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
 
-  if (promotions.length === 0) {
-    return null;
-  }
-
   // Край следующей карточки виден — так понятно, что полку можно листать
   const box = boxWidth ?? width;
   const side = gutter ?? theme.layout.screenPadding;
@@ -47,6 +43,12 @@ export function PromoCarousel({ promotions, onOpen, boxWidth, gutter }: Props) {
 
     return () => clearInterval(timer);
   }, [promotions.length, step]);
+
+  // Возврат только после всех хуков: полка появляется и исчезает вместе с
+  // акциями, и ранний выход менял бы порядок вызовов между отрисовками
+  if (promotions.length === 0) {
+    return null;
+  }
 
   return (
     <>

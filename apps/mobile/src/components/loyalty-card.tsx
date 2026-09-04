@@ -294,7 +294,7 @@ export function LoyaltyCard({ loyalty, name, birthday }: Props) {
 
 const styles = StyleSheet.create({
   face: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
     backfaceVisibility: 'hidden',
   },

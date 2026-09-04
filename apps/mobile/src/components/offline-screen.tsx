@@ -173,7 +173,7 @@ export function OfflineScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { ...StyleSheet.absoluteFillObject, zIndex: 40 },
+  root: { ...StyleSheet.absoluteFill, zIndex: 40 },
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   center: { textAlign: 'center' },
   mark: { width: 96, height: 96, alignItems: 'center', justifyContent: 'center' },

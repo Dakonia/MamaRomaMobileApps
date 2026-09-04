@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   floating: { position: 'absolute' },
   circle: { alignItems: 'center', justifyContent: 'center' },
   pinBox: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     // Метка стоит остриём в центре экрана, значит рисуем её выше середины

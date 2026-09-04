@@ -16,7 +16,10 @@
       "@mr/tenants": [
         "../../packages/tenants/src"
       ]
-    }
+    },
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "**/*.ts",

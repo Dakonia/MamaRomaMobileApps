@@ -166,5 +166,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   caret: { width: 2, height: 26, borderRadius: 1 },
-  hidden: { ...StyleSheet.absoluteFillObject, opacity: 0 },
+  hidden: { ...StyleSheet.absoluteFill, opacity: 0 },
 });
