@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
+import { useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/text';
 import { mediaUrl, type Dish } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';
+import type { DishFrame } from '@/components/dish-flight';
 import { useTheme } from '@/theme/theme-provider';
 
 type Props = {
@@ -14,7 +16,11 @@ type Props = {
   onPeek?: () => void;
   dish: Dish;
   quantity: number;
-  onOpen: () => void;
+  /**
+   * Открыть блюдо. Кадром приходит место снимка на экране — из него снимок и
+   * поедет в шапку карточки блюда. Кадра нет, если фотографии у блюда нет
+   */
+  onOpen: (frame?: DishFrame) => void;
   onAdd: () => void;
   onChangeQuantity: (quantity: number) => void;
   /** Узкая карточка для горизонтальных полок. */
@@ -61,6 +67,30 @@ export function DishCard({
     onAdd();
   };
   const photo = mediaUrl(dish.image_url);
+  const shot = useRef<View>(null);
+
+  /**
+   * Меряем снимок перед открытием: экран блюда узнает, откуда его тянуть.
+   * Не смогли измерить — просто открываем, переход не главное
+   */
+  const open = () => {
+    if (photo === null || shot.current === null) {
+      onOpen();
+      return;
+    }
+
+    shot.current.measureInWindow((x, y, frameWidth, frameHeight) => {
+      onOpen({
+        uri: photo,
+        blurhash: dish.image_blurhash,
+        x,
+        y,
+        width: frameWidth,
+        height: frameHeight,
+        radius: theme.radius.xl,
+      });
+    });
+  };
   const measure = dish.weight_grams
     ? `${dish.weight_grams} г`
     : dish.volume_ml
@@ -73,7 +103,7 @@ export function DishCard({
 
   return (
     <PressableScale
-      onPress={onOpen}
+      onPress={open}
       onLongPress={
         onPeek
           ? () => {
@@ -96,7 +126,7 @@ export function DishCard({
         },
       ]}
     >
-      <View style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
+      <View ref={shot} style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
         {photo ? (
           <Image
             source={{ uri: photo }}

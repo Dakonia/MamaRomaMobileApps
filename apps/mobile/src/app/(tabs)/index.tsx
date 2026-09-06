@@ -21,6 +21,7 @@ import { HeroPhoto } from '@/components/hero-photo';
 import { ModeHeader } from '@/components/mode-header';
 import { CategoryBar, type CategoryChip } from '@/components/category-bar';
 import { DishCard } from '@/components/dish-card';
+import { DishFlight, type DishFrame } from '@/components/dish-flight';
 import { DishPeek } from '@/components/dish-peek';
 import { EmptyState } from '@/components/empty-state';
 import { MenuSkeleton } from '@/components/menu-skeleton';
@@ -95,6 +96,8 @@ export default function MenuScreen() {
   const [query, setQuery] = useState('');
   // Блюдо, которое гость держит пальцем: показываем крупно, не уходя с меню
   const [peek, setPeek] = useState<Dish | null>(null);
+  // Снимок, который сейчас переезжает в карточку блюда
+  const [flight, setFlight] = useState<DishFrame | null>(null);
   const searching = query.trim().length > 0;
 
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: () => api.restaurants() });
@@ -706,7 +709,7 @@ export default function MenuScreen() {
         <DishCard
           dish={item.left}
           quantity={quantityOf(item.left.id)}
-          onOpen={() => router.push(`/dish/${item.left.id}`)}
+          onOpen={(frame) => openDish(item.left.id, frame)}
           onPeek={() => setPeek(item.left)}
           onAdd={() => cart.add(item.left)}
           onChangeQuantity={(quantity) => cart.setQuantity(item.left.id, quantity)}
@@ -716,7 +719,7 @@ export default function MenuScreen() {
           <DishCard
             dish={right}
             quantity={quantityOf(right.id)}
-            onOpen={() => router.push(`/dish/${right.id}`)}
+            onOpen={(frame) => openDish(right.id, frame)}
             onPeek={() => setPeek(right)}
             onAdd={() => cart.add(right)}
             onChangeQuantity={(quantity) => cart.setQuantity(right.id, quantity)}
@@ -726,6 +729,16 @@ export default function MenuScreen() {
         )}
       </View>
     );
+  };
+
+  /**
+   * Открыть блюдо. Снимок из карточки переезжает в шапку экрана, поэтому
+   * сначала запускаем его, а переход делаем сразу же: экран проявляется под
+   * летящей фотографией, и в конце они совпадают.
+   */
+  const openDish = (dishId: string, frame?: DishFrame) => {
+    if (frame) setFlight(frame);
+    router.push(`/dish/${dishId}`);
   };
 
   const body = () => {
@@ -948,6 +961,14 @@ export default function MenuScreen() {
           setPeek(null);
           if (dish) router.push(`/dish/${dish.id}`);
         }}
+      />
+
+      {/* Снимок блюда, переезжающий в шапку его экрана. Лежит поверх всего и
+          ничего не перехватывает: экран под ним открывается своим чередом */}
+      <DishFlight
+        frame={flight}
+        target={{ width, height: width }}
+        onDone={() => setFlight(null)}
       />
     </View>
   );
