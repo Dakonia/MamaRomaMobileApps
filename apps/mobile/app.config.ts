@@ -14,7 +14,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: branding.displayName,
   slug: tenant.slug,
   scheme: stores.scheme,
-  version: "1.0.0",
+  /**
+   * Версия приложения. От неё считается версия окружения: обновления по
+   * воздуху прилетают только тем сборкам, у которых она совпадает.
+   *
+   * Подняли до 1.1.0 вместе с переездом на Expo 57: нативная часть сменилась,
+   * и старым сборкам новый код отдавать нельзя — они его не запустят.
+   */
+  version: "1.1.0",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   icon: "./assets/images/icon.png",
