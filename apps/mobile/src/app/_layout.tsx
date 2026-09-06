@@ -213,7 +213,9 @@ export default function RootLayout() {
                   // Обычный экран, а не модалка: работает системный свайп от края назад.
                   // Экран проявляется, а не въезжает: движение делает летящее фото
                   animation: 'fade',
-                  animationDuration: 220,
+                  // Идёт вместе с перелётом снимка из карточки меню:
+                  // см. DURATION в components/dish-flight.tsx
+                  animationDuration: 420,
                   gestureEnabled: true,
                 }}
               />

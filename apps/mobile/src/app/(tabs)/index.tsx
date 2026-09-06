@@ -349,13 +349,14 @@ export default function MenuScreen() {
       result.push({ kind: 'order', key: 'active-order' });
     }
 
-    // Своё привычное — раньше акций: гость чаще берёт то же, что и всегда
-    if (authorized) {
-      result.push({ kind: 'usual', key: 'usual' });
-    }
-
     if ((promos.data ?? []).length > 0) {
       result.push({ kind: 'promos', key: 'promos' });
+    }
+
+    // Привычное — под акциями: сверху сеть говорит, что предлагает сегодня,
+    // а ниже гость видит своё
+    if (authorized) {
+      result.push({ kind: 'usual', key: 'usual' });
     }
 
     // Ресторан ещё не определён — предупреждаем, что меню общее по сети.

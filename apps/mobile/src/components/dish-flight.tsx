@@ -21,8 +21,13 @@ export type DishFrame = {
   radius: number;
 };
 
-/** Столько же длится проявление экрана блюда — они должны идти вместе. */
-const DURATION = 260;
+/**
+ * Столько же длится проявление экрана блюда — они идут вместе.
+ *
+ * Четверть секунды глаз не успевал прочитать: снимок словно перескакивал.
+ * На четырёх десятых движение видно, но ждать его ещё не приходится.
+ */
+const DURATION = 420;
 
 /**
  * Снимок блюда переезжает из карточки меню в шапку его экрана.
@@ -65,7 +70,7 @@ export function DishFlight({
     const t = progress.get();
 
     return {
-      opacity: interpolate(t, [0, 0.82, 1], [1, 1, 0]),
+      opacity: interpolate(t, [0, 0.88, 1], [1, 1, 0]),
       left: interpolate(t, [0, 1], [frame.x, 0]),
       top: interpolate(t, [0, 1], [frame.y, 0]),
       width: interpolate(t, [0, 1], [frame.width, target.width]),

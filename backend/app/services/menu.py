@@ -324,12 +324,19 @@ async def get_usual(
     if not ordered_ids:
         return []
 
+    # Полка обещает «как обычно», поэтому на ней только то, что можно взять
+    # прямо сейчас: блюдо есть в живом разделе меню и не снято с продажи
+    live_categories = select(MenuCategory.id).where(
+        MenuCategory.tenant_id == tenant_id, MenuCategory.is_active.is_(True)
+    )
+
     dishes = list(
         (
             await session.scalars(
                 select(Dish).where(
                     Dish.tenant_id == tenant_id,
                     Dish.is_active.is_(True),
+                    Dish.category_id.in_(live_categories),
                     Dish.id.in_(ordered_ids),
                 )
             )
@@ -340,17 +347,18 @@ async def get_usual(
     dishes.sort(key=lambda dish: position.get(dish.id, len(position)))
 
     overrides: dict[UUID, int] = {}
-    stopped: set[UUID] = set()
+    hidden: set[UUID] = set()
     if restaurant_id is not None:
         overrides = await _price_overrides(session, tenant_id, restaurant_id)
-        stopped = await _stopped_dishes(session, tenant_id, restaurant_id)
+        # Убираем и то, что кончилось сегодня, и то, чего в этом ресторане
+        # не готовят вовсе: гость мог заказывать это в другой точке сети
+        hidden = await _stopped_dishes(session, tenant_id, restaurant_id)
+        hidden |= await _not_sold(session, tenant_id, restaurant_id)
 
-    # Того, чего сегодня нет, на этой полке быть не должно: она обещает
-    # «как обычно», и упереться в стоп-лист здесь обиднее всего
     return [
         _to_read(dish, overrides.get(dish.id, dish.price_kopecks), True)
         for dish in dishes
-        if dish.id not in stopped
+        if dish.id not in hidden
     ]
 
 

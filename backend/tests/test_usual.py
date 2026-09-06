@@ -13,7 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import OrderStatus, OrderType, PaymentMethod
-from app.models.menu import Dish, StopListEntry
+from app.models.menu import Dish, DishPrice, MenuCategory, StopListEntry
 from app.models.order import Order, OrderItem
 from app.services import menu as menu_service
 
@@ -160,3 +160,50 @@ async def test_chuzhie_zakazy_ne_vidny(
     shelf = await menu_service.get_usual(session, tenant.id, uuid4())
 
     assert shelf == []
+
+
+async def test_ne_gotovyat_zdes_znachit_ne_pokazyvaem(
+    session: AsyncSession, tenant, guest, restaurant, made, dishes
+):
+    """Гость брал это в другой точке сети — здесь такого блюда просто нет."""
+    await place(session, tenant, guest, restaurant, made, [dishes[0]])
+    await place(session, tenant, guest, restaurant, made, [dishes[0]])
+
+    price = DishPrice(
+        tenant_id=tenant.id,
+        restaurant_id=restaurant.id,
+        dish_id=dishes[0].id,
+        price_kopecks=dishes[0].price_kopecks,
+        is_available=False,
+    )
+    session.add(price)
+    await session.commit()
+
+    try:
+        shelf = await menu_service.get_usual(
+            session, tenant.id, guest.id, restaurant_id=restaurant.id
+        )
+        assert shelf == []
+    finally:
+        await session.delete(price)
+        await session.commit()
+
+
+async def test_blyudo_iz_skrytogo_razdela_ne_popadaet(
+    session: AsyncSession, tenant, guest, restaurant, made, dishes
+):
+    """Раздел выключили целиком — в меню блюда нет, значит нет и на полке."""
+    await place(session, tenant, guest, restaurant, made, [dishes[0]])
+    await place(session, tenant, guest, restaurant, made, [dishes[0]])
+
+    category = await session.get(MenuCategory, dishes[0].category_id)
+    assert category is not None
+    category.is_active = False
+    await session.commit()
+
+    try:
+        shelf = await menu_service.get_usual(session, tenant.id, guest.id)
+        assert [row.id for row in shelf] == []
+    finally:
+        category.is_active = True
+        await session.commit()
