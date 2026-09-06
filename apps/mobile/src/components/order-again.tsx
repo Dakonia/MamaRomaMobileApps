@@ -60,7 +60,13 @@ export function OrderAgain() {
   });
 
   const rows = orders.data ?? [];
-  const busy = rows.some((row) => !['completed', 'cancelled'].includes(row.status));
+  // Заказ считается едущим сутки: дальше это забытый на кассе хвост, и место
+  // под него держать незачем — то же правило в order-strip.tsx
+  const busy = rows.some(
+    (row) =>
+      !['completed', 'cancelled'].includes(row.status) &&
+      now - new Date(row.created_at).getTime() <= 24 * 3_600_000,
+  );
   const last = rows.find((row) => DONE.includes(row.status));
 
   if (busy || cart.items.length > 0 || last === undefined) return null;

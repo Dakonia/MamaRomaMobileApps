@@ -15,6 +15,16 @@ const DONE: Order['status'][] = ['completed', 'cancelled'];
 const RECENT_DAYS = 45;
 
 /**
+ * Сколько заказ считается едущим.
+ *
+ * Ресторан может забыть закрыть заказ на кассе, и он останется в «принят»
+ * навсегда. Для гостя это значит, что на главной вечно висит статус доставки,
+ * которой давно нет, а полезное — повторить прошлый заказ — не показывается.
+ * Сутки с запасом перекрывают любую доставку, включая заказ ко времени.
+ */
+const LIVE_HOURS = 24;
+
+/**
  * Первая строка меню: что у гостя с заказами.
  *
  * Едет заказ — показываем его статус. Не едет, а корзина пуста — предлагаем
@@ -38,7 +48,11 @@ export function OrderStrip() {
   });
 
   const rows = orders.data ?? [];
-  const live = rows.find((row) => !DONE.includes(row.status));
+  const live = rows.find(
+    (row) =>
+      !DONE.includes(row.status) &&
+      now - new Date(row.created_at).getTime() <= LIVE_HOURS * 3_600_000,
+  );
   const last = rows.find((row) => row.status === 'completed');
 
   const canRepeat =

@@ -101,7 +101,10 @@ it('по нажатию собирает ту же корзину', async () => 
 });
 
 it('молчит, пока едет другой заказ', async () => {
-  mockOrders.mockResolvedValue([order({ id: 'o2', status: 'delivering' }), order()]);
+  mockOrders.mockResolvedValue([
+    order({ id: 'o2', status: 'delivering', created_at: new Date().toISOString() }),
+    order(),
+  ]);
   const view = await show();
 
   await waitFor(() => expect(mockOrders).toHaveBeenCalled());
@@ -129,4 +132,20 @@ it('старый заказ не предлагаем: гость его уже 
 
   await waitFor(() => expect(mockOrders).toHaveBeenCalled());
   expect(view.queryByText('Заказать снова')).toBeNull();
+});
+
+it('заказ, забытый на кассе, не держит место вечно', async () => {
+  // Ресторан не закрыл заказ неделю назад: доставки давно нет, а место
+  // под её статус занято — гость не видит ни доставки, ни повтора
+  mockOrders.mockResolvedValue([
+    order({
+      id: 'o2',
+      status: 'accepted',
+      created_at: new Date(Date.now() - 7 * 86_400_000).toISOString(),
+    }),
+    order(),
+  ]);
+  const view = await show();
+
+  expect(await view.findByText('Заказать снова')).toBeTruthy();
 });
