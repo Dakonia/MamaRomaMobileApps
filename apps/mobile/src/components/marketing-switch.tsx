@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { api } from '@/api/client';
 import { track } from '@/lib/analytics';
 import { usePushPermission } from '@/lib/use-push-permission';

@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Component, type ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { PrimaryButton } from '@/components/primary-button';
 import { trackError } from '@/lib/analytics';
 import { lightTheme } from '@/theme';

@@ -3,13 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   FadeIn,
   useAnimatedScrollHandler,
@@ -20,6 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { api, mediaUrl, type Promotion } from '@/api/client';
 import { EmptyState } from '@/components/empty-state';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';

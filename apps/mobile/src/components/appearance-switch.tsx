@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { track } from '@/lib/analytics';
 import { useAppearance } from '@/store/appearance';
 import { useTheme } from '@/theme/theme-provider';

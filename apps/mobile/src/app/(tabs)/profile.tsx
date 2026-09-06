@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { useState } from 'react';
 import { router } from 'expo-router';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/text';
 import { api } from '@/api/client';
 import { LoyaltyCard } from '@/components/loyalty-card';
 import { AppearanceSwitch } from '@/components/appearance-switch';

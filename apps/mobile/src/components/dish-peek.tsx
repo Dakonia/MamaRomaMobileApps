@@ -3,7 +3,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -12,6 +12,7 @@ import Animated, {
   ZoomOut,
 } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { mediaUrl, type Dish } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';

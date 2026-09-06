@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Linking, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Linking, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedScrollHandler,
@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/text';
 import { api, mediaUrl } from '@/api/client';
 import { phoneToUri } from '@/lib/format';
 import { EmptyState } from '@/components/empty-state';

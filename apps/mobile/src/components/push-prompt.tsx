@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { PressableScale } from '@/components/pressable-scale';
 import { track } from '@/lib/analytics';
 import { enablePush, pushAllowed } from '@/lib/push';

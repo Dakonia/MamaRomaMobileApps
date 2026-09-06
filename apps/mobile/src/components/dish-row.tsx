@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { mediaUrl, type Dish } from '@/api/client';
 import { formatPrice } from '@/lib/format';
 import { useTheme } from '@/theme/theme-provider';

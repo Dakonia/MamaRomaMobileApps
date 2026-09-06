@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -12,6 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { PrimaryButton } from '@/components/primary-button';
 import { needsUpdate, storeUrl } from '@/lib/version';

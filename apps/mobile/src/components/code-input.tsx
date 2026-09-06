@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { useCallback, useEffect, useRef } from 'react';
-import { AppState, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -10,6 +10,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Text, TextInput } from '@/components/text';
+import type { TextInput as RNTextInput } from 'react-native';
 import { useTheme } from '@/theme/theme-provider';
 
 type Props = {
@@ -85,7 +87,7 @@ function Cell({ digit, active, invalid }: CellProps) {
  */
 export function CodeInput({ value, onChange, length = 4, invalid = false }: Props) {
   const theme = useTheme();
-  const input = useRef<TextInput>(null);
+  const input = useRef<RNTextInput>(null);
   const shift = useSharedValue(0);
 
   useEffect(() => {

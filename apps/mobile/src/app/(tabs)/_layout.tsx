@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import type { ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/text';
 import { tenant } from '@/lib/tenant';
 import { cartCount, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
@@ -76,7 +77,10 @@ export default function TabsLayout() {
             }}
           >
             {/* Размер цифры и порог, после которого показываем «99+» */}
-            <Text style={{ fontSize: 10, fontWeight: '700', color: theme.colors.textOnBrand }}>
+            <Text
+              maxFontSizeMultiplier={1.1}
+              style={{ fontSize: 10, fontWeight: '700', color: theme.colors.textOnBrand }}
+            >
               {count > 99 ? '99+' : count}
             </Text>
           </View>
@@ -113,9 +117,12 @@ export default function TabsLayout() {
           borderTopColor: theme.colors.divider, // тонкая линия сверху
         },
         tabBarIconStyle: { marginBottom: -theme.spacing.xxs },
+        tabBarAllowFontScaling: false,
         // ПОДПИСИ под иконками. Нужны крупнее — замените overline (11)
         // на caption (13). Убрать совсем — добавьте сюда,
         // в screenOptions: tabBarShowLabel: false
+        // Подписи растут скромнее остального текста: высота полосы задана
+        // числом, и на крупном шрифте надписи наползали на иконки
         tabBarLabelStyle: {
           fontFamily: theme.typography.caption.fontFamily,
           fontSize: theme.typography.overline.fontSize,

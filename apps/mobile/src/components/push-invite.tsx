@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   FadeOutUp,
@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/text';
 import { PressableScale } from '@/components/pressable-scale';
 import { track } from '@/lib/analytics';
 import { BLOCKED_BY_SETTINGS, enablePush, lastPushError, pushAllowed, pushBlocked } from '@/lib/push';

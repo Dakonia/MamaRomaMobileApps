@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
+import { Linking, StyleSheet, Switch, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { describe, track } from '@/lib/analytics';
 import { BLOCKED_BY_SETTINGS, disablePush, enablePush, lastPushError } from '@/lib/push';
 import { usePushPermission } from '@/lib/use-push-permission';

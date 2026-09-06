@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 /**
  * Список берём из gesture-handler, а не из react-native: обычный ScrollView на
  * Android забирает касание себе, и свайп по экрану до жеста не доходил
@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Image } from 'expo-image';
 
+import { Text, TextInput } from '@/components/text';
 import { api, mediaUrl, type Address, type ApiError } from '@/api/client';
 import { AnimatedPrice } from '@/components/animated-price';
 import { AppDialog } from '@/components/app-dialog';

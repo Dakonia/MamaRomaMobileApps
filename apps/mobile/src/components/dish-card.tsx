@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { mediaUrl, type Dish } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';

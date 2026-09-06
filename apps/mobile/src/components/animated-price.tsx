@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, type TextStyle } from 'react-native';
+import { StyleSheet, View, type TextStyle } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { formatPrice } from '@/lib/format';
 
 type Props = {

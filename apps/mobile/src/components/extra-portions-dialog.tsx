@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { ExtraIcon } from '@/components/extra-icon';
 import { PrimaryButton } from '@/components/primary-button';
 import { formatPrice, plural } from '@/lib/format';

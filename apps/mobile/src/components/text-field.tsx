@@ -1,5 +1,5 @@
 import { forwardRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { StyleSheet, View, type TextInputProps } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -7,6 +7,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Text, TextInput } from '@/components/text';
+import type { TextInput as RNTextInput } from 'react-native';
 import { useTheme } from '@/theme/theme-provider';
 
 type Props = TextInputProps & {
@@ -22,7 +24,7 @@ type Props = TextInputProps & {
  * ездит и не подкладывается под текст, поэтому цифры дома ни на что не налезают.
  * Живёт только рамка: в фокусе она перекрашивается в терракоту.
  */
-export const TextField = forwardRef<TextInput, Props>(function TextField(
+export const TextField = forwardRef<RNTextInput, Props>(function TextField(
   { label, hint, error, flex, style, onFocus, onBlur, value, placeholder, ...rest },
   ref,
 ) {

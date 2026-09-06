@@ -4,9 +4,10 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { api, mediaUrl, type Order } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { track } from '@/lib/analytics';

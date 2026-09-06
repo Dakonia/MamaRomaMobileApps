@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
+import { Text } from '@/components/text';
 import { mediaUrl, type Promotion } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { useTheme } from '@/theme/theme-provider';

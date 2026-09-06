@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { mediaUrl, type Order } from '@/api/client';
 import { PrimaryButton } from '@/components/primary-button';
 import { formatPrice } from '@/lib/format';

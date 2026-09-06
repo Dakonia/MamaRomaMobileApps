@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { TextInput } from '@/components/text';
 import { useTheme } from '@/theme/theme-provider';
 
 type Props = {

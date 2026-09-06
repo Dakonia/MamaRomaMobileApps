@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/text';
 import { mediaUrl, type Order } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { formatPrice } from '@/lib/format';

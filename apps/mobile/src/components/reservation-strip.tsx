@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 
+import { Text } from '@/components/text';
 import { api, type Reservation } from '@/api/client';
 import { PressableScale } from '@/components/pressable-scale';
 import { guestsLabel } from '@/lib/dates';

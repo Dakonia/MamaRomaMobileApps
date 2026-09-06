@@ -1,5 +1,7 @@
 import { forwardRef, useImperativeHandle } from 'react';
-import { StyleSheet, Text, View, type ViewProps } from 'react-native';
+import { StyleSheet, View, type ViewProps } from 'react-native';
+
+import { Text } from '@/components/text';
 
 export type Region = {
   latitude: number;
