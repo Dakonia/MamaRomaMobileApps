@@ -144,7 +144,8 @@ export default function CartScreen() {
   const [usePoints, setUsePoints] = useState(false);
   const [persons, setPersons] = useState(0);
   const [changeFrom, setChangeFrom] = useState('');
-  const [deliveryAt, setDeliveryAt] = useState<string | null>(null);
+  // Что выбрал гость. Пусто — берём ближайший слот, он считается ниже
+  const [picked, setPicked] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState<string | null>(null);
   const [pickingAddress, setPickingAddress] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -290,7 +291,7 @@ export default function CartScreen() {
       usePoints,
       promoCode,
       persons,
-      deliveryAt,
+      picked,
     ],
     enabled: authorized && cart.items.length > 0 && cart.restaurantId !== null,
     // Пока считается новый счёт, держим на экране прошлый: иначе при каждом
@@ -308,7 +309,7 @@ export default function CartScreen() {
         address_latitude: delivery ? (address?.latitude ?? null) : null,
         address_longitude: delivery ? (address?.longitude ?? null) : null,
         persons_count: persons,
-        delivery_at: deliveryAt,
+        delivery_at: picked,
         points_to_spend: usePoints ? 100_000 : 0,
         promo_code: promoCode,
       }),
@@ -334,10 +335,15 @@ export default function CartScreen() {
   const noPreorder = closedNow && bill?.preorder_enabled === false;
   const pickupClosed = noPreorder || (!delivery && closedNow);
 
-  useEffect(() => {
-    if (slots.length === 0 || pickupClosed) return;
-    if (deliveryAt === null && slots[0].iso !== null) setDeliveryAt(slots[0].iso);
-  }, [deliveryAt, pickupClosed, slots]);
+  /**
+   * Время доставки: выбранное гостем, иначе ближайший слот из расчёта.
+   *
+   * Считаем на месте, а не досылаем в состояние отдельным проходом отрисовки.
+   * В запрос счёта уходит только выбор гостя: слоты приходят в ответе, и до
+   * него подставлять нечего.
+   */
+  const deliveryAt =
+    picked ?? (pickupClosed || slots.length === 0 ? null : (slots[0].iso ?? null));
 
   // Причину берём из расчёта — сервер знает и про стоп-лист, и про меню
   // ресторана; меню в кэше нужно лишь для мгновенной отрисовки
@@ -1123,7 +1129,7 @@ export default function CartScreen() {
                 delivery ? 'Когда привезти' : 'Когда забрать',
                 'time-outline',
                 <View style={{ gap: theme.spacing.xs }}>
-                  <TimePicker slots={slots} value={deliveryAt} onChange={setDeliveryAt} />
+                  <TimePicker slots={slots} value={deliveryAt} onChange={setPicked} />
                   {bill?.delivery_open_now === false ? (
                     <Text style={[theme.typography.caption, { color: theme.colors.danger }]}>
                       Сегодня доставка закрыта — принимаем заказы на завтра, с{' '}

@@ -159,7 +159,13 @@ export function OrderRating({ order, onClose }: Props) {
   const queryClient = useQueryClient();
 
   const [rating, setRating] = useState(0);
-  const [tags, setTags] = useState<string[]>([]);
+  /**
+   * Отметки живут вместе с тем набором, из которого выбраны: гость поставил
+   * тройку, отметил «долго», передумал и поставил пятёрку — «долго» к похвале
+   * уже не относится. Помним набор рядом с выбором и не сбрасываем его
+   * отдельным проходом отрисовки.
+   */
+  const [marks, setMarks] = useState<{ tone: string; tags: string[] }>({ tone: '', tags: [] });
   const [comment, setComment] = useState('');
   const [done, setDone] = useState(false);
 
@@ -185,12 +191,9 @@ export function OrderRating({ order, onClose }: Props) {
   });
 
   const tone = toneOf(rating);
+  const tags = marks.tone === tone ? marks.tags : [];
   const choices = TAGS[order.type === 'delivery' ? 'delivery' : 'pickup'][tone];
 
-  // Список подменился — прежние отметки к нему уже не относятся
-  useEffect(() => {
-    setTags([]);
-  }, [tone]);
 
   const mood = MOOD[rating];
   const moodColor =
@@ -415,11 +418,12 @@ export function OrderRating({ order, onClose }: Props) {
                                 accessibilityState={{ selected: picked }}
                                 onPress={() => {
                                   void Haptics.selectionAsync();
-                                  setTags((current) =>
-                                    picked
-                                      ? current.filter((item) => item !== tag.text)
-                                      : [...current, tag.text],
-                                  );
+                                  setMarks({
+                                    tone,
+                                    tags: picked
+                                      ? tags.filter((item) => item !== tag.text)
+                                      : [...tags, tag.text],
+                                  });
                                 }}
                                 style={[
                                   styles.chip,

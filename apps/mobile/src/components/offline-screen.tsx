@@ -55,23 +55,30 @@ export function OfflineScreen() {
   const [state, setState] = useState<'hidden' | 'offline' | 'back'>('hidden');
   const [checking, setChecking] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [wasOnline, setWasOnline] = useState(online);
 
-  useEffect(() => {
+  /**
+   * Связь пропала — показываем заглушку сразу, до отрисовки: ждать лишнего
+   * прохода тут нечего. Связь вернулась — сообщаем об этом только тому, кто
+   * её терял, и убираем сообщение через несколько секунд.
+   */
+  if (wasOnline !== online) {
+    setWasOnline(online);
+
     if (!online) {
       setState('offline');
-      return;
+    } else if (state !== 'hidden') {
+      setDismissed(false);
+      setState('back');
     }
+  }
 
-    // «Вернулись» показываем только тем, кто до этого потерял связь
-    if (state === 'hidden') return;
+  useEffect(() => {
+    if (state !== 'back') return;
 
-    setDismissed(false);
-    setState('back');
     const timer = setTimeout(() => setState('hidden'), BACK_MS);
-
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online]);
+  }, [state]);
 
   const nudge = useSharedValue(0);
 

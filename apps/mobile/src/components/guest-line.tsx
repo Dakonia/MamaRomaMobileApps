@@ -74,7 +74,14 @@ export function GuestLine({
 }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
-  const [shown, setShown] = useState(value);
+  /**
+   * Сколько гостей показываем. Во время ведения ползунка — своё число, оно
+   * меняется быстрее, чем успевает ответить экран брони; в покое — то, что
+   * пришло снаружи. Синхронизировать их эффектом не нужно.
+   */
+  const [dragged, setDragged] = useState<number | null>(null);
+  const [came, setCame] = useState(value);
+  const shown = dragged ?? value;
 
   const usable = Math.max(0, width - KNOB);
   const share = useSharedValue((value - 1) / (SEATS - 1));
@@ -82,13 +89,19 @@ export function GuestLine({
   const held = useSharedValue(0);
 
   const report = (count: number) => {
-    setShown(count);
+    setDragged(count);
     onChange(count);
     void Haptics.selectionAsync();
   };
 
+  // Пришло новое число снаружи — свой выбор забываем прямо здесь, до отрисовки:
+  // так на экране не мелькнёт старое значение
+  if (came !== value) {
+    setCame(value);
+    setDragged(null);
+  }
+
   useEffect(() => {
-    setShown(value);
     last.set(value);
     share.set(withSpring((value - 1) / (SEATS - 1), { damping: 16, stiffness: 200 }));
   }, [value, share, last]);

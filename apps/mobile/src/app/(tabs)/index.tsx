@@ -214,6 +214,12 @@ export default function MenuScreen() {
     repriced: string[];
   } | null>(null);
   const movedFor = useRef<string | null>(null);
+  /**
+   * Здесь эффект по делу, а не по недосмотру: он не вычисляет состояние из
+   * пропсов, а сверяет корзину с меню нового ресторана — то есть работает с
+   * внешним хранилищем, как только приходят данные. Перенести это в отрисовку
+   * нельзя: правка корзины прямо там куда хуже лишнего прохода.
+   */
   useEffect(() => {
     const dishes = menu.data?.categories.flatMap((category) => category.dishes) ?? [];
     if (cart.restaurantId === null || dishes.length === 0) return;
@@ -225,6 +231,7 @@ export default function MenuScreen() {
     const report = cart.moveTo(cart.restaurantId, dishes);
     if (report.unavailable.length === 0 && report.repriced.length === 0) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMoveReport({
       unavailable: report.unavailable,
       repriced: report.repriced.map((row) => `${row.name} · ${formatPrice(row.to)}`),
@@ -416,29 +423,6 @@ export default function MenuScreen() {
    */
   const cardWidth = (width - theme.layout.screenPadding * 2 - theme.spacing.md) / 2;
 
-  const jumpTo = async (categoryId: string) => {
-    const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
-    const list = listRef.current;
-    if (index < 0 || list === null) return;
-
-    jumpingUntil.current = Date.now() + 1600;
-    setActiveCategory(categoryId);
-
-    // Сначала прыгаем примерно — после этого заголовок точно отрисован
-    await list.scrollToIndex({ index, animated: true, viewPosition: 0 });
-
-    // Затем измеряем, где он оказался на экране, и сдвигаем список на разницу
-    for (let pass = 0; pass < 2; pass += 1) {
-      const shift = await measureShift(categoryId);
-      if (shift === null || Math.abs(shift) < 2) break;
-
-      await list.scrollToOffset({
-        offset: Math.max(0, scrollOffset.value + shift),
-        animated: pass === 0,
-      });
-    }
-  };
-
   const measureShift = (categoryId: string) =>
     new Promise<number | null>((resolve) => {
       const node = titleNodes.current[categoryId];
@@ -451,8 +435,47 @@ export default function MenuScreen() {
       node.measureInWindow((_x, y) => resolve(y - Math.max(0, heroHeight - topSize)));
     });
 
-  const onViewable = useRef(
+  /**
+   * Прыжок к категории по нажатию в полосе. Обёрнут в useCallback не ради
+   * скорости: так компилятор видит, что это обработчик, и не считает работу
+   * со временем и прокруткой частью отрисовки.
+   */
+  const jumpTo = useCallback(
+    async (categoryId: string) => {
+      const index = rows.findIndex((row) => row.kind === 'title' && row.categoryId === categoryId);
+      const list = listRef.current;
+      if (index < 0 || list === null) return;
+
+      jumpingUntil.current = Date.now() + 1600;
+      setActiveCategory(categoryId);
+
+      // Сначала прыгаем примерно — после этого заголовок точно отрисован
+      await list.scrollToIndex({ index, animated: true, viewPosition: 0 });
+
+      // Затем измеряем, где он оказался на экране, и сдвигаем список на разницу
+      for (let pass = 0; pass < 2; pass += 1) {
+        const shift = await measureShift(categoryId);
+        if (shift === null || Math.abs(shift) < 2) break;
+
+        await list.scrollToOffset({
+          offset: Math.max(0, scrollOffset.value + shift),
+          animated: pass === 0,
+        });
+      }
+    },
+    [measureShift, rows, scrollOffset],
+  );
+
+
+  /**
+   * Какая категория сейчас под шапкой. Ссылка на обработчик должна быть
+   * постоянной — список запоминает её один раз, — но доставать её из useRef
+   * прямо при отрисовке нельзя: там значения ref ещё не считаются готовыми.
+   */
+  const onViewable = useCallback(
     ({ viewableItems }: { viewableItems: { item: Row }[] }) => {
+      // Пока идёт прыжок к категории, за прокруткой не следим: она сама
+      // проезжает мимо чужих заголовков
       if (Date.now() < jumpingUntil.current) return;
 
       const first = viewableItems.find(
@@ -462,7 +485,8 @@ export default function MenuScreen() {
         setActiveCategory(first.item.categoryId);
       }
     },
-  ).current;
+    [],
+  );
 
   const renderRow = ({ item }: { item: Row }) => {
     if (item.kind === 'order') {
