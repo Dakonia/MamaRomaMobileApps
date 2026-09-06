@@ -23,3 +23,27 @@ jest.mock('@/lib/analytics', () => ({
   identify: jest.fn(),
   describe: jest.fn(),
 }));
+
+/**
+ * Нативные виды, которых в тестах нет: снимок блюда и отдача при нажатии.
+ * Проверяем поведение, а не картинку, поэтому подменяем их простыми заглушками.
+ */
+jest.mock('expo-image', () => {
+  const { View } = require('react-native');
+  return { Image: View };
+});
+
+jest.mock('expo-haptics', () => ({
+  impactAsync: jest.fn(),
+  selectionAsync: jest.fn(),
+  notificationAsync: jest.fn(),
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+}));
+
+/** Токены гостя лежат в защищённом хранилище телефона — в тестах его нет. */
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
+}));

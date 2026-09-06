@@ -6,7 +6,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { mediaUrl, type Order } from '@/api/client';
 import { PrimaryButton } from '@/components/primary-button';
 import { formatPrice } from '@/lib/format';
-import { lineKey, useCart } from '@/store/cart';
+import { itemsFromOrder, useCart } from '@/store/cart';
 import { useTheme } from '@/theme/theme-provider';
 
 const MONTHS = [
@@ -44,30 +44,7 @@ export function RepeatOrder({ order }: { order: Order }) {
   const names = order.items.map((item) => item.name).join(' · ');
   const portions = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
-  const repeat = () => {
-    cart.repeat(
-      order.restaurant_id,
-      order.items
-        .filter((item) => item.dish_id !== null)
-        .map((item) => {
-          const extras = item.extras.map((extra, index) => ({
-            id: `${item.dish_id}-${index}`,
-            name: extra.name,
-            priceKopecks: extra.price_kopecks,
-          }));
-
-          return {
-            key: lineKey(item.dish_id ?? '', extras),
-            dishId: item.dish_id ?? '',
-            name: item.name,
-            priceKopecks:
-              item.unit_price_kopecks - extras.reduce((sum, extra) => sum + extra.priceKopecks, 0),
-            extras,
-            quantity: item.quantity,
-          };
-        }),
-    );
-  };
+  const repeat = () => cart.repeat(order.restaurant_id, itemsFromOrder(order));
 
   return (
     <Animated.View

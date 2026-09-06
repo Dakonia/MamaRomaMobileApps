@@ -25,7 +25,7 @@ import { EmptyState } from '@/components/empty-state';
 import { MenuSkeleton } from '@/components/menu-skeleton';
 import { PressableScale } from '@/components/pressable-scale';
 import { PromoCarousel } from '@/components/promo-carousel';
-import { ActiveOrder } from '@/components/active-order';
+import { OrderStrip } from '@/components/order-strip';
 import { AppDialog } from '@/components/app-dialog';
 import { SearchField } from '@/components/search-field';
 import { formatPrice } from '@/lib/format';
@@ -490,17 +490,7 @@ export default function MenuScreen() {
 
   const renderRow = ({ item }: { item: Row }) => {
     if (item.kind === 'order') {
-      return (
-        <View
-          style={{
-            paddingHorizontal: theme.layout.screenPadding,
-            paddingTop: theme.spacing.base,
-            paddingBottom: theme.spacing.base,
-          }}
-        >
-          <ActiveOrder />
-        </View>
-      );
+      return <OrderStrip />;
     }
 
     if (item.kind === 'notice') {

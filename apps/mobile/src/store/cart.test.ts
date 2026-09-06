@@ -7,8 +7,16 @@
  * поэтому проверяем их отдельно от экранов.
  */
 
-import type { Dish } from '@/api/client';
-import { cartCount, cartSubtotal, itemPrice, lineKey, useCart, type CartItem } from '@/store/cart';
+import type { Dish, Order } from '@/api/client';
+import {
+  cartCount,
+  cartSubtotal,
+  itemPrice,
+  itemsFromOrder,
+  lineKey,
+  useCart,
+  type CartItem,
+} from '@/store/cart';
 
 function line(overrides: Partial<CartItem> = {}): CartItem {
   return {
@@ -140,5 +148,70 @@ describe('переезд корзины в другой ресторан', () =>
 
     expect(report.repriced).toEqual([]);
     expect(report.unavailable).toEqual([]);
+  });
+});
+
+describe('повтор прошлого заказа', () => {
+  function order(items: Order['items']): Order {
+    return { id: 'o1', restaurant_id: 'r1', items } as Order;
+  }
+
+  it('цену добавок отделяет от цены блюда', () => {
+    const items = itemsFromOrder(
+      order([
+        {
+          id: 'i1',
+          dish_id: 'pizza',
+          name: 'Маргарита',
+          // В заказе порция хранится вместе с добавками, в корзине — раздельно
+          unit_price_kopecks: 50_000,
+          quantity: 2,
+          total_kopecks: 100_000,
+          extras: [{ name: 'Сыр', price_kopecks: 9_000 }],
+        },
+      ] as Order['items']),
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0].priceKopecks).toBe(41_000);
+    expect(items[0].extras[0].priceKopecks).toBe(9_000);
+    expect(itemPrice(items[0])).toBe(50_000);
+    expect(cartSubtotal(items)).toBe(100_000);
+  });
+
+  it('позицию, добавленную на кассе, повторить нечем', () => {
+    const items = itemsFromOrder(
+      order([
+        {
+          id: 'i1',
+          dish_id: null,
+          name: 'Блюдо с кассы',
+          unit_price_kopecks: 30_000,
+          quantity: 1,
+          total_kopecks: 30_000,
+          extras: [],
+        },
+      ] as unknown as Order['items']),
+    );
+
+    expect(items).toEqual([]);
+  });
+
+  it('одинаковые наборы добавок дают одну строку', () => {
+    const items = itemsFromOrder(
+      order([
+        {
+          id: 'i1',
+          dish_id: 'pizza',
+          name: 'Маргарита',
+          unit_price_kopecks: 41_000,
+          quantity: 1,
+          total_kopecks: 41_000,
+          extras: [],
+        },
+      ] as Order['items']),
+    );
+
+    expect(items[0].key).toBe(lineKey('pizza', []));
   });
 });

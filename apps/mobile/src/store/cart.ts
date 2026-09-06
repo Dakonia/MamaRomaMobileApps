@@ -5,7 +5,7 @@ import { track, trackCartAdd, trackCartRemove } from '@/lib/analytics';
 import type { SoldItem } from '@/lib/analytics';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { Dish } from '@/api/client';
+import type { Dish, Order } from '@/api/client';
 
 export type CartExtra = { id: string; name: string; priceKopecks: number };
 
@@ -29,6 +29,36 @@ export function itemPrice(item: CartItem): number {
 /** Строка корзины в виде, который уходит в товарные отчёты аналитики. */
 export function soldItem(item: CartItem, quantity = item.quantity): SoldItem {
   return { sku: item.dishId, name: item.name, priceKopecks: itemPrice(item), quantity };
+}
+
+/**
+ * Прошлый заказ в виде строк корзины.
+ *
+ * Заказ хранит цену порции вместе с добавками, а корзина — раздельно, иначе
+ * при снятии добавки пришлось бы угадывать, сколько стоило блюдо само по себе.
+ * Позиции без блюда пропускаем: их добавили на кассе, и в меню их нет.
+ */
+export function itemsFromOrder(order: Order): CartItem[] {
+  return order.items
+    .filter((item) => item.dish_id !== null)
+    .map((item) => {
+      const extras = item.extras.map((extra, index) => ({
+        id: `${item.dish_id}-${index}`,
+        name: extra.name,
+        priceKopecks: extra.price_kopecks,
+      }));
+
+      const extrasPrice = extras.reduce((sum, extra) => sum + extra.priceKopecks, 0);
+
+      return {
+        key: lineKey(item.dish_id ?? '', extras),
+        dishId: item.dish_id ?? '',
+        name: item.name,
+        priceKopecks: item.unit_price_kopecks - extrasPrice,
+        extras,
+        quantity: item.quantity,
+      };
+    });
 }
 
 /** Один и тот же набор добавок даёт один ключ независимо от порядка выбора. */
