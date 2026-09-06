@@ -28,21 +28,20 @@ import { api, mediaUrl, type Address, type ApiError } from '@/api/client';
 import { AnimatedPrice } from '@/components/animated-price';
 import { AppDialog } from '@/components/app-dialog';
 import { ExtraPortionsDialog } from '@/components/extra-portions-dialog';
-import {
-  CartLine,
-  FreeDeliveryBar,
-  PaymentPicker,
-  PersonsRow,
-  PointsCard,
-  CommentField,
-  PromoField,
-  TimePicker,
-  UpsellShelf,
-  type PaymentMethod,
-} from '@/components/cart-pieces';
+import { CartLine } from '@/components/cart/cart-line';
+import { CommentField } from '@/components/cart/comment-field';
+import { FreeDeliveryBar } from '@/components/cart/free-delivery-bar';
+import { PaymentPicker } from '@/components/cart/payment-picker';
+import { type PaymentMethod } from '@/components/cart/payments';
+import { PersonsRow } from '@/components/cart/persons-row';
+import { PointsCard } from '@/components/cart/points-card';
+import { PromoField } from '@/components/cart/promo-field';
+import { TimePicker } from '@/components/cart/time-picker';
+import { UpsellShelf } from '@/components/cart/upsell-shelf';
 import { EmptyState } from '@/components/empty-state';
 import { ExtraIcon } from '@/components/extra-icon';
 import { FlyingDish, type FlightStart } from '@/components/flying-dish';
+import { CartHeader } from '@/components/cart/cart-header';
 import { PizzaBackdrop } from '@/components/pizza-backdrop';
 import { PressableScale } from '@/components/pressable-scale';
 import { PrimaryButton } from '@/components/primary-button';
@@ -50,6 +49,7 @@ import { RepeatOrder } from '@/components/repeat-order';
 import { Skeleton } from '@/components/skeleton';
 import { formatPrice } from '@/lib/format';
 import { keyboardScroll } from '@/lib/keyboard';
+import { timeSlots } from '@/lib/slots';
 import { tenant } from '@/lib/tenant';
 import { cartCount, cartSubtotal, soldItem, useCart } from '@/store/cart';
 import { usePushAsk } from '@/store/push-ask';
@@ -64,69 +64,6 @@ const MONTHS = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
-
-/** «11:00:00» → минуты от полуночи. */
-function minutesOf(value: string): number {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-// Кухня не отдаёт заказы с первой минуты смены: раньше этого времени
-// после открытия доставку не предлагаем
-const WARMUP_MINUTES = 90;
-
-/**
- * Слоты доставки внутри рабочих часов. Если сегодня окно уже закрылось,
- * предлагаем завтрашние — заказать «на сейчас» в нерабочее время нельзя.
- */
-function timeSlots(
-  opensAt: string | null,
-  closesAt: string | null,
-  openNow: boolean,
-): { iso: string | null; label: string }[] {
-  const slots: { iso: string | null; label: string }[] = [];
-
-  // «Как можно скорее» имеет смысл, только пока доставка работает
-  if (openNow) slots.push({ iso: null, label: 'Как можно скорее' });
-
-  const opens = opensAt ? minutesOf(opensAt) : 0;
-  const closes = closesAt ? minutesOf(closesAt) : 24 * 60;
-
-  const now = new Date();
-  const earliest = new Date(now.getTime() + 45 * 60_000);
-  earliest.setMinutes(earliest.getMinutes() > 30 ? 60 : 30, 0, 0);
-
-  let cursor = new Date(earliest);
-  const startOfDay = (date: Date, minutes: number) => {
-    const result = new Date(date);
-    result.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-    return result;
-  };
-
-  // Слишком рано или уже поздно — переносим на ближайшее рабочее окно
-  const todayOpens = startOfDay(now, opens + WARMUP_MINUTES);
-  const todayCloses = startOfDay(now, closes);
-  if (cursor < todayOpens) cursor = todayOpens;
-  if (cursor > todayCloses) {
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60_000);
-    cursor = startOfDay(tomorrow, opens + WARMUP_MINUTES);
-  }
-
-  const tomorrow = cursor.getDate() !== now.getDate();
-  const limit = startOfDay(cursor, closes);
-
-  for (let step = 0; step < 12 && cursor <= limit; step += 1) {
-    const hh = String(cursor.getHours()).padStart(2, '0');
-    const mm = String(cursor.getMinutes()).padStart(2, '0');
-    slots.push({
-      iso: cursor.toISOString(),
-      label: tomorrow ? `Завтра ${hh}:${mm}` : `${hh}:${mm}`,
-    });
-    cursor = new Date(cursor.getTime() + 30 * 60_000);
-  }
-
-  return slots;
-}
 
 export default function CartScreen() {
   const theme = useTheme();
@@ -488,57 +425,13 @@ export default function CartScreen() {
   });
 
   const header = (
-    <View
-      style={[
-        styles.line,
-        {
-          paddingTop: insets.top + theme.spacing.sm,
-          paddingHorizontal: theme.spacing.sm,
-          paddingBottom: theme.spacing.sm,
-          gap: theme.spacing.xs,
-          backgroundColor: theme.colors.backgroundAlt,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: theme.colors.divider,
-        },
-      ]}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Назад в меню"
-        hitSlop={theme.hitSlop}
-        onPress={back}
-        style={[
-          styles.center,
-          { width: theme.layout.minTouchTarget, height: theme.layout.minTouchTarget },
-        ]}
-      >
-        <Ionicons name="chevron-back" size={26} color={theme.colors.textPrimary} />
-      </Pressable>
-
-      <View style={styles.grow}>
-        <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>Корзина</Text>
-        {count > 0 ? (
-          <Text style={[theme.typography.caption, { color: theme.colors.textTertiary }]}>
-            {count} {count === 1 ? 'позиция' : count < 5 ? 'позиции' : 'позиций'} ·{' '}
-            {delivery ? 'доставка' : 'самовывоз'}
-          </Text>
-        ) : null}
-      </View>
-
-      {count > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Очистить корзину"
-          hitSlop={theme.hitSlop}
-          onPress={() => setClearing(true)}
-          style={[
-            styles.center,
-            { width: theme.layout.minTouchTarget, height: theme.layout.minTouchTarget },
-          ]}
-        >
-          <Ionicons name="trash-outline" size={20} color={theme.colors.textTertiary} />
-        </Pressable>
-      ) : null}
+    <View style={{ paddingTop: insets.top + theme.spacing.sm }}>
+      <CartHeader
+        count={count}
+        delivery={delivery}
+        onBack={back}
+        onClear={() => setClearing(true)}
+      />
     </View>
   );
 
