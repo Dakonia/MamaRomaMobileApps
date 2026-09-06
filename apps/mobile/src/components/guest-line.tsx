@@ -89,8 +89,8 @@ export function GuestLine({
 
   useEffect(() => {
     setShown(value);
-    last.value = value;
-    share.value = withSpring((value - 1) / (SEATS - 1), { damping: 16, stiffness: 200 });
+    last.set(value);
+    share.set(withSpring((value - 1) / (SEATS - 1), { damping: 16, stiffness: 200 }));
   }, [value, share, last]);
 
   const pick = (x: number) => {
@@ -98,19 +98,19 @@ export function GuestLine({
     if (usable <= 0) return;
 
     const next = Math.min(1, Math.max(0, (x - KNOB / 2) / usable));
-    share.value = next;
+    share.set(next);
 
     const count = Math.round(next * (SEATS - 1)) + 1;
-    if (count !== last.value) {
-      last.value = count;
+    if (count !== last.get()) {
+      last.set(count);
       runOnJS(report)(count);
     }
   };
 
   const snap = () => {
     'worklet';
-    held.value = withTiming(0, { duration: 160 });
-    share.value = withSpring((last.value - 1) / (SEATS - 1), { damping: 15, stiffness: 210 });
+    held.set(withTiming(0, { duration: 160 }));
+    share.set(withSpring((last.get() - 1) / (SEATS - 1), { damping: 15, stiffness: 210 }));
   };
 
   // Ведение включается от горизонтального движения: вертикальный свайп
@@ -118,7 +118,7 @@ export function GuestLine({
   const slide = Gesture.Pan()
     .activeOffsetX([-8, 8])
     .onStart((event) => {
-      held.value = withTiming(1, { duration: 140 });
+      held.set(withTiming(1, { duration: 140 }));
       pick(event.x);
     })
     .onUpdate((event) => pick(event.x))
@@ -131,18 +131,18 @@ export function GuestLine({
 
   const knob = useAnimatedStyle(() => ({
     transform: [
-      { translateX: share.value * usable },
-      { scale: 1 + held.value * 0.12 },
+      { translateX: share.get() * usable },
+      { scale: 1 + held.get() * 0.12 },
     ],
   }));
 
   const halo = useAnimatedStyle(() => ({
-    opacity: held.value * 0.18,
-    transform: [{ translateX: share.value * usable - KNOB / 2 }, { scale: 1 + held.value * 0.2 }],
+    opacity: held.get() * 0.18,
+    transform: [{ translateX: share.get() * usable - KNOB / 2 }, { scale: 1 + held.get() * 0.2 }],
   }));
 
   const fill = useAnimatedStyle(() => ({
-    width: KNOB / 2 + share.value * usable,
+    width: KNOB / 2 + share.get() * usable,
   }));
 
   return (

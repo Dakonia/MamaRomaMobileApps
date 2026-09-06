@@ -67,66 +67,6 @@ export default function AddressMapScreen() {
       : null,
   );
 
-  useEffect(() => {
-    if (start !== null) return;
-
-    let alive = true;
-    let shown = false;
-
-    const settle = (point: { latitude: number; longitude: number }, mine = true) => {
-      if (!alive) return;
-
-      // Карта уже открыта на запасной точке — не перерисовываем её заново,
-      // а плавно доезжаем до гостя и спрашиваем адрес там
-      if (shown) {
-        if (!mine) return;
-
-        const here = { ...point, ...SPAN };
-        setReal(true);
-        lastAsked.current = here;
-        map.current?.animateToRegion(here, 600);
-        void resolve(here);
-        return;
-      }
-
-      shown = true;
-      setReal(mine);
-      setStart({ ...point, ...SPAN });
-    };
-
-    // Не дождались телефона — открываем центр города, но без адреса под меткой
-    const patience = setTimeout(() => settle(FALLBACK, false), LOCATE_MS);
-
-    void (async () => {
-      try {
-        const granted = await Location.requestForegroundPermissionsAsync();
-        if (!granted.granted) {
-          setFailure('Доступ к геопозиции закрыт — найдите дом на карте руками');
-          settle(FALLBACK, false);
-          return;
-        }
-
-        const position =
-          (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 })) ??
-          (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-
-        if (position) {
-          settle({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-        } else {
-          settle(FALLBACK, false);
-        }
-      } catch {
-        settle(FALLBACK, false);
-      } finally {
-        clearTimeout(patience);
-      }
-    })();
-
-    return () => {
-      alive = false;
-      clearTimeout(patience);
-    };
-  }, [start]);
 
   // Куда сеть возит: общий силуэт на карте и разбивка по зонам под меткой
   const coverage = useQuery({
@@ -193,6 +133,67 @@ export default function AddressMapScreen() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (start !== null) return;
+
+    let alive = true;
+    let shown = false;
+
+    const settle = (point: { latitude: number; longitude: number }, mine = true) => {
+      if (!alive) return;
+
+      // Карта уже открыта на запасной точке — не перерисовываем её заново,
+      // а плавно доезжаем до гостя и спрашиваем адрес там
+      if (shown) {
+        if (!mine) return;
+
+        const here = { ...point, ...SPAN };
+        setReal(true);
+        lastAsked.current = here;
+        map.current?.animateToRegion(here, 600);
+        void resolve(here);
+        return;
+      }
+
+      shown = true;
+      setReal(mine);
+      setStart({ ...point, ...SPAN });
+    };
+
+    // Не дождались телефона — открываем центр города, но без адреса под меткой
+    const patience = setTimeout(() => settle(FALLBACK, false), LOCATE_MS);
+
+    void (async () => {
+      try {
+        const granted = await Location.requestForegroundPermissionsAsync();
+        if (!granted.granted) {
+          setFailure('Доступ к геопозиции закрыт — найдите дом на карте руками');
+          settle(FALLBACK, false);
+          return;
+        }
+
+        const position =
+          (await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 })) ??
+          (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+
+        if (position) {
+          settle({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        } else {
+          settle(FALLBACK, false);
+        }
+      } catch {
+        settle(FALLBACK, false);
+      } finally {
+        clearTimeout(patience);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      clearTimeout(patience);
+    };
+  }, [resolve, start]);
 
   // Точка известна и она настоящая — сразу спрашиваем адрес под меткой.
   // Для центра города не спрашиваем: это не адрес гостя, а заглушка

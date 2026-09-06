@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
  * Android забирает касание себе, и свайп по экрану до жеста не доходил
  */
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
+import type { ScrollView as RNScrollView } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -153,7 +154,9 @@ export default function CartScreen() {
   const [failure, setFailure] = useState<string | null>(null);
   // Оформление и покупка должны прийти в товарную воронку одной парой
   const checkoutId = useRef<string | null>(null);
-  const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  // Тип берём у самой RN-прокрутки: обёртка из gesture-handler свой ref не
+  // описывает, и вывод типов упирался в never
+  const scroller = useRef<RNScrollView>(null);
   const paymentY = useRef(0);
 
   const subtotal = cartSubtotal(cart.items);

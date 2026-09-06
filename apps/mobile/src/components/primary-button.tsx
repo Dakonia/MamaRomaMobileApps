@@ -18,7 +18,7 @@ export function PrimaryButton({ label, onPress, loading, disabled, tone = 'brand
   const scale = useSharedValue(1);
   const blocked = Boolean(disabled ?? loading);
 
-  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 
   const ghost = tone === 'ghost';
   const danger = tone === 'danger';
@@ -30,10 +30,10 @@ export function PrimaryButton({ label, onPress, loading, disabled, tone = 'brand
       disabled={blocked}
       onPress={onPress}
       onPressIn={() => {
-        scale.value = withSpring(0.97, { damping: 20, stiffness: 340 });
+        scale.set(withSpring(0.97, { damping: 20, stiffness: 340 }));
       }}
       onPressOut={() => {
-        scale.value = withSpring(1, { damping: 14, stiffness: 260 });
+        scale.set(withSpring(1, { damping: 14, stiffness: 260 }));
       }}
       style={[
         styles.root,

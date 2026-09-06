@@ -47,10 +47,10 @@ export function PushInvite() {
   const authorized = session.status === 'authorized';
 
   useEffect(() => {
-    if (!authorized || !wanted) {
-      setShow(false);
-      return;
-    }
+    // Гость не вошёл или уведомления ему не нужны — приглашение просто не
+    // рисуем. Гасить его через состояние прямо в эффекте нельзя: это лишний
+    // прогон отрисовки на каждый вход и выход
+    if (!authorized || !wanted) return;
 
     void (async () => {
       const [allowed, denied] = await Promise.all([pushAllowed(), pushBlocked()]);
@@ -78,7 +78,7 @@ export function PushInvite() {
   const bell = useSharedValue(0);
 
   useEffect(() => {
-    if (!show) return;
+    if (!show || !authorized || !wanted) return;
 
     bell.value = withRepeat(
       withSequence(
@@ -91,13 +91,13 @@ export function PushInvite() {
       -1,
       false,
     );
-  }, [bell, show]);
+  }, [authorized, bell, show, wanted]);
 
   const swing = useAnimatedStyle(() => ({
     transform: [{ rotate: `${bell.value * 12}deg` }],
   }));
 
-  if (!show) return null;
+  if (!show || !authorized || !wanted) return null;
 
   const allow = () => {
     setBusy(true);

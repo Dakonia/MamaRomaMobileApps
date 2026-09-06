@@ -33,7 +33,7 @@ export function PressableScale({
 }: Props) {
   const scale = useSharedValue(1);
 
-  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 
   return (
     <AnimatedPressable
@@ -44,10 +44,10 @@ export function PressableScale({
       onLongPress={onLongPress}
       delayLongPress={280}
       onPressIn={() => {
-        scale.value = withSpring(depth, { damping: 18, stiffness: 320 });
+        scale.set(withSpring(depth, { damping: 18, stiffness: 320 }));
       }}
       onPressOut={() => {
-        scale.value = withSpring(1, { damping: 14, stiffness: 260 });
+        scale.set(withSpring(1, { damping: 14, stiffness: 260 }));
       }}
       style={[style, animated]}
     >

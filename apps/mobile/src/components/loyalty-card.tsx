@@ -103,24 +103,24 @@ export function LoyaltyCard({ loyalty, name, birthday }: Props) {
   }));
 
   const front = useAnimatedStyle(() => ({
-    opacity: turn.value < 0.5 ? 1 : 0,
+    opacity: turn.get() < 0.5 ? 1 : 0,
     transform: [
       { perspective: 900 },
-      { rotateY: `${interpolate(turn.value, [0, 1], [0, 180])}deg` },
+      { rotateY: `${interpolate(turn.get(), [0, 1], [0, 180])}deg` },
     ],
   }));
 
   const back = useAnimatedStyle(() => ({
-    opacity: turn.value < 0.5 ? 0 : 1,
+    opacity: turn.get() < 0.5 ? 0 : 1,
     transform: [
       { perspective: 900 },
-      { rotateY: `${interpolate(turn.value, [0, 1], [-180, 0])}deg` },
+      { rotateY: `${interpolate(turn.get(), [0, 1], [-180, 0])}deg` },
     ],
   }));
 
   const flip = () => {
     setFlipped((value) => !value);
-    turn.value = withTiming(flipped ? 0 : 1, { duration: 460 });
+    turn.set(withTiming(flipped ? 0 : 1, { duration: 460 }));
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 

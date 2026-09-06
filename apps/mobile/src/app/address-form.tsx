@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,9 +16,16 @@ import {
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { api, ApiError, type AddressSuggestion, type DeliveryResolve } from '@/api/client';
+import {
+  api,
+  ApiError,
+  type Address,
+  type AddressSuggestion,
+  type DeliveryResolve,
+} from '@/api/client';
 import { PrimaryButton } from '@/components/primary-button';
 import { Grabber } from '@/components/screen-header';
+import { Skeleton } from '@/components/skeleton';
 import { TextField } from '@/components/text-field';
 import { useAddressDraft } from '@/store/address-draft';
 import { keyboardScroll } from '@/lib/keyboard';
@@ -32,72 +39,85 @@ const TITLES = [
   { value: 'Другое', icon: 'location-outline' },
 ] as const;
 
+/**
+ * Экран правки адреса.
+ *
+ * Пока адрес не загружен, форму не показываем вовсе: иначе поля пришлось бы
+ * заполнять вторым проходом отрисовки, а это лишние перерисовки и знакомая
+ * ловушка — гость начинает печатать, и загруженные данные затирают набранное.
+ */
 export default function AddressFormScreen() {
-  const theme = useTheme();
-  const cart = useCart();
-  const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
   const params = useLocalSearchParams<{ mode?: string; onboarding?: string; id?: string }>();
   const editingId = params.id ?? null;
 
-  const [cityId, setCityId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [debounced, setDebounced] = useState('');
-  const [picked, setPicked] = useState<AddressSuggestion | null>(null);
-  const [manual, setManual] = useState(false);
-  // Кто везёт на выбранный адрес: считаем и на карте, и при ручном вводе
-  const [delivery, setDelivery] = useState<DeliveryResolve | null>(null);
-
-  const [street, setStreet] = useState('');
-  const [locality, setLocality] = useState('');
-  const [house, setHouse] = useState('');
-  const [corpus, setCorpus] = useState('');
-  const [structure, setStructure] = useState('');
-  const [flat, setFlat] = useState('');
-  const [entrance, setEntrance] = useState('');
-  const [floor, setFloor] = useState('');
-  const [intercom, setIntercom] = useState('');
-  const [comment, setComment] = useState('');
-  const [title, setTitle] = useState<string>('Дом');
-
-  const [failure, setFailure] = useState<string | null>(null);
-
-  const cities = useQuery({ queryKey: ['cities'], queryFn: () => api.cities() });
-
-  // Правим сохранённый адрес — подставляем его поля в форму
   const existing = useQuery({
     queryKey: ['addresses'],
     queryFn: () => api.addresses(),
     enabled: editingId !== null,
   });
 
-  const filled = useRef(false);
-  useEffect(() => {
-    if (filled.current || editingId === null) return;
-    const address = (existing.data ?? []).find((row) => row.id === editingId);
-    if (!address) return;
+  if (editingId !== null && existing.isPending) {
+    return (
+      <View style={{ flex: 1, gap: 12, padding: 16 }}>
+        <Skeleton height={44} />
+        <Skeleton height={44} />
+        <Skeleton height={44} />
+      </View>
+    );
+  }
 
-    filled.current = true;
-    setStreet(address.street);
-    setLocality(address.locality ?? '');
-    setHouse(address.house);
-    setCorpus(address.building?.startsWith('стр') ? '' : (address.building ?? ''));
-    setStructure(address.building?.startsWith('стр') ? address.building : '');
-    setFlat(address.flat ?? '');
-    setEntrance(address.entrance ?? '');
-    setFloor(address.floor ?? '');
-    setIntercom(address.intercom ?? '');
-    setComment(address.comment ?? '');
-    setTitle(address.title ?? 'Дом');
-    setSearch(address.full_text);
-    setManual(true);
-    setCityId(address.city_id);
-  }, [editingId, existing.data]);
+  const address = (existing.data ?? []).find((row) => row.id === editingId) ?? null;
+
+  return <AddressForm address={address} editingId={editingId} params={params} />;
+}
+
+function AddressForm({
+  address,
+  editingId,
+  params,
+}: {
+  address: Address | null;
+  editingId: string | null;
+  params: { mode?: string; onboarding?: string; id?: string };
+}) {
+  const theme = useTheme();
+  const cart = useCart();
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const [cityId, setCityId] = useState<string | null>(address?.city_id ?? null);
+  const [search, setSearch] = useState(address?.full_text ?? '');
+  const [debounced, setDebounced] = useState('');
+  const [picked, setPicked] = useState<AddressSuggestion | null>(null);
+  const [manual, setManual] = useState(address !== null);
+  // Кто везёт на выбранный адрес: считаем и на карте, и при ручном вводе
+  const [delivery, setDelivery] = useState<DeliveryResolve | null>(null);
+
+  const [street, setStreet] = useState(address?.street ?? '');
+  const [locality, setLocality] = useState(address?.locality ?? '');
+  const [house, setHouse] = useState(address?.house ?? '');
+  const [corpus, setCorpus] = useState(
+    address?.building?.startsWith('стр') ? '' : (address?.building ?? ''),
+  );
+  const [structure, setStructure] = useState(
+    address?.building?.startsWith('стр') ? address.building : '',
+  );
+  const [flat, setFlat] = useState(address?.flat ?? '');
+  const [entrance, setEntrance] = useState(address?.entrance ?? '');
+  const [floor, setFloor] = useState(address?.floor ?? '');
+  const [intercom, setIntercom] = useState(address?.intercom ?? '');
+  const [comment, setComment] = useState(address?.comment ?? '');
+  const [title, setTitle] = useState<string>(address?.title ?? 'Дом');
+
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const cities = useQuery({ queryKey: ['cities'], queryFn: () => api.cities() });
+
+  /**
+   * Город берём выбранный, а пока гость не выбирал — первый из справочника.
+   * Раньше умолчание записывалось в состояние отдельным проходом отрисовки;
+   * считать его на месте и дешевле, и понятнее: одно правило вместо двух.
+   */
   const activeCity = cities.data?.find((city) => city.id === cityId) ?? cities.data?.[0] ?? null;
-
-  useEffect(() => {
-    if (cityId === null && activeCity) setCityId(activeCity.id);
-  }, [activeCity, cityId]);
 
   // Печатаем быстрее, чем отвечает справочник — спрашиваем его только на паузе.
   // Пауза в 400 мс заметно срезает число запросов: платим за них по счётчику

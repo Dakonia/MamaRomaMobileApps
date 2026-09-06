@@ -133,13 +133,6 @@ export function HallGallery({ restaurant, network, loading, open, onChange }: Pr
     return () => clearInterval(timer);
   }, [touched, shots.length, width]);
 
-  // Сменился ресторан — показываем его с первого кадра
-  useEffect(() => {
-    setPage(0);
-    setTouched(false);
-    scroller.current?.scrollTo({ x: 0, animated: false });
-  }, [restaurant?.id]);
-
   if (loading) return <Skeleton height={HEIGHT + insets.top} radius={0} />;
 
   return (

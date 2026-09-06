@@ -296,6 +296,9 @@ export default function BookingScreen() {
         {...keyboardScroll}
       >
         <HallGallery
+          // Ключом сбрасываем галерею при смене ресторана: новый зал
+          // показываем с первого кадра, а не там, где остановился прошлый
+          key={restaurant?.id ?? 'none'}
           restaurant={restaurant}
           network={hallShots}
           loading={restaurants.isPending}

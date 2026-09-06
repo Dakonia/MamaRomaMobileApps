@@ -69,7 +69,7 @@ function StepButton({
   const theme = useTheme();
   const scale = useSharedValue(1);
 
-  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 
   return (
     <Animated.View style={animated}>
@@ -78,10 +78,10 @@ function StepButton({
         accessibilityLabel={label}
         hitSlop={theme.spacing.sm}
         onPressIn={() => {
-          scale.value = withSpring(0.86, { damping: 18, stiffness: 400 });
+          scale.set(withSpring(0.86, { damping: 18, stiffness: 400 }));
         }}
         onPressOut={() => {
-          scale.value = withSpring(1, { damping: 12, stiffness: 260 });
+          scale.set(withSpring(1, { damping: 12, stiffness: 260 }));
         }}
         onPress={onPress}
         style={{
