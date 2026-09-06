@@ -5,6 +5,7 @@ packages:
 # линтера и в приложение не попадает. Без явного ответа pnpm 11 роняет install,
 # а вместе с ним и сборку на EAS
 allowBuilds:
+  '@parcel/watcher': set this to true or false
   unrs-resolver: false
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.22'
