@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 
-from app.api.deps import SessionDep, TenantDep
+from app.api.deps import GuestDep, SessionDep, TenantDep
 from app.models.geo import City, DeliveryZone, Restaurant
 from app.schemas.menu import (
     CityRead,
@@ -67,6 +67,18 @@ async def related(
     limit: Annotated[int, Query(ge=1, le=12)] = 8,
 ) -> list[DishRead]:
     return await menu_service.get_related(session, tenant.id, dish_id, restaurant_id, limit)
+
+
+@router.get("/menu/usual", summary="Что этот гость берёт обычно")
+async def usual(
+    session: SessionDep,
+    tenant: TenantDep,
+    guest: GuestDep,
+    restaurant_id: Annotated[UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=12)] = 8,
+) -> list[DishRead]:
+    """Полка «как обычно»: пусто, пока гость не заказал одно и то же дважды."""
+    return await menu_service.get_usual(session, tenant.id, guest.id, restaurant_id, limit)
 
 
 @router.get("/menu", summary="Каталог блюд по категориям")

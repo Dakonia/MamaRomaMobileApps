@@ -4,8 +4,9 @@ from uuid import UUID
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import OrderStatus
 from app.models.menu import Dish, DishExtra, DishPrice, MenuCategory, StopListEntry
-from app.models.order import OrderItem
+from app.models.order import Order, OrderItem
 from app.schemas.menu import DishExtraRead, DishRead, MenuCategoryRead, MenuRead
 
 
@@ -277,6 +278,79 @@ async def get_popular(
     return [
         _to_read(dish, overrides.get(dish.id, dish.price_kopecks), dish.id not in stopped)
         for dish in dishes[:limit]
+    ]
+
+
+async def get_usual(
+    session: AsyncSession,
+    tenant_id: str,
+    guest_id: UUID,
+    restaurant_id: UUID | None = None,
+    limit: int = 8,
+    min_orders: int = 2,
+) -> list[DishRead]:
+    """Что этот гость берёт обычно.
+
+    Считаем по числу заказов, а не по проданным штукам: тот, кто раз в месяц
+    берёт восемь пицц на компанию, любит не пиццу, а компанию. Блюдо попадает
+    на полку, только если гость брал его хотя бы дважды, — иначе «обычно»
+    сказано слишком громко.
+
+    Отменённые заказы не в счёт: гость их не ел.
+    """
+    ranked = (
+        await session.execute(
+            select(
+                OrderItem.dish_id,
+                func.count(func.distinct(OrderItem.order_id)).label("times"),
+                func.max(Order.created_at).label("last"),
+            )
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(
+                OrderItem.tenant_id == tenant_id,
+                Order.guest_id == guest_id,
+                Order.status != OrderStatus.CANCELLED,
+                OrderItem.dish_id.is_not(None),
+            )
+            .group_by(OrderItem.dish_id)
+            .having(func.count(func.distinct(OrderItem.order_id)) >= min_orders)
+            # При равном числе заказов выше то, что брали недавно
+            .order_by(desc("times"), desc("last"))
+            .limit(limit)
+        )
+    ).all()
+
+    ordered_ids = [row.dish_id for row in ranked if row.dish_id is not None]
+    if not ordered_ids:
+        return []
+
+    dishes = list(
+        (
+            await session.scalars(
+                select(Dish).where(
+                    Dish.tenant_id == tenant_id,
+                    Dish.is_active.is_(True),
+                    Dish.id.in_(ordered_ids),
+                )
+            )
+        ).all()
+    )
+
+    position = {dish_id: index for index, dish_id in enumerate(ordered_ids)}
+    dishes.sort(key=lambda dish: position.get(dish.id, len(position)))
+
+    overrides: dict[UUID, int] = {}
+    stopped: set[UUID] = set()
+    if restaurant_id is not None:
+        overrides = await _price_overrides(session, tenant_id, restaurant_id)
+        stopped = await _stopped_dishes(session, tenant_id, restaurant_id)
+
+    # Того, чего сегодня нет, на этой полке быть не должно: она обещает
+    # «как обычно», и упереться в стоп-лист здесь обиднее всего
+    return [
+        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), True)
+        for dish in dishes
+        if dish.id not in stopped
     ]
 
 

@@ -27,6 +27,7 @@ import { MenuSkeleton } from '@/components/menu-skeleton';
 import { PressableScale } from '@/components/pressable-scale';
 import { PromoCarousel } from '@/components/promo-carousel';
 import { OrderStrip } from '@/components/order-strip';
+import { UsualShelf } from '@/components/usual-shelf';
 import { AppDialog } from '@/components/app-dialog';
 import { SearchField } from '@/components/search-field';
 import { formatPrice } from '@/lib/format';
@@ -53,6 +54,7 @@ const VIEWABILITY = { itemVisiblePercentThreshold: 40 };
 type Row =
   | { kind: 'order'; key: string }
   | { kind: 'notice'; key: string }
+  | { kind: 'usual'; key: string }
   | { kind: 'promos'; key: string }
   | { kind: 'title'; key: string; categoryId: string; title: string }
   | { kind: 'pair'; key: string; categoryId: string; left: Dish; right: Dish | null };
@@ -344,6 +346,11 @@ export default function MenuScreen() {
       result.push({ kind: 'order', key: 'active-order' });
     }
 
+    // Своё привычное — раньше акций: гость чаще берёт то же, что и всегда
+    if (authorized) {
+      result.push({ kind: 'usual', key: 'usual' });
+    }
+
     if ((promos.data ?? []).length > 0) {
       result.push({ kind: 'promos', key: 'promos' });
     }
@@ -567,6 +574,10 @@ export default function MenuScreen() {
           </View>
         </Animated.View>
       );
+    }
+
+    if (item.kind === 'usual') {
+      return <UsualShelf />;
     }
 
     if (item.kind === 'promos') {

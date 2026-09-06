@@ -177,6 +177,10 @@ export const api = {
   popular: (restaurantId?: string) =>
     request<Dish[]>(`/api/v1/menu/popular${query({ restaurant_id: restaurantId })}`),
 
+  /** Что этот гость берёт обычно. Пусто, пока он не заказал одно и то же дважды. */
+  usual: (restaurantId?: string) =>
+    request<Dish[]>(`/api/v1/menu/usual${query({ restaurant_id: restaurantId })}`),
+
   related: (dishId: string, restaurantId?: string) =>
     request<Dish[]>(
       `/api/v1/menu/related${query({ dish_id: dishId, restaurant_id: restaurantId })}`,
