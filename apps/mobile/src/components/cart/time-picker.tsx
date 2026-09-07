@@ -31,6 +31,8 @@ export function TimePicker({
             key={slot.label}
             depth={0.95}
             accessibilityLabel={slot.label}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: picked }}
             onPress={() => onChange(slot.iso)}
             style={[
               pieces.line,

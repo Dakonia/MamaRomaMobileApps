@@ -27,6 +27,11 @@ type Props = {
   width?: number;
   /** Отметка «Хит» — ставим на полке частых заказов. */
   highlight?: boolean;
+  /**
+   * Первая карточка раздела: во всю ширину и с высоким снимком. Ровная сетка
+   * одинаковых карточек читается как склад — крупный кадр даёт разделу лицо.
+   */
+  hero?: boolean;
 };
 
 export function DishCard({
@@ -38,6 +43,7 @@ export function DishCard({
   onChangeQuantity,
   width,
   highlight,
+  hero,
 }: Props) {
   const theme = useTheme();
 
@@ -126,7 +132,14 @@ export function DishCard({
         },
       ]}
     >
-      <View ref={shot} style={[styles.photo, { backgroundColor: theme.colors.surfaceSunken }]}>
+      <View
+        ref={shot}
+        style={[
+          styles.photo,
+          hero ? styles.heroPhoto : null,
+          { backgroundColor: theme.colors.surfaceSunken },
+        ]}
+      >
         {photo ? (
           <Image
             source={{ uri: photo }}
@@ -261,7 +274,12 @@ export function DishCard({
             иначе карточки поедут по высоте */}
         <Text
           numberOfLines={2}
-          style={[theme.typography.bodyMedium, { color: theme.colors.textPrimary }]}
+          // У крупной карточки название читается как заголовок раздела: кадр
+          // большой, и мелкая подпись под ним выглядит потерянной
+          style={[
+            hero ? theme.typography.h3 : theme.typography.bodyMedium,
+            { color: theme.colors.textPrimary },
+          ]}
         >
           {dish.name}
         </Text>
@@ -277,7 +295,13 @@ export function DishCard({
 
         <View style={[styles.priceRow, { gap: theme.spacing.sm, paddingTop: theme.spacing.xxs }]}>
           {/* Цена. tabularNums — цифры одной ширины, строка не дёргается */}
-          <Text style={[theme.typography.price, theme.tabularNums, { color: theme.colors.textPrimary }]}>
+          <Text
+            style={[
+              hero ? theme.typography.h2 : theme.typography.price,
+              theme.tabularNums,
+              { color: theme.colors.textPrimary },
+            ]}
+          >
             {formatPrice(dish.price_kopecks)}
           </Text>
           {measure ? (
@@ -305,6 +329,9 @@ const styles = StyleSheet.create({
    *   3 / 4  — вертикально, как в модных доставках; список сильно длиннее
    */
   photo: { width: '100%', aspectRatio: 4 / 3 },
+  // Крупная карточка: кадр шире и ниже — так он читается как афиша раздела,
+  // а не как увеличенная плитка
+  heroPhoto: { aspectRatio: 16 / 9 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   add: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   stepper: {

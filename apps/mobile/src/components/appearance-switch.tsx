@@ -53,6 +53,7 @@ export function AppearanceSwitch() {
       </View>
 
       <Switch
+        accessibilityLabel="Тёмное оформление"
         value={dark}
         onValueChange={(next) => {
           choose(next ? 'dark' : 'light');

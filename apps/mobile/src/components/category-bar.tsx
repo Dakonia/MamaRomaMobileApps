@@ -116,7 +116,9 @@ export function CategoryBar({ categories, activeId, onSelect, onHero }: Props) {
           >
             <PressableScale
               onPress={() => onSelect(category.id)}
-              accessibilityLabel={`Перейти к разделу ${category.title}`}
+              accessibilityLabel={`Раздел ${category.title}`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
               depth={0.94}
               style={[
                 styles.chip,

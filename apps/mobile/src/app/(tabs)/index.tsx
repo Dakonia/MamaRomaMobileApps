@@ -32,6 +32,7 @@ import { UsualShelf } from '@/components/usual-shelf';
 import { AppDialog } from '@/components/app-dialog';
 import { SearchField } from '@/components/search-field';
 import { formatPrice } from '@/lib/format';
+import { searchDishes } from '@/lib/search';
 import { tenant } from '@/lib/tenant';
 import { distanceKm } from '@/lib/geo';
 import { useCoords } from '@/lib/use-coords';
@@ -58,6 +59,7 @@ type Row =
   | { kind: 'usual'; key: string }
   | { kind: 'promos'; key: string }
   | { kind: 'title'; key: string; categoryId: string; title: string }
+  | { kind: 'hero'; key: string; categoryId: string; dish: Dish }
   | { kind: 'pair'; key: string; categoryId: string; left: Dish; right: Dish | null };
 
 export default function MenuScreen() {
@@ -316,13 +318,12 @@ export default function MenuScreen() {
     const needle = query.trim().toLowerCase();
 
     if (needle.length > 0) {
-      const found = (menu.data?.categories ?? [])
-        .flatMap((category) => category.dishes)
-        .filter((dish) =>
-          [dish.name, dish.composition, dish.description]
-            .filter((value): value is string => Boolean(value))
-            .some((value) => value.toLowerCase().includes(needle)),
-        );
+      // Ищем с допуском на опечатки: «маргрита» должна находить «Маргариту».
+      // Подходящее ближе к запросу идёт выше — см. lib/search.ts
+      const found = searchDishes(
+        (menu.data?.categories ?? []).flatMap((category) => category.dishes),
+        needle,
+      );
 
       result.push({
         kind: 'title',
@@ -394,14 +395,38 @@ export default function MenuScreen() {
         title: category.name,
       });
 
-      // Раскладываем блюда парами — сетка два в ряд без потери переработки списка
-      for (let index = 0; index < category.dishes.length; index += 2) {
+      /**
+       * Первое блюдо раздела — во всю ширину, остальные парами.
+       *
+       * Ровная сетка из одинаковых карточек читается как склад: глазу не за
+       * что зацепиться, и раздел не запоминается. Крупный снимок даёт разделу
+       * лицо, а фотографии еды у сети хорошие — их стоит показывать.
+       *
+       * В разделе из одного блюда крупной карточки не делаем: она осталась бы
+       * висеть в одиночестве, и полка выглядела бы недогруженной.
+       */
+      const [first, ...rest] = category.dishes;
+      const hero = category.dishes.length > 2 ? first : null;
+
+      if (hero) {
+        result.push({
+          kind: 'hero',
+          key: `h-${category.id}`,
+          categoryId: category.id,
+          dish: hero,
+        });
+      }
+
+      const paired = hero ? rest : category.dishes;
+
+      // Остальные — сетка два в ряд, без потери переработки списка
+      for (let index = 0; index < paired.length; index += 2) {
         result.push({
           kind: 'pair',
           key: `p-${category.id}-${index}`,
           categoryId: category.id,
-          left: category.dishes[index],
-          right: category.dishes[index + 1] ?? null,
+          left: paired[index],
+          right: paired[index + 1] ?? null,
         });
       }
     }
@@ -690,6 +715,27 @@ export default function MenuScreen() {
               </Text>
             ) : null}
           </View>
+        </View>
+      );
+    }
+
+    if (item.kind === 'hero') {
+      return (
+        <View
+          style={{
+            paddingHorizontal: theme.layout.screenPadding,
+            paddingBottom: theme.spacing.md,
+          }}
+        >
+          <DishCard
+            dish={item.dish}
+            quantity={quantityOf(item.dish.id)}
+            hero
+            onOpen={(frame) => openDish(item.dish.id, frame)}
+            onPeek={() => setPeek(item.dish)}
+            onAdd={() => cart.add(item.dish)}
+            onChangeQuantity={(quantity) => cart.setQuantity(item.dish.id, quantity)}
+          />
         </View>
       );
     }

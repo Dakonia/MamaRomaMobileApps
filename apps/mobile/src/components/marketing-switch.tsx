@@ -73,6 +73,7 @@ export function MarketingSwitch() {
       </View>
 
       <Switch
+        accessibilityLabel="Сообщения об акциях"
         value={agreed}
         disabled={save.isPending}
         onValueChange={(next) => {

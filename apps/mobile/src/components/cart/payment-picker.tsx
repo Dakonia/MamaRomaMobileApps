@@ -32,7 +32,9 @@ export function PaymentPicker({
           <View key={option.value} style={{ gap: theme.spacing.sm }}>
             <PressableScale
               depth={0.985}
-              accessibilityLabel={option.label}
+              accessibilityLabel={`${option.label}. ${option.note}`}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: picked }}
               onPress={() => onChange(option.value)}
               style={[
                 pieces.line,

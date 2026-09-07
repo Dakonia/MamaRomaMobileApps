@@ -110,6 +110,7 @@ export function PushSwitch() {
         </View>
 
         <Switch
+          accessibilityLabel="Уведомления о заказе"
           value={wanted && allowed}
           disabled={busy}
           onValueChange={toggle}

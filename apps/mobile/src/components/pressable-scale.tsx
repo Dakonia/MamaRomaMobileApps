@@ -15,6 +15,19 @@ type Props = {
   onLongPress?: () => void;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  /**
+   * Чем элемент является для озвучки экрана. По умолчанию кнопка, но выбор
+   * оплаты, времени или раздела — это не кнопка, а вариант из нескольких, и
+   * незрячему гостю нужно слышать, какой из них выбран.
+   */
+  accessibilityRole?: 'button' | 'radio' | 'tab' | 'link' | 'checkbox';
+  /** Состояние варианта: выбран, выключен, раскрыт. */
+  accessibilityState?: {
+    selected?: boolean;
+    disabled?: boolean;
+    checked?: boolean;
+    expanded?: boolean;
+  };
   /** Насколько сильно проседает элемент под пальцем. */
   depth?: number;
   /** Запас вокруг мелкой иконки, чтобы в неё попадал палец. */
@@ -28,6 +41,8 @@ export function PressableScale({
   onLongPress,
   style,
   accessibilityLabel,
+  accessibilityRole = 'button',
+  accessibilityState,
   depth = 0.96,
   hitSlop,
 }: Props) {
@@ -37,8 +52,9 @@ export function PressableScale({
 
   return (
     <AnimatedPressable
-      accessibilityRole="button"
+      accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
       hitSlop={hitSlop}
       onPress={onPress}
       onLongPress={onLongPress}
