@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -9,59 +9,16 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 
+import { Ember } from '@/components/skia/ember';
 import { OvenLoader } from '@/components/oven-loader';
 
 /** Уголь печи: тот же тон, что у системной заставки — стыка не видно. */
-const NIGHT = '#1A120C';
-const EMBER = '#E4A24A';
-
 const SCENE = require('../../assets/images/splash-scene.jpg');
 
-/** Огонь дышит двумя слоями с разным ритмом — свет не пульсирует в такт. */
-const FLICKER = [
-  { delay: 0, duration: 980 },
-  { delay: 360, duration: 1420 },
-];
-
-/** Тёплый отсвет над устьем печи: держится там, где на кадре горит огонь. */
-function Flicker({ index, size }: { index: number; size: number }) {
-  const glow = useSharedValue(0);
-
-  useEffect(() => {
-    glow.value = withDelay(
-      FLICKER[index].delay,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: FLICKER[index].duration }),
-          withTiming(0, { duration: FLICKER[index].duration }),
-        ),
-        -1,
-        true,
-      ),
-    );
-  }, [glow, index]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: 0.07 + glow.value * 0.11,
-    transform: [{ scale: 0.9 + glow.value * 0.16 }],
-  }));
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.glow,
-        style,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: EMBER },
-      ]}
-    />
-  );
-}
+const NIGHT = '#1A120C';
 
 type Props = {
   /** Доля выполненной загрузки: полоса внизу показывает её честно. */
@@ -124,12 +81,16 @@ export function BootSplash({ progress, ready, onDone }: Props) {
       <Animated.View style={[StyleSheet.absoluteFill, scene]}>
         <Image source={SCENE} style={StyleSheet.absoluteFill} contentFit="cover" transition={0} />
 
-        {/* Устье печи на кадре — примерно на две трети высоты */}
-        <View style={[styles.fire, { top: height * 0.58, left: width * 0.42 }]}>
-          {FLICKER.map((_, index) => (
-            <Flicker key={index} index={index} size={width * 0.7} />
-          ))}
-        </View>
+        {/*
+          Устье печи на кадре — примерно на две трети высоты. Жар считает
+          видеокарта: пламя дышит и колышется само, без слоёв поверх кадра
+        */}
+        <Ember
+          width={width}
+          height={height * 0.5}
+          power={0.9}
+          style={{ top: height * 0.42, left: 0 }}
+        />
       </Animated.View>
 
       {/* Низ уводим в уголь: полоса загрузки стоит на своей глубине */}
