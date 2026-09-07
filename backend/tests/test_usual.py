@@ -85,10 +85,21 @@ async def place(
     return order
 
 
-async def test_odnogo_zakaza_malo(session: AsyncSession, tenant, guest, restaurant, made, dishes):
-    """Взял один раз — это не «обычно»."""
+async def test_polka_rabotaet_s_pervogo_zakaza(
+    session: AsyncSession, tenant, guest, restaurant, made, dishes
+):
+    """Человек возвращается за тем, что уже пробовал, — ждать второго раза незачем."""
     await place(session, tenant, guest, restaurant, made, [dishes[0]])
 
+    shelf = await menu_service.get_usual(session, tenant.id, guest.id)
+
+    assert [row.id for row in shelf] == [dishes[0].id]
+
+
+async def test_bez_zakazov_polki_net(
+    session: AsyncSession, tenant, guest, restaurant, made, dishes
+):
+    """Ни одного заказа — предлагать «ваше привычное» нечего."""
     shelf = await menu_service.get_usual(session, tenant.id, guest.id)
 
     assert shelf == []
@@ -97,13 +108,13 @@ async def test_odnogo_zakaza_malo(session: AsyncSession, tenant, guest, restaura
 async def test_dva_zakaza_delayut_privychku(
     session: AsyncSession, tenant, guest, restaurant, made, dishes
 ):
-    """Одно и то же дважды — уже привычка, её и показываем."""
+    """Взятое дважды стоит выше взятого однажды."""
     await place(session, tenant, guest, restaurant, made, [dishes[0]])
     await place(session, tenant, guest, restaurant, made, [dishes[0], dishes[1]])
 
     shelf = await menu_service.get_usual(session, tenant.id, guest.id)
 
-    assert [row.id for row in shelf] == [dishes[0].id]
+    assert [row.id for row in shelf] == [dishes[0].id, dishes[1].id]
 
 
 async def test_chastoe_vperedi(session: AsyncSession, tenant, guest, restaurant, made, dishes):
@@ -120,8 +131,7 @@ async def test_chastoe_vperedi(session: AsyncSession, tenant, guest, restaurant,
 async def test_otmenennyj_zakaz_ne_schitaetsya(
     session: AsyncSession, tenant, guest, restaurant, made, dishes
 ):
-    """Отменённый заказ гость не ел — в привычку он не идёт."""
-    await place(session, tenant, guest, restaurant, made, [dishes[0]])
+    """Отменённый заказ гость не ел — на полку он не приводит."""
     await place(session, tenant, guest, restaurant, made, [dishes[0]], status=OrderStatus.CANCELLED)
 
     shelf = await menu_service.get_usual(session, tenant.id, guest.id)
@@ -207,3 +217,51 @@ async def test_blyudo_iz_skrytogo_razdela_ne_popadaet(
     finally:
         category.is_active = True
         await session.commit()
+
+
+async def test_otmena_ne_popadaet_v_hity(
+    session: AsyncSession, tenant, guest, restaurant, made, dishes
+):
+    """Хиты продаж считаются по проданному, а не по оформленному.
+
+    Отменённый заказ никто не ел. Пойди он в счёт — на полке хитов оказалось
+    бы то, что чаще всего отменяют.
+    """
+    for _ in range(5):
+        await place(
+            session, tenant, guest, restaurant, made, [dishes[2]], status=OrderStatus.CANCELLED
+        )
+
+    # Пять отмен не двигают блюдо в рейтинге, а один состоявшийся заказ —
+    # двигает: считается только съеденное
+    before = await menu_service.sold_ranking(session, tenant.id, limit=200)
+    await place(session, tenant, guest, restaurant, made, [dishes[2]])
+    after = await menu_service.sold_ranking(session, tenant.id, limit=200)
+
+    assert dishes[2].id in after
+    if dishes[2].id in before:
+        # Было в рейтинге и раньше — значит поднялось, а не осталось на месте
+        assert after.index(dishes[2].id) <= before.index(dishes[2].id)
+
+
+async def test_s_etim_pokupayut_ne_schitaet_otmenennoe(
+    session: AsyncSession, tenant, guest, restaurant, made, dishes
+):
+    """«С этим покупают» — про состоявшиеся заказы, а не про намерения."""
+    for _ in range(4):
+        await place(
+            session,
+            tenant,
+            guest,
+            restaurant,
+            made,
+            [dishes[0], dishes[1]],
+            status=OrderStatus.CANCELLED,
+        )
+
+    # Пара встречалась только в отменённых заказах — совместной покупки не
+    # было. После состоявшегося заказа она выходит на первое место
+    await place(session, tenant, guest, restaurant, made, [dishes[0], dishes[1]])
+    together = await menu_service.get_related(session, tenant.id, dishes[0].id, limit=8)
+
+    assert together[0].id == dishes[1].id

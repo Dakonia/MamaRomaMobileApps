@@ -4,41 +4,31 @@ import { View } from 'react-native';
 
 import { api, type Order } from '@/api/client';
 import { ActiveOrder } from '@/components/active-order';
-import { OrderAgain } from '@/components/order-again';
-import { useCart } from '@/store/cart';
 import { useSession } from '@/store/session';
 import { useTheme } from '@/theme/theme-provider';
 
 const DONE: Order['status'][] = ['completed', 'cancelled'];
 
-/** Заказ ещё «свежий» — повторить его осмысленно. Дальше гость и сам не помнит. */
-const RECENT_DAYS = 45;
-
 /**
  * Сколько заказ считается едущим.
  *
  * Ресторан может забыть закрыть заказ на кассе, и он останется в «принят»
- * навсегда. Для гостя это значит, что на главной вечно висит статус доставки,
- * которой давно нет, а полезное — повторить прошлый заказ — не показывается.
+ * навсегда — на главной вечно висел бы статус доставки, которой давно нет.
  * Сутки с запасом перекрывают любую доставку, включая заказ ко времени.
  */
 const LIVE_HOURS = 24;
 
 /**
- * Первая строка меню: что у гостя с заказами.
+ * Первая строка меню: заказ, который сейчас едет.
  *
- * Едет заказ — показываем его статус. Не едет, а корзина пуста — предлагаем
- * повторить прошлый. Нечего показать — строки нет вовсе, вместе с отступами:
- * пустой зазор над меню выглядит как забытый блок.
+ * Нечего показать — строки нет вовсе, вместе с отступами: пустой зазор над
+ * меню выглядит как забытый блок.
  */
 export function OrderStrip() {
   const theme = useTheme();
-  const cart = useCart();
   const session = useSession();
 
-  // Время берём один раз за жизнь экрана: свежесть заказа за эти минуты не
-  // изменится, а спрашивать часы при каждой отрисовке нельзя — она должна
-  // давать один и тот же результат на одних и тех же данных
+  // Время берём один раз за жизнь экрана: отрисовка должна быть предсказуемой
   const [now] = useState(() => Date.now());
 
   const orders = useQuery({
@@ -47,21 +37,13 @@ export function OrderStrip() {
     enabled: session.status === 'authorized',
   });
 
-  const rows = orders.data ?? [];
-  const live = rows.find(
+  const live = (orders.data ?? []).find(
     (row) =>
       !DONE.includes(row.status) &&
       now - new Date(row.created_at).getTime() <= LIVE_HOURS * 3_600_000,
   );
-  const last = rows.find((row) => row.status === 'completed');
 
-  const canRepeat =
-    live === undefined &&
-    cart.items.length === 0 &&
-    last !== undefined &&
-    now - new Date(last.created_at).getTime() <= RECENT_DAYS * 86_400_000;
-
-  if (live === undefined && !canRepeat) return null;
+  if (live === undefined) return null;
 
   return (
     <View
@@ -71,7 +53,7 @@ export function OrderStrip() {
         paddingBottom: theme.spacing.base,
       }}
     >
-      {live ? <ActiveOrder /> : <OrderAgain />}
+      <ActiveOrder />
     </View>
   );
 }

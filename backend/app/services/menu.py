@@ -214,6 +214,30 @@ def _to_read(dish: Dish, price: int, available: bool) -> DishRead:
     )
 
 
+async def sold_ranking(session: AsyncSession, tenant_id: str, limit: int) -> list[UUID]:
+    """Блюда по числу проданных штук, самые ходовые первыми.
+
+    Считаем по состоявшимся заказам: отменённый никто не ел, и попади он в
+    счёт — полка хитов начала бы показывать то, что чаще всего отменяют.
+    """
+    rows = (
+        await session.execute(
+            select(OrderItem.dish_id, func.sum(OrderItem.quantity).label("sold"))
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(
+                OrderItem.tenant_id == tenant_id,
+                OrderItem.dish_id.is_not(None),
+                Order.status != OrderStatus.CANCELLED,
+            )
+            .group_by(OrderItem.dish_id)
+            .order_by(desc("sold"))
+            .limit(limit)
+        )
+    ).all()
+
+    return [row.dish_id for row in rows if row.dish_id is not None]
+
+
 async def get_popular(
     session: AsyncSession,
     tenant_id: str,
@@ -225,20 +249,11 @@ async def get_popular(
     Пока заказов мало, добираем список началом меню — чтобы полка
     не пустовала в первый день работы сети.
     """
-    ranked = (
-        await session.execute(
-            select(OrderItem.dish_id, func.sum(OrderItem.quantity).label("sold"))
-            .where(OrderItem.tenant_id == tenant_id, OrderItem.dish_id.is_not(None))
-            .group_by(OrderItem.dish_id)
-            .order_by(desc("sold"))
-            .limit(limit)
-        )
-    ).all()
-    ordered_ids = [row.dish_id for row in ranked if row.dish_id is not None]
+    ordered_ids = await sold_ranking(session, tenant_id, limit)
 
     # Разделы, которые сеть не хочет видеть на этой полке, отсекаем сразу —
     # и у хитов по продажам, и у списка, которым полка добирается
-    hidden = select(MenuCategory.id).where(
+    hidden_categories = select(MenuCategory.id).where(
         MenuCategory.tenant_id == tenant_id, MenuCategory.show_in_popular.is_(False)
     )
 
@@ -246,7 +261,7 @@ async def get_popular(
         Dish.tenant_id == tenant_id,
         Dish.is_active.is_(True),
         Dish.image_url.is_not(None),
-        Dish.category_id.notin_(hidden),
+        Dish.category_id.notin_(hidden_categories),
     )
     if ordered_ids:
         top = (await session.scalars(query.where(Dish.id.in_(ordered_ids)))).all()
@@ -270,15 +285,19 @@ async def get_popular(
         dishes.sort(key=lambda dish: position.get(dish.id, len(position)))
 
     overrides: dict[UUID, int] = {}
-    stopped: set[UUID] = set()
+    hidden: set[UUID] = set()
     if restaurant_id is not None:
         overrides = await _price_overrides(session, tenant_id, restaurant_id)
-        stopped = await _stopped_dishes(session, tenant_id, restaurant_id)
+        # Полка предлагает взять прямо сейчас, поэтому кончившееся и то, чего
+        # здесь не готовят, с неё уходит совсем, а не помечается серым
+        hidden = await _stopped_dishes(session, tenant_id, restaurant_id)
+        hidden |= await _not_sold(session, tenant_id, restaurant_id)
 
     return [
-        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), dish.id not in stopped)
-        for dish in dishes[:limit]
-    ]
+        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), True)
+        for dish in dishes
+        if dish.id not in hidden
+    ][:limit]
 
 
 async def get_usual(
@@ -287,16 +306,16 @@ async def get_usual(
     guest_id: UUID,
     restaurant_id: UUID | None = None,
     limit: int = 8,
-    min_orders: int = 2,
+    min_orders: int = 1,
 ) -> list[DishRead]:
-    """Что этот гость берёт обычно.
+    """Что этот гость уже заказывал, чаще взятое первым.
 
     Считаем по числу заказов, а не по проданным штукам: тот, кто раз в месяц
-    берёт восемь пицц на компанию, любит не пиццу, а компанию. Блюдо попадает
-    на полку, только если гость брал его хотя бы дважды, — иначе «обычно»
-    сказано слишком громко.
+    берёт восемь пицц на компанию, любит не пиццу, а компанию.
 
-    Отменённые заказы не в счёт: гость их не ел.
+    Порог в один заказ намеренный: полка полезна с первого раза — человек
+    возвращается за тем, что уже пробовал, и искать это в меню заново ему не
+    нужно. Отменённые заказы не в счёт: гость их не ел.
     """
     ranked = (
         await session.execute(
@@ -373,8 +392,15 @@ async def get_related(
 
     Пока заказов мало, добираем соседями по категории — полка не должна пустовать.
     """
-    orders_with_dish = select(OrderItem.order_id).where(
-        OrderItem.tenant_id == tenant_id, OrderItem.dish_id == dish_id
+    # Считаем по состоявшимся заказам: в отменённом ничего не покупали
+    orders_with_dish = (
+        select(OrderItem.order_id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            OrderItem.tenant_id == tenant_id,
+            OrderItem.dish_id == dish_id,
+            Order.status != OrderStatus.CANCELLED,
+        )
     )
 
     together = (
@@ -423,12 +449,14 @@ async def get_related(
         dishes = [*dishes, *filler]
 
     overrides: dict[UUID, int] = {}
-    stopped: set[UUID] = set()
+    hidden: set[UUID] = set()
     if restaurant_id is not None:
         overrides = await _price_overrides(session, tenant_id, restaurant_id)
-        stopped = await _stopped_dishes(session, tenant_id, restaurant_id)
+        hidden = await _stopped_dishes(session, tenant_id, restaurant_id)
+        hidden |= await _not_sold(session, tenant_id, restaurant_id)
 
     return [
-        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), dish.id not in stopped)
-        for dish in dishes[:limit]
-    ]
+        _to_read(dish, overrides.get(dish.id, dish.price_kopecks), True)
+        for dish in dishes
+        if dish.id not in hidden
+    ][:limit]
