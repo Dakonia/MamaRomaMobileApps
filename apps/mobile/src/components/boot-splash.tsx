@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -64,7 +64,7 @@ function Flicker({ index, size }: { index: number; size: number }) {
 }
 
 type Props = {
-  /** Доля выполненной загрузки: полоса внизу показывает её честно. */
+  /** Доля выполненной загрузки: по ней мягко разгорается огонь. */
   progress: number;
   /** Данные готовы — можно уходить с заставки. */
   ready: boolean;
@@ -80,6 +80,8 @@ export function BootSplash({ progress, ready, onDone }: Props) {
   const { width, height } = useWindowDimensions();
   // На Android внизу живут кнопки навигации — печь не должна на них наезжать
   const insets = useSafeAreaInsets();
+  const loaderBottom =
+    Platform.OS === 'ios' ? Math.max(6, insets.bottom - 22) : Math.max(18, insets.bottom + 16);
 
   const enter = useSharedValue(0);
   const drift = useSharedValue(0);
@@ -132,7 +134,7 @@ export function BootSplash({ progress, ready, onDone }: Props) {
         </View>
       </Animated.View>
 
-      {/* Низ уводим в уголь: полоса загрузки стоит на своей глубине */}
+      {/* Низ уводим в уголь: загрузка стоит на своей глубине */}
       <LinearGradient
         pointerEvents="none"
         colors={['rgba(26,18,12,0)', 'rgba(26,18,12,0.55)', 'rgba(26,18,12,0.92)']}
@@ -140,7 +142,7 @@ export function BootSplash({ progress, ready, onDone }: Props) {
         style={StyleSheet.absoluteFill}
       />
 
-      <Animated.View style={[styles.bottom, bar, { bottom: insets.bottom + 28 }]}>
+      <Animated.View style={[styles.bottom, bar, { bottom: loaderBottom }]}>
         <OvenLoader progress={progress} />
       </Animated.View>
     </Animated.View>
