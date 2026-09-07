@@ -67,9 +67,6 @@ export function UsualShelf() {
         <Text style={[theme.typography.h2, { color: theme.colors.textPrimary }]}>
           Вы заказывали
         </Text>
-        <Text style={[theme.typography.caption, { color: theme.colors.textSecondary }]}>
-          Чаще всего вы берёте это — добавить можно прямо отсюда
-        </Text>
       </View>
 
       <ScrollView
