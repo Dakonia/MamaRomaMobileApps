@@ -902,7 +902,7 @@ export default function MenuScreen() {
           if (size > 0) setHeroHeight((known) => (Math.abs(known - size) > 1 ? size : known));
         }}
       >
-        <HeroPhoto height={heroHeight} />
+        <HeroPhoto />
 
         <Animated.View
           style={[

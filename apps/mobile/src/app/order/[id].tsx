@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -22,7 +22,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/text';
 import { api, mediaUrl, type Order } from '@/api/client';
 import { Confetti } from '@/components/confetti';
-import { Ember } from '@/components/skia/ember';
 import { EmptyState } from '@/components/empty-state';
 import { PressableScale } from '@/components/pressable-scale';
 import { PrimaryButton } from '@/components/primary-button';
@@ -170,7 +169,6 @@ function Step({
 export default function OrderScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const { data, isPending, isError, error, refetch } = useQuery({
@@ -340,20 +338,6 @@ export default function OrderScreen() {
             borderBottomRightRadius: theme.radius.xxl,
           }}
         >
-          {/* Тёплый отсвет под шапкой: тот же жар, что на заставке и в меню,
-              только светлее — на терракоте он читается как свет из печи, а не
-              как огонь поверх неё */}
-          {fresh ? (
-            <Ember
-              width={width}
-              height={220}
-              power={0.5}
-              warm={[1, 0.72, 0.42]}
-              flame={[1, 0.94, 0.78]}
-              style={{ top: 0, left: 0 }}
-            />
-          ) : null}
-
           {/* Конфетти — только на свежем заказе. Дальше у каждого этапа своя
               анимация, иначе праздник теряет смысл */}
           {fresh ? (
